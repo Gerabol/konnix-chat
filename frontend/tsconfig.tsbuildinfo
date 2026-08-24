@@ -1,0 +1,1 @@
+{"root":["./src/adminview.tsx","./src/apidocspanel.tsx","./src/app.tsx","./src/api.ts","./src/lamejs.d.ts","./src/main.tsx","./src/passwordvalidation.ts","./src/platform.ts","./src/vite-env.d.ts","./src/desktop/servers/serversetup.tsx","./src/desktop/servers/serverswitcher.tsx","./src/desktop/servers/servermanager.ts","./src/desktop/servers/serverstore.ts"],"version":"5.9.3"}

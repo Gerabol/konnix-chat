@@ -1,0 +1,39 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: konnix-chat-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/konnix}
+    username: ${SPRING_DATASOURCE_USERNAME:konnix}
+    password: ${SPRING_DATASOURCE_PASSWORD:konnix}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  servlet:
+    multipart:
+       max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:20MB}
+       max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:100MB}
+
+konnix:
+  uploads:
+    dir: ${KONNIX_UPLOADS_DIR:/app/uploads}
+  files:
+     max-size: ${KONNIX_MAX_FILE_SIZE:20971520}
+  vapid:
+    public-key: ${KONNIX_VAPID_PUBLIC_KEY:}
+    private-key: ${KONNIX_VAPID_PRIVATE_KEY:}
+    subject: ${KONNIX_VAPID_SUBJECT:mailto:konnix@localhost}
+
+logging:
+  level:
+    br.gov.pb.cge.konnix: INFO
