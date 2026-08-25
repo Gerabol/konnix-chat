@@ -51,8 +51,27 @@ Forks are not required to keep the Konnix Chat name and may use another name
 and visual identity. Read [TRADEMARKS.md](TRADEMARKS.md) for the complete
 policy.
 
+## Documentation & Architecture
+
+Comprehensive technical documentation and guides are organized under the [`docs/`](docs/) directory:
+
+- [System Architecture](docs/code/architecture.md): Layered architecture, entity models, and WebSocket event protocols.
+- [Backend Guide](docs/code/backend-guide.md): Java 21, Spring Boot 3.5.3, Flyway migrations, and Testcontainers.
+- [Frontend Guide](docs/code/frontend-guide.md): React 19, TypeScript, Vite, PWA, and Tauri Desktop.
+- [Design System & UI Kit](docs/code/design-system.md): Tokens, 13 visual themes, and `.kx-*` components from [`docs/tema/`](docs/tema/).
+- [REST API Reference](docs/code/api-reference.md): Standard JSON envelope, error codes, and endpoint catalog.
+
+## AI Agents & Governance
+
+For AI assistants and engineering team orchestration, see [AGENTS.md](AGENTS.md) for the 4 specialized agent specifications:
+- [Software Developer Agent](docs/agents/1-software-developer.md)
+- [QA Analyst Agent](docs/agents/2-qa-analyst.md)
+- [UX/UI Specialist Agent](docs/agents/3-ux-ui-specialist.md)
+- [Security & Privacy Specialist Agent (Zero PII Leakage)](docs/agents/4-security-privacy-specialist.md)
+
 ## Project Files
 
+- `AGENTS.md` contains the AI agent orchestration index and rules.
 - `LICENSE` contains the complete Apache License 2.0 text.
 - `NOTICE` identifies the original authorship and attribution requirements.
 - `TRADEMARKS.md` defines use of the Konnix Chat name and visual identity.
