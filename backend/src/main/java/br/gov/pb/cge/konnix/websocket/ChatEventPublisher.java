@@ -37,6 +37,13 @@ public class ChatEventPublisher {
         publishPayload(roomId, eventType, message);
     }
 
+    public void publishPinnedMessage(UUID roomId, MessageResponse message) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("pinnedMessage", message);
+        publishPayload(roomId, "room.pinned_message", data);
+    }
+
     public void publishReadReceipt(UUID roomId, UUID messageId, UUID ownerId,
                                    br.gov.pb.cge.konnix.api.message.dto.ReadReceiptResponse receipt) {
         Map<String, Object> data = new LinkedHashMap<>();

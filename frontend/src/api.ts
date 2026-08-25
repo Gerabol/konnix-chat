@@ -35,6 +35,7 @@ export type Room = {
   unreadCount: number
   favorite: boolean
   directPartner: { userId: string; username: string; name: string; email: string | null; accountStatus: AccountStatus; presenceStatus: PresenceStatus } | null
+  pinnedMessage: Message | null
 }
 
 export type DirectoryUser = {
@@ -334,6 +335,16 @@ export const api = {
       method: 'PATCH', body: JSON.stringify({ name, email }),
     })
   },
+  reportIssue(content: string) {
+    return request<{ message: string }>('/api/v1/support/report', {
+      method: 'POST', body: JSON.stringify({ content }),
+    })
+  },
+  respondToReport(messageId: string, content: string) {
+    return request<Message>('/api/v1/support/respond', {
+      method: 'POST', body: JSON.stringify({ messageId, content }),
+    })
+  },
   uploadUserAvatar(userId: string, file: File) {
     const form = new FormData()
     form.append('file', file)
@@ -435,6 +446,16 @@ export const api = {
     return request<Room>('/api/v1/rooms', {
       method: 'POST',
       body: JSON.stringify({ name, displayName: displayName || undefined, type }),
+    })
+  },
+  pinMessage(roomId: string, messageId: string) {
+    return request<Room>(`/api/v1/rooms/${roomId}/pin/${messageId}`, {
+      method: 'POST',
+    })
+  },
+  unpinMessage(roomId: string) {
+    return request<Room>(`/api/v1/rooms/${roomId}/pin`, {
+      method: 'DELETE',
     })
   },
   createDm(userId: string) {

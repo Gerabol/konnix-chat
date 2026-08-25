@@ -247,6 +247,12 @@ public class MessageService {
         }
         message.setDeletedAt(Instant.now());
         messageRepository.save(message);
+        Room room = message.getRoom();
+        if (room != null && room.getPinnedMessage() != null && room.getPinnedMessage().getId().equals(id)) {
+            room.setPinnedMessage(null);
+            roomRepository.save(room);
+            eventPublisher.publishPinnedMessage(room.getId(), null);
+        }
         auditService.record("MESSAGE_DELETED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
         eventPublisher.publish(message.getRoom().getId(), EVENT_MESSAGE_DELETED, response);

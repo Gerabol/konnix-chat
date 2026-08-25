@@ -161,6 +161,7 @@ public class UserService {
         user.setName(request.name().trim());
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setPasswordChangeRequired(true);
         user.setActive(true);
         user.setAccountStatus("ACTIVE");
         user.setUserType("USER");

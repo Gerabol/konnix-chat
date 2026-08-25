@@ -9,6 +9,7 @@ import br.gov.pb.cge.konnix.service.RoomService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -59,6 +60,21 @@ public class RoomController {
     @PostMapping("/{id}/favorite")
     public ApiResponse<RoomResponse> toggleFavorite(@PathVariable UUID id, Authentication authentication) {
         return ApiResponse.ok(roomService.toggleFavorite(id, principal(authentication)));
+    }
+
+    @PostMapping("/{id}/pin/{messageId}")
+    public ApiResponse<RoomResponse> pinMessage(@PathVariable UUID id,
+                                                @PathVariable UUID messageId,
+                                                Authentication authentication,
+                                                HttpServletRequest http) {
+        return ApiResponse.ok(roomService.pinMessage(id, messageId, principal(authentication), clientIp(http)));
+    }
+
+    @DeleteMapping("/{id}/pin")
+    public ApiResponse<RoomResponse> unpinMessage(@PathVariable UUID id,
+                                                  Authentication authentication,
+                                                  HttpServletRequest http) {
+        return ApiResponse.ok(roomService.unpinMessage(id, principal(authentication), clientIp(http)));
     }
 
     private AuthenticatedUser principal(Authentication authentication) {
