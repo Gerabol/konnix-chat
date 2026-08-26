@@ -51,11 +51,11 @@ services:
       - konnix_staging_uploads:/app/uploads
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -s http://localhost:8080/api/public/server-info > /dev/null || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -f -s http://127.0.0.1:8080/api/public/server-info > /dev/null || exit 1"]
+      interval: 5s
       timeout: 5s
-      retries: 6
-      start_period: 25s
+      retries: 20
+      start_period: 30s
 
     networks:
       - konnix_staging_net
@@ -67,8 +67,7 @@ services:
     container_name: konnix-staging-frontend
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     ports:
       - "127.0.0.1:${STAGING_FRONTEND_PORT:-5175}:80"
     networks:
