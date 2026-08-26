@@ -969,7 +969,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
-  const [unread, setUnread] = useState<Record<string, number>>({})
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
@@ -1085,7 +1084,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     try {
       const nextRooms = await api.rooms()
       setRooms(nextRooms)
-      setUnread(Object.fromEntries(nextRooms.map((room) => [room.id, room.unreadCount ?? 0])))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -1119,11 +1117,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       setHasMore(false)
       setNextBefore(null)
       setSidebarOpen(false)
-      setUnread((u) => {
-        const next = { ...u }
-        next[roomId] = 0
-        return next
-      })
       setRooms((prev) => prev.map((room) => room.id === roomId ? { ...room, unreadCount: 0 } : room))
       setLoadingRoom(true)
       try {
@@ -1173,6 +1166,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     const connect = () => {
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
+      ws.onopen = () => {
+        void loadRooms()
+      }
       ws.onmessage = (event) => {
         try {
           const evt = JSON.parse(event.data as string) as {
@@ -1196,8 +1192,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                }
              }
              if (shouldUnread) {
-               setUnread((u) => ({ ...u, [msg.roomId]: (u[msg.roomId] ?? 0) + 1 }))
-               const room = roomsRef.current.find((r) => r.id === msg.roomId)
+                const room = roomsRef.current.find((r) => r.id === msg.roomId)
                const label = room ? roomDisplayName(room) : 'Chat'
                const snippet = msg.content.replace(/\s+/g, ' ').trim()
                if (messageNotificationsEnabledRef.current) {
@@ -1260,17 +1255,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             const room = evt.data as unknown as Room
             if (room?.id) {
               setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [...prev, room])
-              setUnread((prev) => ({ ...prev, [room.id]: room.unreadCount ?? 0 }))
             }
           } else if (evt.type === 'room.removed') {
             const removedRoomId = evt.roomId
             if (removedRoomId) {
               setRooms((prev) => prev.filter((room) => room.id !== removedRoomId))
-              setUnread((prev) => {
-                const next = { ...prev }
-                delete next[removedRoomId]
-                return next
-              })
               if (activeRoomIdRef.current === removedRoomId) {
                 roomLoadRequestRef.current += 1
                 setActiveRoomId(null)
@@ -1285,6 +1274,20 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             if (payload?.roomId) {
               setRooms((prev) => prev.map((room) =>
                 room.id === payload.roomId ? { ...room, pinnedMessage: payload.pinnedMessage } : room,
+              ))
+            }
+          } else if (evt.type === 'room.updated') {
+            const updated = evt.data as unknown as Room
+            if (updated?.id) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === updated.id ? { ...room, name: updated.name, displayName: updated.displayName, readOnly: updated.readOnly, type: updated.type, updatedAt: updated.updatedAt } : room,
+              ))
+            }
+          } else if (evt.type === 'room.favorite.updated') {
+            const payload = evt.data as unknown as { roomId: string; favorite: boolean }
+            if (payload?.roomId) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === payload.roomId ? { ...room, favorite: payload.favorite } : room,
               ))
             }
           }
@@ -1308,6 +1311,17 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws?.close()
     }
   }, [session.token, showToast])
+
+  useEffect(() => {
+    if (!session.token) return
+    const interval = setInterval(() => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void loadRooms()
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [session.token, loadRooms])
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -1420,7 +1434,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     try {
       const room = await api.createDm(userId)
       setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [...previous, room])
-      setUnread((previous) => ({ ...previous, [room.id]: room.unreadCount ?? 0 }))
       await openRoom(room.id)
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
   }, [openRoom, showToast])
@@ -1495,7 +1508,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
            favoriteConversations={favoriteConversations}
            regularConversations={regularConversations}
           activeRoomId={activeRoomId}
-          unread={unread}
            search={search}
            userResults={searchUsers}
           onSearch={setSearch}
@@ -1738,7 +1750,6 @@ const Sidebar = memo(function Sidebar({
   favoriteConversations,
   regularConversations,
   activeRoomId,
-  unread,
   search,
   userResults,
   onSearch,
@@ -1765,7 +1776,6 @@ const Sidebar = memo(function Sidebar({
   favoriteConversations: Room[]
   regularConversations: Room[]
   activeRoomId: string | null
-  unread: Record<string, number>
   search: string
   userResults: DirectoryUser[]
   onSearch: (q: string) => void
@@ -1842,7 +1852,7 @@ const Sidebar = memo(function Sidebar({
             {favoritesOpen && <div className="nav-list" id="favorites-list">
               {favoriteConversations.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
                 <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
-                <span className="room-name">{roomDisplayName(room)}</span>{!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>)}
             </div>}
         </div>}
@@ -1882,7 +1892,7 @@ const Sidebar = memo(function Sidebar({
                   alt={roomDisplayName(room)}
                 />
                 <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>
             ))}
           </div>}
@@ -1921,7 +1931,7 @@ const Sidebar = memo(function Sidebar({
                   />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
                 </span>
                 <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>
             ))}
           </div>}

@@ -122,6 +122,7 @@ public class RoomService {
                 .orElseThrow(ApiExceptions::notRoomMember);
         membership.setFavorite(!membership.isFavorite());
         roomMemberRepository.save(membership);
+        chatEventPublisher.publishFavoriteUpdated(actor.id(), roomId, membership.isFavorite());
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
                         ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
@@ -233,6 +234,7 @@ public class RoomService {
             room.setDisplayName(name);
             roomRepository.save(room);
             auditService.record("ROOM_UPDATED", actorUser(actor.id()), "room", roomId.toString(), ipAddress);
+            chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         }
         return RoomResponse.from(room);
     }
@@ -244,6 +246,7 @@ public class RoomService {
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         auditService.record("ROOM_AVATAR_UPDATED", actorUser(actor.id()), "room", roomId.toString(), ipAddress);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         return RoomResponse.from(room);
     }
 
@@ -264,6 +267,7 @@ public class RoomService {
         roomRepository.save(room);
         auditService.record("ROOM_UPDATED", actor, "room", roomId.toString(), ipAddress);
         if (readOnlyChanged) auditService.record("ROOM_READ_ONLY_CHANGED", actor, "room", roomId.toString(), ipAddress);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         return RoomResponse.from(room);
     }
 
@@ -275,6 +279,7 @@ public class RoomService {
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, target.getId())) throw ApiExceptions.alreadyMember();
         RoomMember member = addMembership(room, target, request.role() == null || request.role().isBlank() ? ROLE_MEMBER : request.role().trim());
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_ADDED", actor, "member", roomId + ":" + target.getId(), ipAddress);
         return RoomMemberResponse.from(member);
     }
@@ -287,6 +292,7 @@ public class RoomService {
                 .orElseThrow(() -> ApiExceptions.notFound("member/" + userId));
         roomMemberRepository.delete(member);
         chatEventPublisher.publishRoomRemoved(userId, roomId);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_REMOVED", actor, "member", roomId + ":" + userId, ipAddress);
     }
 
@@ -382,6 +388,7 @@ public class RoomService {
                 ? request.role().trim() : ROLE_MEMBER;
         RoomMember member = addMembership(room, target, role);
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_ADDED", actorUser(actor.id()), "member",
                 roomId + ":" + target.getId(), ipAddress);
         messageService.createSystem(roomId,
@@ -399,6 +406,7 @@ public class RoomService {
         User target = member.getUser();
         roomMemberRepository.delete(member);
         chatEventPublisher.publishRoomRemoved(targetUserId, roomId);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_REMOVED", actorUser(actor.id()), "member",
                 roomId + ":" + targetUserId, ipAddress);
         messageService.createSystem(roomId,

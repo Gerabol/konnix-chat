@@ -71,6 +71,17 @@ public class ChatEventPublisher {
         publishToUser(userId, "room.removed", roomId, Map.of("roomId", roomId));
     }
 
+    public void publishRoomUpdated(UUID roomId, RoomResponse room) {
+        publishPayload(roomId, "room.updated", room);
+    }
+
+    public void publishFavoriteUpdated(UUID userId, UUID roomId, boolean favorite) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("favorite", favorite);
+        publishToUser(userId, "room.favorite.updated", roomId, data);
+    }
+
     public void publishReaction(UUID roomId, br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse reaction,
                                 boolean removed) {
         Map<String, Object> data = new LinkedHashMap<>();
