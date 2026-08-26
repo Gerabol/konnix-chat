@@ -73,15 +73,15 @@ services:
     networks:
       - konnix_staging_net
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: konnix-staging-cloudflared
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: konnix-staging-ngrok
     restart: unless-stopped
     depends_on:
       - frontend
     environment:
-      TUNNEL_TOKEN: "${CLOUDFLARE_STAGING_TUNNEL_TOKEN:-}"
-    command: ${CLOUDFLARED_CMD:-tunnel --no-autoupdate --url http://frontend:80}
+      NGROK_AUTHTOKEN: "${NGROK_AUTHTOKEN:-}"
+    command: "http frontend:80 --url ${NGROK_DOMAIN:-https://konnix-chat-cge-homolog.ngrok-free.dev}"
     networks:
       - konnix_staging_net
 
