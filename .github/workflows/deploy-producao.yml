@@ -14,58 +14,15 @@ jobs:
   deploy:
     name: Deploy no Servidor Local (Produção)
     runs-on: [self-hosted]
-    defaults:
-      run:
-        shell: bash
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
-      # SEC-04: Bloqueia inicialização com credenciais default se o .env.prod não foi configurado manualmente
       - name: Validar Existência do Arquivo de Ambiente (.env.prod)
-        run: |
-          if [ ! -f deploy/.env.prod ]; then
-            echo "::error::Arquivo deploy/.env.prod não encontrado no host! O arquivo deve ser criado manualmente com senhas e chaves seguras antes do deploy de produção."
-            exit 1
-          fi
+        run: node deploy/deploy-helper.js check-prod-env
 
       - name: Atualizar e Subir Containers de Produção
-        run: |
-          echo "==> Realizando build e deploy dos containers de produção..."
-          docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build --remove-orphans
+        run: docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build --remove-orphans
 
-      - name: Healthcheck da Aplicação
-        run: |
-          echo "==> Aguardando inicialização completa do Backend e Frontend de Produção..."
-          MAX_RETRIES=30
-          COUNT=0
-          SUCCESS=0
-
-          while [ $COUNT -lt $MAX_RETRIES ]; do
-            if curl -s -f http://127.0.0.1:8080/api/public/server-info > /dev/null 2>&1; then
-              echo "✓ Backend de Produção respondendo com sucesso em http://127.0.0.1:8080!"
-              SUCCESS=1
-              break
-            fi
-            echo "Aguardando backend de produção inicializar... ($((COUNT + 1))/$MAX_RETRIES)"
-            sleep 3
-            COUNT=$((COUNT + 1))
-          done
-
-          if [ $SUCCESS -ne 1 ]; then
-            echo "ERRO: O backend de produção não respondeu dentro do tempo limite."
-            docker logs --tail=50 konnix-prod-backend
-            exit 1
-          fi
-
-      - name: Publicar Resumo do Deploy
-        run: |
-          echo "### 🚀 Deploy de Produção Concluído com Sucesso!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Ambiente**: Produção (Production)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`main\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Data/Hora**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status Backend**: Saudável (\`http://127.0.0.1:8080\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status Frontend**: Ativo (\`http://127.0.0.1:80\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status Cloudflare Tunnel**: Conectado ao Domínio Corporativo" >> $GITHUB_STEP_SUMMARY
+      - name: Healthcheck da Aplicação de Produção
+        run: node deploy/deploy-helper.js healthcheck-prod
