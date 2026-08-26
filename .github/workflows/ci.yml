@@ -29,6 +29,8 @@ jobs:
 
       - name: Compilar e Executar Testes do Backend
         working-directory: ./backend
+        env:
+          KONNIX_UPLOADS_DIR: target/test-uploads
         run: |
           mvn -B clean verify
 

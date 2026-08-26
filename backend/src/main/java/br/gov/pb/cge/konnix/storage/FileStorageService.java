@@ -25,7 +25,7 @@ public class FileStorageService {
 
     private final Path root;
 
-    public FileStorageService(@Value("${konnix.uploads.dir:/app/uploads}") String uploadsDir) {
+    public FileStorageService(@Value("${konnix.uploads.dir:./uploads}") String uploadsDir) {
         this.root = Paths.get(uploadsDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(root);
