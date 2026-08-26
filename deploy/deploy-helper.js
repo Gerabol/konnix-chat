@@ -4,7 +4,7 @@
 // ==============================================================================
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const os = require('os');
 const { execSync } = require('child_process');
 
 const action = process.argv[2];
@@ -12,18 +12,27 @@ const action = process.argv[2];
 if (action === 'prepare-staging-env') {
   const envFile = path.join(__dirname, '.env.staging');
   const exampleFile = path.join(__dirname, '.env.staging.example');
+  const persistentDir = path.join(os.homedir(), '.konnix');
+  const persistentEnv = path.join(persistentDir, 'staging.env');
 
-  if (!fs.existsSync(envFile)) {
-    console.log('Criando deploy/.env.staging a partir de .env.staging.example...');
-    let content = fs.readFileSync(exampleFile, 'utf8');
-    const randPass = crypto.randomBytes(16).toString('hex');
-    const adminPass = crypto.randomBytes(12).toString('base64');
-    content = content.replace(/^POSTGRES_PASSWORD=.*$/m, `POSTGRES_PASSWORD=${randPass}`);
-    content = content.replace(/^KONNIX_ADMIN_PASSWORD=.*$/m, `KONNIX_ADMIN_PASSWORD=${adminPass}`);
-    fs.writeFileSync(envFile, content, 'utf8');
-    console.log('✓ deploy/.env.staging criado com sucesso com credenciais seguras geradas.');
+  if (!fs.existsSync(persistentDir)) {
+    fs.mkdirSync(persistentDir, { recursive: true });
+  }
+
+  if (fs.existsSync(persistentEnv)) {
+    fs.copyFileSync(persistentEnv, envFile);
+    console.log('✓ deploy/.env.staging restaurado da persistência (~/.konnix/staging.env).');
   } else {
-    console.log('✓ deploy/.env.staging já existe no host.');
+    console.log('Inicializando credenciais persistentes de homologação...');
+    fs.copyFileSync(exampleFile, envFile);
+    fs.copyFileSync(exampleFile, persistentEnv);
+
+    // Reseta volumes anteriores para garantir sincronização das credenciais com o PostgreSQL
+    try {
+      console.log('Sincronizando volume do PostgreSQL para o primeiro ciclo...');
+      execSync('docker compose -f deploy/docker-compose.staging.yml down -v', { stdio: 'inherit' });
+    } catch (e) {}
+    console.log('✓ deploy/.env.staging criado e sincronizado com o banco.');
   }
 } else if (action === 'check-prod-env') {
   const envFile = path.join(__dirname, '.env.prod');
@@ -58,7 +67,7 @@ if (action === 'prepare-staging-env') {
     }
 
     // Obter URL pública do Cloudflare Tunnel
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 8000));
     let url = 'Domínio Personalizado Configurado ou Quick Tunnel Ativo';
     try {
       const logs = execSync('docker logs --tail=100 konnix-staging-cloudflared', { encoding: 'utf8' });
