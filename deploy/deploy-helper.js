@@ -34,6 +34,21 @@ if (action === 'prepare-staging-env') {
     } catch (e) {}
     console.log('✓ deploy/.env.staging criado e sincronizado com o banco.');
   }
+
+  // Verifica se o token da Cloudflare foi configurado
+  let content = fs.readFileSync(envFile, 'utf8');
+  const tokenMatch = content.match(/^CLOUDFLARE_STAGING_TUNNEL_TOKEN=(.+)$/m);
+  const token = tokenMatch ? tokenMatch[1].trim() : '';
+
+  content = content.replace(/\r/g, '').replace(/^CLOUDFLARED_CMD=.*$/m, '').trim();
+  if (token && token.length > 10) {
+    console.log('✓ Token do Cloudflare Tunnel detectado! Configurando modo de Túnel Nomeado com Domínio Fixo...');
+    content += '\nCLOUDFLARED_CMD="tunnel --no-autoupdate run"\n';
+  } else {
+    console.log('ℹ Nenhum token configurado. Utilizando modo Quick Tunnel gratuito...');
+    content += '\nCLOUDFLARED_CMD="tunnel --no-autoupdate --url http://frontend:80"\n';
+  }
+  fs.writeFileSync(envFile, content, 'utf8');
 } else if (action === 'check-prod-env') {
   const envFile = path.join(__dirname, '.env.prod');
   if (!fs.existsSync(envFile)) {
