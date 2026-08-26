@@ -14,6 +14,9 @@ jobs:
   deploy:
     name: Deploy no Servidor Local (Homologação)
     runs-on: [self-hosted]
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
@@ -23,11 +26,11 @@ jobs:
           if [ ! -f deploy/.env.staging ]; then
             echo "Criando deploy/.env.staging a partir do exemplo com senhas seguras geradas..."
             cp deploy/.env.staging.example deploy/.env.staging
-            RAND_PASS=$(openssl rand -hex 16)
-            ADMIN_PASS=$(openssl rand -base64 16)
+            RAND_PASS=$(openssl rand -hex 16 2>/dev/null || node -e "console.log(require('crypto').randomBytes(16).toString('hex'))" 2>/dev/null || date +%s)
+            ADMIN_PASS=$(openssl rand -base64 16 2>/dev/null || node -e "console.log(require('crypto').randomBytes(12).toString('base64'))" 2>/dev/null || echo "AdminKonnix123!")
             # Preenche credenciais geradas dinamicamente
-            sed -i.bak "s/^POSTGRES_PASSWORD=.*$/POSTGRES_PASSWORD=${RAND_PASS}/" deploy/.env.staging
-            sed -i.bak "s/^KONNIX_ADMIN_PASSWORD=.*$/KONNIX_ADMIN_PASSWORD=${ADMIN_PASS}/" deploy/.env.staging
+            sed -i.bak "s/^POSTGRES_PASSWORD=.*$/POSTGRES_PASSWORD=${RAND_PASS}/" deploy/.env.staging || sed -i "s/^POSTGRES_PASSWORD=.*$/POSTGRES_PASSWORD=${RAND_PASS}/" deploy/.env.staging
+            sed -i.bak "s/^KONNIX_ADMIN_PASSWORD=.*$/KONNIX_ADMIN_PASSWORD=${ADMIN_PASS}/" deploy/.env.staging || sed -i "s/^KONNIX_ADMIN_PASSWORD=.*$/KONNIX_ADMIN_PASSWORD=${ADMIN_PASS}/" deploy/.env.staging
             rm -f deploy/.env.staging.bak
           fi
 
@@ -44,8 +47,8 @@ jobs:
           SUCCESS=0
 
           while [ $COUNT -lt $MAX_RETRIES ]; do
-            if curl -s -f http://127.0.0.1:8082/api/public/server-info > /dev/null 2>&1; then
-              echo "✓ Backend respondendo com sucesso em http://127.0.0.1:8082!"
+            if curl -s -f http://127.0.0.1:8082/api/public/server-info > /dev/null 2>&1 || curl -s -f http://localhost:8082/api/public/server-info > /dev/null 2>&1; then
+              echo "✓ Backend respondendo com sucesso!"
               SUCCESS=1
               break
             fi

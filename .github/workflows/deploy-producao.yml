@@ -14,6 +14,9 @@ jobs:
   deploy:
     name: Deploy no Servidor Local (Produção)
     runs-on: [self-hosted]
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
