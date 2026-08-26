@@ -62,7 +62,8 @@ if (action === 'prepare-staging-env') {
     let url = 'Domínio Personalizado Configurado ou Quick Tunnel Ativo';
     try {
       const logs = execSync('docker logs --tail=100 konnix-staging-cloudflared', { encoding: 'utf8' });
-      const matches = logs.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g);
+      const cleanLogs = logs.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+      const matches = cleanLogs.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g);
       if (matches && matches.length > 0) {
         url = matches[matches.length - 1];
       }
