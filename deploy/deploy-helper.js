@@ -67,11 +67,11 @@ if (action === 'prepare-staging-env') {
     }
 
     // Obter URL pública do Cloudflare Tunnel
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 6000));
     let url = 'Domínio Personalizado Configurado ou Quick Tunnel Ativo';
     try {
-      const logs = execSync('docker logs --tail=100 konnix-staging-cloudflared', { encoding: 'utf8' });
-      const cleanLogs = logs.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+      const logs = execSync('docker logs --tail=150 konnix-staging-cloudflared 2>&1', { encoding: 'utf8' });
+      const cleanLogs = logs.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
       const matches = cleanLogs.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g);
       if (matches && matches.length > 0) {
         url = matches[matches.length - 1];
