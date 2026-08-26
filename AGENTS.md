@@ -52,6 +52,7 @@ Para apoiar as decisões técnicas e manter a integridade da base de código, co
 - [Guia do Frontend](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/frontend-guide.md): Arquitetura React 19, PWA Service Worker, sistema de temas e suporte desktop Tauri.
 - [Design System & UI Kit](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/design-system.md): Tokens CSS (`--konnix-*`), 13 temas visuais e catálogo de componentes `.kx-*` em `docs/tema/`.
 - [Referência da API REST](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/api-reference.md): Estrutura do envelope JSON, catálogo de endpoints e códigos de status.
+- [Guia de DevOps, CI/CD e Deploys](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/devops-deployment-guide.md): Automação com GitHub Actions, Self-Hosted Runner, Nginx e Cloudflare Tunnel.
 
 ---
 

@@ -60,6 +60,7 @@ Comprehensive technical documentation and guides are organized under the [`docs/
 - [Frontend Guide](docs/code/frontend-guide.md): React 19, TypeScript, Vite, PWA, and Tauri Desktop.
 - [Design System & UI Kit](docs/code/design-system.md): Tokens, 13 visual themes, and `.kx-*` components from [`docs/tema/`](docs/tema/).
 - [REST API Reference](docs/code/api-reference.md): Standard JSON envelope, error codes, and endpoint catalog.
+- [DevOps & Deployment Guide](docs/code/devops-deployment-guide.md): GitHub Actions CI/CD, self-hosted runner automation, and Cloudflare Tunnel.
 
 ## AI Agents & Governance
 
