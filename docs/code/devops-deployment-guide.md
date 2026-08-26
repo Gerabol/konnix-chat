@@ -102,27 +102,29 @@ Certifique-se de que a máquina possui instalados:
 
 ### 3.2. Instalação do GitHub Actions Runner via Script Interativo
 
-Disponibilizamos um script automatizado que realiza o download, registro e configuração do serviço:
+Disponibilizamos scripts automatizados multiplataforma que realizam o download com validação de checksum SHA-256, registro do runner e configuração do serviço:
 
-1. Clone o repositório na máquina:
+#### No Windows (PowerShell):
+1. Abra o **PowerShell** na pasta raiz do projeto:
+   ```powershell
+   .\deploy\setup-runner.ps1
+   ```
+   *(Ou passe o token diretamente: `.\deploy\setup-runner.ps1 -Token "SEU_TOKEN_AQUI"`)*
+
+#### No Linux / macOS (Bash):
+1. Execute o script interativo:
    ```bash
-   git clone https://github.com/Gerabol/konnix-chat.git
-   cd konnix-chat
+   ./deploy/setup-runner.sh
    ```
 
 2. Obtenha o token de registro no GitHub:
    - Acesse: **Repositório** -> **Settings** -> **Actions** -> **Runners** -> **New self-hosted runner**.
    - Copie o token exibido na flag `--token <SEU_TOKEN>`.
 
-3. Execute o script interativo:
-   ```bash
-   ./deploy/setup-runner.sh
-   ```
-
-4. O script solicitará:
+3. O assistente solicitará:
    - URL do repositório (`https://github.com/Gerabol/konnix-chat`).
    - Token de registro copiado do GitHub.
-   - Desejo de registrar como serviço do sistema (`systemd`).
+   - Desejo de registrar como serviço do sistema (Windows Service no Windows / `systemd` no Linux).
 
 Após finalizar, o runner aparecerá com status **Idle / Online** em `Settings -> Actions -> Runners`.
 
