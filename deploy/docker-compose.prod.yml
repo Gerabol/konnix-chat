@@ -6,10 +6,9 @@ services:
     container_name: konnix-prod-postgres
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-konnix}
-      # SEC-04: Exige senha definida no .env.prod sem fallback fraco
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}
-      POSTGRES_DB: ${POSTGRES_DB:-konnix_prod}
+      POSTGRES_USER: "${POSTGRES_USER:-konnix}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}"
+      POSTGRES_DB: "${POSTGRES_DB:-konnix_prod}"
     volumes:
       - konnix_prod_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,29 +29,27 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-konnix_prod}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-konnix}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-konnix_prod}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-konnix}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}"
 
-      KONNIX_UPLOADS_DIR: /app/uploads
+      KONNIX_UPLOADS_DIR: "/app/uploads"
 
-      KONNIX_ADMIN_USERNAME: ${KONNIX_ADMIN_USERNAME:-admin}
-      KONNIX_ADMIN_NAME: ${KONNIX_ADMIN_NAME:-Administrador}
-      KONNIX_ADMIN_EMAIL: ${KONNIX_ADMIN_EMAIL:?ERRO: KONNIX_ADMIN_EMAIL obrigatorio no deploy/.env.prod}
-      KONNIX_ADMIN_PASSWORD: ${KONNIX_ADMIN_PASSWORD:?ERRO: KONNIX_ADMIN_PASSWORD obrigatorio no deploy/.env.prod}
+      KONNIX_ADMIN_USERNAME: "${KONNIX_ADMIN_USERNAME:-admin}"
+      KONNIX_ADMIN_NAME: "${KONNIX_ADMIN_NAME:-Administrador}"
+      KONNIX_ADMIN_EMAIL: "${KONNIX_ADMIN_EMAIL:?ERRO: KONNIX_ADMIN_EMAIL obrigatorio no deploy/.env.prod}"
+      KONNIX_ADMIN_PASSWORD: "${KONNIX_ADMIN_PASSWORD:?ERRO: KONNIX_ADMIN_PASSWORD obrigatorio no deploy/.env.prod}"
 
-      KONNIX_VAPID_PUBLIC_KEY: ${KONNIX_VAPID_PUBLIC_KEY:-}
-      KONNIX_VAPID_PRIVATE_KEY: ${KONNIX_VAPID_PRIVATE_KEY:-}
-      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:admin@konnix.local}
+      KONNIX_VAPID_PUBLIC_KEY: "${KONNIX_VAPID_PUBLIC_KEY:-}"
+      KONNIX_VAPID_PRIVATE_KEY: "${KONNIX_VAPID_PRIVATE_KEY:-}"
+      KONNIX_VAPID_SUBJECT: "${KONNIX_VAPID_SUBJECT:-mailto:admin@konnix.local}"
 
-    # Bind estrito em loopback 127.0.0.1 (SEC-03: impede exposição indevida na rede local)
     ports:
       - "127.0.0.1:${PROD_BACKEND_PORT:-8080}:8080"
 
     volumes:
       - konnix_prod_uploads:/app/uploads
 
-    # Healthcheck para sincronizar inicialização com o Nginx (INCONS-03)
     healthcheck:
       test: ["CMD-SHELL", "curl -f -s http://localhost:8080/api/public/server-info > /dev/null || exit 1"]
       interval: 10s
@@ -72,7 +69,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    # Bind estrito em loopback 127.0.0.1 (SEC-03)
     ports:
       - "127.0.0.1:${PROD_FRONTEND_PORT:-80}:80"
     networks:
@@ -85,7 +81,7 @@ services:
     depends_on:
       - frontend
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_PROD_TUNNEL_TOKEN:?ERRO: CLOUDFLARE_PROD_TUNNEL_TOKEN obrigatorio no deploy/.env.prod}
+      TUNNEL_TOKEN: "${CLOUDFLARE_PROD_TUNNEL_TOKEN:?ERRO: CLOUDFLARE_PROD_TUNNEL_TOKEN obrigatorio no deploy/.env.prod}"
     command: ["tunnel", "--no-autoupdate", "run"]
     networks:
       - konnix_prod_net
