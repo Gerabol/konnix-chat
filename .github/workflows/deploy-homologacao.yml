@@ -22,69 +22,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Preparar Arquivo de Ambiente (.env)
-        run: |
-          if [ ! -f deploy/.env.staging ]; then
-            echo "Criando deploy/.env.staging a partir do exemplo com senhas seguras geradas..."
-            cp deploy/.env.staging.example deploy/.env.staging
-            RAND_PASS=$(openssl rand -hex 16)
-            ADMIN_PASS=$(openssl rand -base64 16)
-            # Preenche credenciais geradas dinamicamente
-            sed -i.bak "s/^POSTGRES_PASSWORD=.*$/POSTGRES_PASSWORD=${RAND_PASS}/" deploy/.env.staging
-            sed -i.bak "s/^KONNIX_ADMIN_PASSWORD=.*$/KONNIX_ADMIN_PASSWORD=${ADMIN_PASS}/" deploy/.env.staging
-            rm -f deploy/.env.staging.bak
-          fi
+        run: node deploy/deploy-helper.js prepare-staging-env
 
       - name: Atualizar e Subir Containers de Homologação
-        run: |
-          echo "==> Realizando build e deploy dos containers de homologação..."
-          docker compose --env-file deploy/.env.staging -f deploy/docker-compose.staging.yml up -d --build --remove-orphans
+        run: docker compose --env-file deploy/.env.staging -f deploy/docker-compose.staging.yml up -d --build --remove-orphans
 
-      - name: Healthcheck da Aplicação
-        run: |
-          echo "==> Aguardando inicialização completa do Backend e Frontend..."
-          MAX_RETRIES=30
-          COUNT=0
-          SUCCESS=0
-
-          while [ $COUNT -lt $MAX_RETRIES ]; do
-            if curl -s -f http://127.0.0.1:8082/api/public/server-info > /dev/null 2>&1; then
-              echo "✓ Backend respondendo com sucesso em http://127.0.0.1:8082!"
-              SUCCESS=1
-              break
-            fi
-            echo "Aguardando backend inicializar... ($((COUNT + 1))/$MAX_RETRIES)"
-            sleep 3
-            COUNT=$((COUNT + 1))
-          done
-
-          if [ $SUCCESS -ne 1 ]; then
-            echo "ERRO: O backend de homologação não respondeu dentro do tempo limite."
-            docker logs --tail=50 konnix-staging-backend
-            exit 1
-          fi
-
-      - name: Obter URL Pública do Cloudflare Tunnel
-        id: tunnel_url
-        run: |
-          sleep 5
-          TUNNEL_LOGS=$(docker logs --tail=100 konnix-staging-cloudflared 2>&1 || true)
-          QUICK_URL=$(echo "$TUNNEL_LOGS" | grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)
-
-          if [ -n "$QUICK_URL" ]; then
-            echo "url=$QUICK_URL" >> $GITHUB_OUTPUT
-            echo "URL Pública (Quick Tunnel): $QUICK_URL"
-          else
-            echo "url=Domínio Personalizado Configurado ou Quick Tunnel Ativo" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Publicar Resumo do Deploy
-        run: |
-          echo "### 🚀 Deploy de Homologação Concluído com Sucesso!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Ambiente**: Homologação (Staging)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`homologacao\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Data/Hora**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- **Porta Local Frontend**: \`http://localhost:5175\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Porta Local Backend**: \`http://localhost:8082\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Acesso Público**: ${{ steps.tunnel_url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+      - name: Healthcheck e URL Pública do Cloudflare Tunnel
+        run: node deploy/deploy-helper.js healthcheck-staging
