@@ -18,6 +18,11 @@ jobs:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Validar Existência do Arquivo de Ambiente (.env.prod)
         run: node deploy/deploy-helper.js check-prod-env
 
