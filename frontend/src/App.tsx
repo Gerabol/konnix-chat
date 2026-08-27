@@ -971,6 +971,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
     try { return localStorage.getItem('konnix-message-notifications') !== 'false' } catch { return true }
   })
@@ -1460,6 +1461,13 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     }
   }
 
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const message = pendingDelete
+    setPendingDelete(null)
+    await handleDelete(message)
+  }
+
   const handleRoomCreated = async (roomId: string) => {
     setNewRoomOpen(false)
     setNewDmOpen(false)
@@ -1548,7 +1556,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
                onSend={sendMessage}
                onInitialPositioned={() => { isInitializingConversationRef.current = false }}
-                onDelete={handleDelete}
+                onDelete={(message) => {
+                  if (!message.deletedAt && message.userId === me.id && me.accountStatus !== 'READ_ONLY') setPendingDelete(message)
+                }}
                 onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
                 onReaction={(message, emoji) => void reactMessage(message, emoji)}
               onStartDm={startDirectConversation}
@@ -1598,6 +1608,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={showToast} />}
+      {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
       {!online && (
         <div className="offline-banner" role="alert">
@@ -2277,6 +2288,8 @@ function Modal({
   className?: string
   overlayClassName?: string
 }) {
+  const titleId = `modal-title-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+  const closeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -2284,13 +2297,14 @@ function Modal({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+  useEffect(() => { closeRef.current?.focus() }, [])
 
   return (
     <div className={`modal-overlay ${overlayClassName}`} onMouseDown={onClose}>
-      <div className={`modal ${className}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Fechar">
+          <h3 id={titleId}>{title}</h3>
+          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Fechar">
             ×
           </button>
         </div>
@@ -2298,6 +2312,13 @@ function Modal({
       </div>
     </div>
   )
+}
+
+function ConfirmModal({ title, message, onClose, onConfirm }: { title: string; message: string; onClose: () => void; onConfirm: () => void }) {
+  return <Modal title={title} onClose={onClose} className="confirm-modal">
+    <p className="confirm-message">{message}</p>
+    <div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="danger-action confirm-danger" onClick={onConfirm}>Excluir</button></div>
+  </Modal>
 }
 
 function useEscapeClose(onClose: () => void) {
@@ -2704,6 +2725,8 @@ function RoomView({
   const [pinnedActionId, setPinnedActionId] = useState<string | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
+  const [profileCommonRooms, setProfileCommonRooms] = useState<Room[]>([])
+  const [profileCommonRoomsLoading, setProfileCommonRoomsLoading] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profilePosition, setProfilePosition] = useState({ top: 80, left: 24 })
   const [roomInfoOpen, setRoomInfoOpen] = useState(false)
@@ -3138,9 +3161,19 @@ function RoomView({
       })
     }
     setProfileLoading(true)
-    try { setProfile(await api.userProfile(userId)) }
-    catch { notify('Não foi possível carregar o perfil') }
-    finally { setProfileLoading(false) }
+    setProfileCommonRoomsLoading(true)
+    const currentRoomIsCommon = room.type !== 'DIRECT' && roomMembers.some((member) => member.userId === userId && member.active)
+    setProfileCommonRooms(currentRoomIsCommon ? [room] : [])
+    const [profileResult, commonRoomsResult] = await Promise.allSettled([api.userProfile(userId), api.commonRooms(userId)])
+    if (profileResult.status === 'fulfilled') setProfile(profileResult.value)
+    else { setProfile(null); notify('Não foi possível carregar o perfil') }
+    setProfileLoading(false)
+    if (commonRoomsResult.status === 'fulfilled') {
+      const roomsById = new Map(commonRoomsResult.value.map((commonRoom) => [commonRoom.id, commonRoom]))
+      if (currentRoomIsCommon) roomsById.set(room.id, room)
+      setProfileCommonRooms([...roomsById.values()])
+    }
+    setProfileCommonRoomsLoading(false)
   }
 
   const showRoomInfo = (event: React.MouseEvent) => {
@@ -3619,7 +3652,7 @@ function RoomView({
         const readMessage = messages.find((message) => message.id === readMessageId)
         return readMessage ? <ReadReceiptsModal message={readMessage} onClose={() => setReadMessageId(null)} /> : null
       })()}
-      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} />}
+      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
       {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={notify} />}
       {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={notify} />}
@@ -4000,7 +4033,7 @@ function usePopoverDismiss(cardRef: React.RefObject<HTMLDivElement | null>, onCl
   }, [cardRef, onClose])
 }
 
-function UserProfileCard({ profile, loading, position, onClose, onContact }: { profile: PublicProfile | null; loading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void }) {
+function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, position, onClose, onContact }: { profile: PublicProfile | null; loading: boolean; commonRooms: Room[]; commonRoomsLoading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   usePopoverDismiss(cardRef, onClose)
 
@@ -4016,6 +4049,12 @@ function UserProfileCard({ profile, loading, position, onClose, onContact }: { p
           <div className="profile-info-row"><span>Email</span><strong>{profile.email || 'E-mail não informado'}</strong></div>
           <div className="profile-info-row"><span>Status</span><strong>{presenceLabel(profile.presenceStatus)}</strong></div>
         </div>
+        <section className="profile-common-rooms" aria-label="Grupos e canais em comum">
+          <strong>Grupos e canais em comum</strong>
+          {commonRoomsLoading && <span className="profile-common-rooms-empty">Carregando...</span>}
+          {!commonRoomsLoading && commonRooms.length === 0 && <span className="profile-common-rooms-empty">Nenhum grupo ou canal em comum.</span>}
+          {!commonRoomsLoading && commonRooms.length > 0 && <div className="profile-common-rooms-list">{commonRooms.map((room) => <span key={room.id} className="profile-common-room"><b>{room.type === 'CHANNEL' ? '#' : '🔒'}</b>{room.displayName || room.name}</span>)}</div>}
+        </section>
         {onContact && <button type="button" className="profile-contact-button" onClick={onContact} title="Conversar com este usuário" aria-label="Conversar com este usuário"><MessageCircleIcon /></button>}
       </div>
     </div>}

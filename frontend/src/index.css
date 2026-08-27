@@ -3264,6 +3264,12 @@ img.room-header-avatar {
 .profile-info-row { display: grid; grid-template-columns: minmax(92px, 110px) minmax(0, 1fr); gap: 0.75rem; align-items: center; min-height: 38px; border-bottom: 1px solid var(--konnix-border); }
 .profile-info-row span { color: var(--konnix-ink-soft); font-size: 0.78rem; font-weight: 600; }
 .profile-info-row strong { min-width: 0; overflow: hidden; color: var(--konnix-ink); font-size: 0.82rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.profile-common-rooms { grid-column: 1 / -1; min-width: 0; margin-top: 0.2rem; padding-top: 0.75rem; border-top: 1px solid var(--konnix-border); }
+.profile-common-rooms > strong { display: block; margin-bottom: 0.45rem; color: var(--konnix-ink-soft); font-size: 0.78rem; }
+.profile-common-rooms-empty { color: var(--konnix-ink-soft); font-size: 0.78rem; }
+.profile-common-rooms-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.profile-common-room { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 0.3rem; padding: 0.3rem 0.45rem; border: 1px solid var(--konnix-border); border-radius: 7px; background: var(--konnix-bg); color: var(--konnix-ink); font-size: 0.75rem; }
+.profile-common-room b { color: var(--konnix-primary); font-size: 0.8rem; }
 .profile-loading { padding: 1rem 0; color: var(--konnix-ink-soft); font-size: 0.82rem; }
 .message-avatar-button { padding: 0; border: 0; border-radius: 50%; background: transparent; }
 .message-avatar-button:hover { opacity: 0.82; }
@@ -3649,7 +3655,8 @@ img.room-header-avatar {
 .admin-filter-grid .admin-label { min-width: 0; }
 .admin-filter-actions { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; }
 .admin-loading, .admin-error { padding: 1.2rem; border-radius: 10px; background: var(--konnix-surface); color: var(--konnix-ink-soft); }
-.admin-error { border: 1px solid rgba(229, 72, 77, 0.35); color: var(--konnix-danger); }
+.admin-loading { border: 1px solid color-mix(in srgb, var(--konnix-primary) 20%, var(--konnix-border)); }
+.admin-error { border: 1px solid color-mix(in srgb, var(--konnix-danger) 45%, var(--konnix-border)); background: color-mix(in srgb, var(--konnix-danger) 8%, var(--konnix-surface)); color: var(--konnix-danger); }
 .admin-id { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
 .monitoring-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.8rem; }
 .monitoring-card { display: flex; min-height: 132px; flex-direction: column; justify-content: space-between; gap: 0.45rem; padding: 1rem; border: 1px solid var(--konnix-border); border-radius: 12px; background: var(--konnix-surface); box-shadow: 0 4px 14px rgba(32, 34, 48, 0.04); }
@@ -3702,6 +3709,28 @@ img.room-header-avatar {
 .password-roles-row > .admin-label { flex: 1; }
 .admin-room-modal { width: min(760px, calc(100vw - 32px)); }
 .admin-toast { z-index: 1200; }
+
+.activity-card { margin-bottom: 0.8rem; padding: 1rem; border: 1px solid var(--konnix-border); border-radius: 12px; background: var(--konnix-surface); box-shadow: 0 4px 14px color-mix(in srgb, var(--konnix-ink) 5%, transparent); }
+.activity-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.activity-card h2 { margin: 0; color: var(--konnix-ink); font-size: 0.95rem; }
+.activity-card p { margin: 0.25rem 0 0; color: var(--konnix-ink-soft); font-size: 0.75rem; }
+.activity-period { padding: 0.35rem 0.55rem; border: 1px solid var(--konnix-border); border-radius: 7px; color: var(--konnix-ink-soft); font-size: 0.72rem; font-weight: 600; }
+.activity-chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: end; gap: 0.55rem; height: 150px; margin-top: 1rem; padding: 0.5rem 0.25rem 0; border-bottom: 1px solid var(--konnix-border); }
+.activity-column { display: flex; min-width: 0; height: 100%; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0.35rem; }
+.activity-bars { display: flex; width: min(42px, 100%); height: 125px; align-items: flex-end; justify-content: center; gap: 3px; }
+.activity-bars i { display: block; width: 50%; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--konnix-primary); }
+.activity-bars .activity-users-bar { background: var(--konnix-accent); }
+.activity-column small { color: var(--konnix-ink-soft); font-size: 0.65rem; text-transform: capitalize; }
+.activity-legend { display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 0.75rem; color: var(--konnix-ink-soft); font-size: 0.72rem; }
+.activity-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.activity-legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--konnix-primary); }
+.activity-legend .activity-users-dot { background: var(--konnix-accent); }
+
+.kx-alert, .system-alert { display: flex; align-items: flex-start; gap: 0.55rem; padding: 0.7rem 0.8rem; border: 1px solid var(--alert-border, var(--konnix-border)); border-radius: 9px; background: var(--alert-bg, var(--konnix-surface)); color: var(--alert-text, var(--konnix-ink)); font-size: 0.82rem; line-height: 1.4; }
+.kx-alert-info, .system-alert.info { --alert-border: color-mix(in srgb, var(--konnix-primary) 42%, var(--konnix-border)); --alert-bg: color-mix(in srgb, var(--konnix-primary) 9%, var(--konnix-surface)); --alert-text: var(--konnix-primary-deep); }
+.kx-alert-ok, .system-alert.success { --alert-border: color-mix(in srgb, var(--konnix-ok) 46%, var(--konnix-border)); --alert-bg: color-mix(in srgb, var(--konnix-ok) 10%, var(--konnix-surface)); --alert-text: var(--konnix-ok); }
+.kx-alert-danger, .system-alert.danger { --alert-border: color-mix(in srgb, var(--konnix-danger) 46%, var(--konnix-border)); --alert-bg: color-mix(in srgb, var(--konnix-danger) 9%, var(--konnix-surface)); --alert-text: var(--konnix-danger); }
+.system-alert.warning { --alert-border: color-mix(in srgb, #f5a623 48%, var(--konnix-border)); --alert-bg: color-mix(in srgb, #f5a623 10%, var(--konnix-surface)); --alert-text: #a66a00; }
 
 /* Floating controls must remain above modal surfaces and their scrollable lists. */
 .modal .presence-menu,

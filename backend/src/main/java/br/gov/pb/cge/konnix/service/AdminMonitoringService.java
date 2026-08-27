@@ -14,8 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.List;
 
 @Service
 public class AdminMonitoringService {
@@ -66,6 +68,17 @@ public class AdminMonitoringService {
         long activeUsers = userRepository.countByAccountStatus("ACTIVE");
         long readOnlyUsers = userRepository.countByAccountStatus("READ_ONLY");
         long disabledUsers = userRepository.countByAccountStatus("DISABLED");
+        ZoneId zone = ZoneId.systemDefault();
+        Instant activityFrom = today.minus(6, ChronoUnit.DAYS);
+        var activityByDay = messageRepository.countActivitySince(activityFrom, zone.getId()).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        row -> (String) row[0],
+                        row -> new MonitoringMetricsResponse.ActivityPoint((String) row[0], ((Number) row[1]).longValue(), ((Number) row[2]).longValue())));
+        List<MonitoringMetricsResponse.ActivityPoint> activity = java.util.stream.IntStream.range(0, 7)
+                .mapToObj(offset -> {
+                    String day = today.plus(offset - 6L, ChronoUnit.DAYS).atZone(zone).toLocalDate().toString();
+                    return activityByDay.getOrDefault(day, new MonitoringMetricsResponse.ActivityPoint(day, 0, 0));
+                }).toList();
         Number databaseSize = (Number) entityManager
                 .createNativeQuery("select pg_database_size(current_database())")
                 .getSingleResult();
@@ -82,6 +95,7 @@ public class AdminMonitoringService {
                 auditLogRepository.countByActionAndCreatedAtGreaterThanEqual("LOGIN_SUCCESS", today),
                 sessionRepository.countByRevokedAtIsNullAndExpiresAtAfter(Instant.now()),
                 auditLogRepository.count(),
-                databaseSize.longValue());
+                databaseSize.longValue(),
+                activity);
     }
 }

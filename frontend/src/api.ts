@@ -158,6 +158,7 @@ export type MonitoringMetrics = {
   activeSessions: number
   totalAuditEvents: number
   databaseSizeBytes: number
+  activity: { day: string; messages: number; activeUsers: number }[]
 }
 
 export type AppSettings = { name: string; maxUploadBytes: number }
@@ -287,6 +288,9 @@ export const api = {
   },
   userProfile(userId: string) {
     return request<PublicProfile>(`/api/v1/profiles/users/${userId}`)
+  },
+  commonRooms(userId: string) {
+    return request<Room[]>(`/api/v1/profiles/users/${userId}/common-rooms`)
   },
   updatePresence(status: PresenceStatus) {
     return request<User>('/api/v1/auth/presence', {

@@ -98,6 +98,25 @@ public class RoomService {
                 .toList();
     }
 
+            @Transactional(readOnly = true)
+            public List<RoomResponse> commonRooms(AuthenticatedUser actor, UUID otherUserId) {
+            var actorRoomIds = roomMemberRepository.findByUserId(actor.id()).stream()
+                .filter(RoomMember::isActive)
+                .map(RoomMember::getRoom)
+                .filter(room -> !TYPE_DIRECT.equals(room.getType()))
+                .map(Room::getId)
+                .collect(Collectors.toSet());
+            if (actorRoomIds.isEmpty()) return List.of();
+            return roomMemberRepository.findByUserId(otherUserId).stream()
+                .filter(RoomMember::isActive)
+                .map(RoomMember::getRoom)
+                .filter(room -> actorRoomIds.contains(room.getId()) && !TYPE_DIRECT.equals(room.getType()))
+                .distinct()
+                .sorted(Comparator.comparing(Room::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(RoomResponse::from)
+                .toList();
+            }
+
     @Transactional(readOnly = true)
     public RoomResponse get(UUID id, AuthenticatedUser actor) {
         Room room = roomOrThrow(id);

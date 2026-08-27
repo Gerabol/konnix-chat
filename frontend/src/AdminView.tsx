@@ -240,9 +240,9 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
        <div className="admin-panel-title"><div className="users-title-line"><h1>Users</h1><div className="user-metrics"><span>Total <strong>{users.length}</strong></span><span className="metric-online">● {onlineCount} online</span><span className="metric-offline">● {offlineCount} offline</span><span className="metric-active">● {users.filter((user) => accountStatus(user) === 'ACTIVE').length} ativos</span><span className="metric-read-only">● {users.filter((user) => accountStatus(user) === 'READ_ONLY').length} leitura</span><span className="metric-inactive">● {users.filter((user) => accountStatus(user) === 'DISABLED').length} desativados</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Novo usuário</button></div>
        <div className="admin-toolbar users-toolbar"><input className="input" value={query} placeholder="Pesquisar nome, username ou e-mail" onChange={(event) => { setUserPage(0); setQuery(event.target.value) }} /><div className="user-filter-groups"><div className="user-filter-group"><strong>Status</strong><div className="user-filter-list">{(['active', 'readOnly', 'inactive'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['active', 'readOnly', 'inactive'], event.target.checked)} />{filter === 'active' ? 'Ativos' : filter === 'readOnly' ? 'Leitura' : 'Desativados'}</label>)}</div></div><div className="user-filter-group"><strong>Roles</strong><div className="user-filter-list">{(['ADMIN', 'USER', 'BOT'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['ADMIN', 'USER', 'BOT'], event.target.checked)} />{filter}</label>)}</div></div></div></div>
        <Pager page={userPage} totalPages={userTotalPages} onPage={setUserPage} pageSize={userPageSize} onPageSize={(size) => { setUserPageSize(size); setUserPage(0) }} />
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Usuário</th><th>Status</th><th>Roles</th><th>Ações</th></tr></thead><tbody>
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Usuário</th><th>Username</th><th>Roles</th><th>Status</th><th>Ações</th></tr></thead><tbody>
          {visibleUsers.map((user) => <UserRow key={user.id} user={user} busy={busy} onEdit={() => setEditingUser(user)} onRoles={(roles) => update(() => api.adminUpdateRoles(user.id, roles), 'Roles atualizadas')} />)}
-        {filteredUsers.length === 0 && <tr><td colSpan={4} className="admin-empty">Nenhum usuário encontrado.</td></tr>}
+        {filteredUsers.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhum usuário encontrado.</td></tr>}
       </tbody></table></div>
        <Pager page={userPage} totalPages={userTotalPages} onPage={setUserPage} pageSize={userPageSize} onPageSize={(size) => { setUserPageSize(size); setUserPage(0) }} />
       {editingUser && <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onUpdated={(updated) => setUsers((old) => old.map((item) => item.id === updated.id ? updated : item))} notify={notify} />}
@@ -255,9 +255,10 @@ function UserRow({ user, busy, onEdit, onRoles }: { user: User; busy: boolean; o
   const [roles, setRoles] = useState(user.roles)
   const status = accountStatus(user)
   return <tr>
-    <td><div className="admin-user-cell"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="admin-user-avatar" fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><span><strong>{user.name}</strong><small className="admin-subline">@{user.username} · {user.email || 'sem e-mail'}</small>{user.passwordMigrationRequired && <span className="admin-warning">Senha pendente de migração</span>}</span></div></td>
-    <td><span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>{accountStatusLabel(status)}</span></td>
+    <td><div className="admin-user-cell"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="admin-user-avatar" fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><span><strong>{user.name}</strong><small className="admin-subline">{user.email || 'sem e-mail'}</small>{user.passwordMigrationRequired && <span className="admin-warning">Senha pendente de migração</span>}</span></div></td>
+    <td>@{user.username}</td>
     <td><div className="role-list">{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} disabled={busy} onChange={(event) => { const next = event.target.checked ? [...roles, role] : roles.filter((item) => item !== role); setRoles(next); onRoles(next) }} />{role}</label>)}</div></td>
+    <td><span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>{accountStatusLabel(status)}</span></td>
     <td><div className="admin-row-actions"><button className="icon-action" title="Editar usuário" aria-label="Editar usuário" onClick={onEdit}>✎</button></div></td>
   </tr>
 }
@@ -415,7 +416,9 @@ function MonitoringPanel() {
     <div className="admin-panel-title"><div><h1>Visão geral</h1><p>Indicadores operacionais do Konnix Chat.</p></div></div>
     {error && <div className="admin-error">{error}</div>}
     {!error && !metrics && <div className="admin-loading">Carregando métricas...</div>}
-    {metrics && <div className="monitoring-grid">
+    {metrics && <>
+      <ActivityChart activity={metrics.activity} />
+      <div className="monitoring-grid">
       <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
       <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
       <MetricCard label="Mensagens" value={metrics.totalMessages.toLocaleString('pt-BR')} detail="Mensagens registradas" />
@@ -424,8 +427,20 @@ function MonitoringPanel() {
       <MetricCard label="Logins hoje" value={metrics.dailyLogins.toLocaleString('pt-BR')} detail="Entradas bem-sucedidas desde meia-noite" />
       <MetricCard label="Sessões ativas" value={metrics.activeSessions.toLocaleString('pt-BR')} detail="Sessões válidas no momento" />
       <MetricCard label="Eventos auditados" value={metrics.totalAuditEvents.toLocaleString('pt-BR')} detail="Registros de auditoria" />
-    </div>}
+      </div>
+    </>}
   </section>
+}
+
+function ActivityChart({ activity }: { activity: MonitoringMetrics['activity'] }) {
+  const maximum = Math.max(1, ...activity.map((point) => point.messages))
+  return <article className="activity-card">
+    <div className="activity-card-head"><div><h2>Atividade</h2><p>Mensagens nos últimos sete dias.</p></div><span className="activity-period">7 dias ▾</span></div>
+    <div className="activity-chart" aria-label="Mensagens e usuários ativos nos últimos sete dias">
+      {activity.map((point) => <div className="activity-column" key={point.day} title={`${point.messages} mensagens, ${point.activeUsers} usuários ativos`}><div className="activity-bars"><i style={{ height: `${Math.max(point.messages ? 8 : 2, point.messages / maximum * 100)}%` }} /><i className="activity-users-bar" style={{ height: `${Math.max(point.activeUsers ? 8 : 2, point.activeUsers / Math.max(1, ...activity.map((item) => item.activeUsers)) * 100)}%` }} /></div><small>{new Date(`${point.day}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</small></div>)}
+    </div>
+    <div className="activity-legend"><span><i />Mensagens</span><span><i className="activity-users-dot" />Usuários ativos</span></div>
+  </article>
 }
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
