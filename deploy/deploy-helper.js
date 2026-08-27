@@ -28,12 +28,21 @@ if (action === 'prepare-staging-env') {
     fs.copyFileSync(exampleFile, persistentEnv);
   }
 
+  // Sanitiza linhas: mantém apenas comentários (#), linhas em branco ou KEY=VALUE válidos
+  let rawContent = fs.readFileSync(envFile, 'utf8').replace(/\r/g, '');
+  const cleanLines = rawContent.split('\n').filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    if (trimmed.startsWith('#')) return true;
+    return /^[A-Za-z0-9_]+\s*=/.test(trimmed);
+  });
+  let content = cleanLines.join('\n');
+
   // Verifica se o token do Cloudflare Tunnel foi configurado
-  let content = fs.readFileSync(envFile, 'utf8');
   const tokenMatch = content.match(/^CLOUDFLARE_STAGING_TUNNEL_TOKEN=(.+)$/m);
   const token = tokenMatch ? tokenMatch[1].trim() : '';
 
-  content = content.replace(/\r/g, '').replace(/^CLOUDFLARED_CMD=.*$/m, '').trim();
+  content = content.replace(/^CLOUDFLARED_CMD=.*$/m, '').trim();
   if (token && token.length > 10) {
     console.log('✓ Token do Cloudflare Tunnel detectado! Configurando modo de Túnel Nomeado com Domínio Fixo...');
     content += '\nCLOUDFLARED_CMD="tunnel --no-autoupdate run"\n';
