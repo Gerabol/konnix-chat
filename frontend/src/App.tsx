@@ -1567,6 +1567,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                onSearchResult={addSearchResult}
                onPollUpdated={addSearchResult}
                 onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
+               onOpenRoom={openRoom}
              />
           )}
         </main>
@@ -2685,6 +2686,7 @@ function RoomView({
   onSearchResult,
   onPollUpdated,
   onRoomUpdated,
+  onOpenRoom,
 }: {
   room: Room
   rooms: Room[]
@@ -2709,6 +2711,7 @@ function RoomView({
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
+  onOpenRoom: (roomId: string) => void
 }) {
   const [draft, setDraft] = useState('')
   const [composerExpanded, setComposerExpanded] = useState(false)
@@ -3652,7 +3655,7 @@ function RoomView({
         const readMessage = messages.find((message) => message.id === readMessageId)
         return readMessage ? <ReadReceiptsModal message={readMessage} onClose={() => setReadMessageId(null)} /> : null
       })()}
-      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} />}
+      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
       {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={notify} />}
       {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={notify} />}
@@ -4033,7 +4036,7 @@ function usePopoverDismiss(cardRef: React.RefObject<HTMLDivElement | null>, onCl
   }, [cardRef, onClose])
 }
 
-function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, position, onClose, onContact }: { profile: PublicProfile | null; loading: boolean; commonRooms: Room[]; commonRoomsLoading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void }) {
+function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, position, onClose, onContact, onOpenRoom }: { profile: PublicProfile | null; loading: boolean; commonRooms: Room[]; commonRoomsLoading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void; onOpenRoom?: (roomId: string) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   usePopoverDismiss(cardRef, onClose)
 
@@ -4053,7 +4056,7 @@ function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, po
           <strong>Grupos e canais em comum</strong>
           {commonRoomsLoading && <span className="profile-common-rooms-empty">Carregando...</span>}
           {!commonRoomsLoading && commonRooms.length === 0 && <span className="profile-common-rooms-empty">Nenhum grupo ou canal em comum.</span>}
-          {!commonRoomsLoading && commonRooms.length > 0 && <div className="profile-common-rooms-list">{commonRooms.map((room) => <span key={room.id} className="profile-common-room"><b>{room.type === 'CHANNEL' ? '#' : '🔒'}</b>{room.displayName || room.name}</span>)}</div>}
+          {!commonRoomsLoading && commonRooms.length > 0 && <div className="profile-common-rooms-list">{commonRooms.map((room) => <button type="button" key={room.id} className="profile-common-room" title={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} aria-label={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} disabled={!onOpenRoom} onClick={() => onOpenRoom && onOpenRoom(room.id)}><b>{room.type === 'CHANNEL' ? '#' : '🔒'}</b>{room.displayName || room.name}</button>)}</div>}
         </section>
         {onContact && <button type="button" className="profile-contact-button" onClick={onContact} title="Conversar com este usuário" aria-label="Conversar com este usuário"><MessageCircleIcon /></button>}
       </div>

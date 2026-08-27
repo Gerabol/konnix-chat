@@ -3268,7 +3268,9 @@ img.room-header-avatar {
 .profile-common-rooms > strong { display: block; margin-bottom: 0.45rem; color: var(--konnix-ink-soft); font-size: 0.78rem; }
 .profile-common-rooms-empty { color: var(--konnix-ink-soft); font-size: 0.78rem; }
 .profile-common-rooms-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.profile-common-room { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 0.3rem; padding: 0.3rem 0.45rem; border: 1px solid var(--konnix-border); border-radius: 7px; background: var(--konnix-bg); color: var(--konnix-ink); font-size: 0.75rem; }
+.profile-common-room { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 0.3rem; padding: 0.3rem 0.45rem; border: 1px solid var(--konnix-border); border-radius: 7px; background: var(--konnix-bg); color: var(--konnix-ink); font: inherit; font-size: 0.75rem; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+.profile-common-room:not(:disabled):hover { border-color: var(--konnix-primary); background: var(--konnix-bg); }
+.profile-common-room:disabled { cursor: default; }
 .profile-common-room b { color: var(--konnix-primary); font-size: 0.8rem; }
 .profile-loading { padding: 1rem 0; color: var(--konnix-ink-soft); font-size: 0.82rem; }
 .message-avatar-button { padding: 0; border: 0; border-radius: 50%; background: transparent; }
