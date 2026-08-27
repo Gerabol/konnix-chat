@@ -27,8 +27,8 @@ COPY --from=build /app/dist .
 # Copia a configuração otimizada do Nginx (SPA + Proxy API + WebSocket)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expõe porta HTTP padrão
-EXPOSE 80
+# Expõe portas HTTP (80 padrão e 5173 para compatibilidade de rotas Cloudflare)
+EXPOSE 80 5173
 
 # Healthcheck interno do Nginx
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
