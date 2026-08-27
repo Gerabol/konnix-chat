@@ -129,7 +129,10 @@ if (action === 'prepare-staging-env') {
       fs.appendFileSync(summaryFile, md, 'utf8');
     }
   }
-  checkStaging();
+  checkStaging().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
 } else if (action === 'healthcheck-prod') {
   async function checkProd() {
     console.log('==> Aguardando inicialização completa do Backend de Produção...');
@@ -173,7 +176,10 @@ if (action === 'prepare-staging-env') {
       fs.appendFileSync(summaryFile, md, 'utf8');
     }
   }
-  checkProd();
+  checkProd().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
 } else {
   console.error('Ação desconhecida: ' + action);
   process.exit(1);
