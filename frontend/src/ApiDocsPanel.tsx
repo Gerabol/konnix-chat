@@ -301,11 +301,12 @@ function ApiRequestExportPanel() {
     return path
   }
   const download = () => {
-    const lines = ['# Konnix Chat REST Client requests', '# Backend Spring REST API (PostgreSQL).', '']
+    const lines = ['# Konnix Chat REST Client requests', '# Backend Spring REST API (PostgreSQL).', '@baseUrl = http://localhost:8081', '@token =', '']
     modules.forEach((module) => module.endpoints.forEach((endpoint) => {
       const key = `${module.id}-${endpoint.method}-${endpoint.path}`
       if (!selected.has(key)) return
       const multipart = endpoint.body?.some((field) => field.type === 'MultipartFile')
+      const requestBody = endpoint.requestBody ?? exampleBody(endpoint)
       lines.push(`### ${endpoint.title}`, `# @name ${endpoint.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, `${endpoint.method} {{baseUrl}}${exportPath(endpoint)}`)
       if (endpoint.auth !== 'Não necessária') lines.push('Authorization: Bearer {{token}}')
       lines.push('Accept: application/json')
@@ -313,15 +314,12 @@ function ApiRequestExportPanel() {
       if (multipart) lines.push('Content-Type: multipart/form-data')
       lines.push('')
       if (multipart) lines.push('file=@./arquivo.ext')
-      else if (endpoint.requestBody || endpoint.request) lines.push(json(endpoint.requestBody ?? exampleBody(endpoint)))
+      else if (requestBody) lines.push(json(requestBody))
       lines.push('')
     }))
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob); const link = document.createElement('a')
     link.href = url; link.download = 'requests.http'; link.click(); URL.revokeObjectURL(url)
-    const environment = new Blob([JSON.stringify({ dev: { baseUrl: 'http://localhost:3000', token: '' }, prod: { baseUrl: 'https://api.konnix.chat', token: '' } }, null, 2)], { type: 'application/json;charset=utf-8' })
-    const environmentUrl = URL.createObjectURL(environment); const environmentLink = document.createElement('a')
-    environmentLink.href = environmentUrl; environmentLink.download = 'http-client.env.json'; environmentLink.click(); URL.revokeObjectURL(environmentUrl)
   }
   return <div className="api-export-panel"><p>Selecione os endpoints que deseja exportar para a extensão REST Client do VS Code.</p><button type="button" className="btn-ghost api-export-global" aria-pressed={allSelected} onClick={toggleAll}>{allSelected ? `Desmarcar todos os ${allEndpointKeys.length} endpoints` : `Selecionar todos os ${allEndpointKeys.length} endpoints`}</button><div className="api-export-list">{modules.map((module) => { const moduleKeys = module.endpoints.map((endpoint) => `${module.id}-${endpoint.method}-${endpoint.path}`); const moduleAllSelected = moduleKeys.every((key) => selected.has(key)); return <fieldset key={module.id}><legend>{module.name}</legend><label className="api-export-all"><input type="checkbox" checked={moduleAllSelected} onChange={(event) => toggleModule(module, event.target.checked)} /><strong>Todos</strong></label>{module.endpoints.map((endpoint) => { const key = `${module.id}-${endpoint.method}-${endpoint.path}`; return <label key={key}><input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} /><span>{endpoint.method} {endpoint.path}</span></label> })}</fieldset> })}</div><button className="btn-primary" disabled={selected.size === 0} onClick={download}>Baixar requests.http</button></div>
 }
