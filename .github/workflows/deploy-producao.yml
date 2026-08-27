@@ -13,7 +13,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy no Servidor Local (Produção)
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, linux]
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
