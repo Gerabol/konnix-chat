@@ -40,6 +40,11 @@ const ROOM_ICON: Record<string, string> = {
   DIRECT: '@',
 }
 
+function getRoomIcon(room: Room): string {
+  if (room.name === 'bug-reports') return '🐛'
+  return ROOM_ICON[room.type] ?? '#'
+}
+
 const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
   { id: 'DEFAULT', label: 'Padrão', colors: ['#f7f8fc', '#ffffff', '#5b4cf0', '#22c7d6'] },
   { id: 'DARK', label: 'Dark clássico', colors: ['#121212', '#18181B', '#7C5CFF', '#23232A'] },
@@ -536,6 +541,16 @@ function IconLogout({ size = 16 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 17 15 12 10 7" /><path d="M15 12H3" /><path d="M21 19V5a2 2 0 0 0-2-2h-6" /></svg>
 }
 
+function IconAlertTriangle({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  )
+}
+
 type InlineMatch = {
   start: number
   end: number
@@ -954,9 +969,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
-  const [unread, setUnread] = useState<Record<string, number>>({})
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
     try { return localStorage.getItem('konnix-message-notifications') !== 'false' } catch { return true }
   })
@@ -967,6 +982,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [newRoomOpen, setNewRoomOpen] = useState(false)
   const [newDmOpen, setNewDmOpen] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [reportIssueOpen, setReportIssueOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
@@ -1069,7 +1085,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     try {
       const nextRooms = await api.rooms()
       setRooms(nextRooms)
-      setUnread(Object.fromEntries(nextRooms.map((room) => [room.id, room.unreadCount ?? 0])))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -1103,11 +1118,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       setHasMore(false)
       setNextBefore(null)
       setSidebarOpen(false)
-      setUnread((u) => {
-        const next = { ...u }
-        next[roomId] = 0
-        return next
-      })
       setRooms((prev) => prev.map((room) => room.id === roomId ? { ...room, unreadCount: 0 } : room))
       setLoadingRoom(true)
       try {
@@ -1157,6 +1167,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     const connect = () => {
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
+      ws.onopen = () => {
+        void loadRooms()
+      }
       ws.onmessage = (event) => {
         try {
           const evt = JSON.parse(event.data as string) as {
@@ -1180,8 +1193,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                }
              }
              if (shouldUnread) {
-               setUnread((u) => ({ ...u, [msg.roomId]: (u[msg.roomId] ?? 0) + 1 }))
-               const room = roomsRef.current.find((r) => r.id === msg.roomId)
+                const room = roomsRef.current.find((r) => r.id === msg.roomId)
                const label = room ? roomDisplayName(room) : 'Chat'
                const snippet = msg.content.replace(/\s+/g, ' ').trim()
                if (messageNotificationsEnabledRef.current) {
@@ -1244,17 +1256,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             const room = evt.data as unknown as Room
             if (room?.id) {
               setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [...prev, room])
-              setUnread((prev) => ({ ...prev, [room.id]: room.unreadCount ?? 0 }))
             }
           } else if (evt.type === 'room.removed') {
             const removedRoomId = evt.roomId
             if (removedRoomId) {
               setRooms((prev) => prev.filter((room) => room.id !== removedRoomId))
-              setUnread((prev) => {
-                const next = { ...prev }
-                delete next[removedRoomId]
-                return next
-              })
               if (activeRoomIdRef.current === removedRoomId) {
                 roomLoadRequestRef.current += 1
                 setActiveRoomId(null)
@@ -1263,6 +1269,27 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                 setHasMore(false)
                 setNextBefore(null)
               }
+            }
+          } else if (evt.type === 'room.pinned_message') {
+            const payload = evt.data as unknown as { roomId: string; pinnedMessage: Message | null }
+            if (payload?.roomId) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === payload.roomId ? { ...room, pinnedMessage: payload.pinnedMessage } : room,
+              ))
+            }
+          } else if (evt.type === 'room.updated') {
+            const updated = evt.data as unknown as Room
+            if (updated?.id) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === updated.id ? { ...room, name: updated.name, displayName: updated.displayName, readOnly: updated.readOnly, type: updated.type, updatedAt: updated.updatedAt } : room,
+              ))
+            }
+          } else if (evt.type === 'room.favorite.updated') {
+            const payload = evt.data as unknown as { roomId: string; favorite: boolean }
+            if (payload?.roomId) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === payload.roomId ? { ...room, favorite: payload.favorite } : room,
+              ))
             }
           }
         } catch {
@@ -1285,6 +1312,17 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws?.close()
     }
   }, [session.token, showToast])
+
+  useEffect(() => {
+    if (!session.token) return
+    const interval = setInterval(() => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void loadRooms()
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [session.token, loadRooms])
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -1397,7 +1435,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     try {
       const room = await api.createDm(userId)
       setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [...previous, room])
-      setUnread((previous) => ({ ...previous, [room.id]: room.unreadCount ?? 0 }))
       await openRoom(room.id)
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
   }, [openRoom, showToast])
@@ -1410,6 +1447,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const openTheme = useCallback(() => { setPreviewTheme(me.theme); setThemeOpen(true) }, [me.theme])
   const openProfileEdit = useCallback(() => setProfileEditOpen(true), [])
   const openAbout = useCallback(() => setAboutOpen(true), [])
+  const openReportIssue = useCallback(() => setReportIssueOpen(true), [])
   const openNewRoom = useCallback(() => setNewRoomOpen(true), [])
   const openNewDm = useCallback(() => setNewDmOpen(true), [])
 
@@ -1421,6 +1459,13 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Falha ao excluir mensagem')
     }
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const message = pendingDelete
+    setPendingDelete(null)
+    await handleDelete(message)
   }
 
   const handleRoomCreated = async (roomId: string) => {
@@ -1471,7 +1516,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
            favoriteConversations={favoriteConversations}
            regularConversations={regularConversations}
           activeRoomId={activeRoomId}
-          unread={unread}
            search={search}
            userResults={searchUsers}
           onSearch={setSearch}
@@ -1483,6 +1527,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onTheme={openTheme}
             onEditProfile={openProfileEdit}
             onAbout={openAbout}
+            onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
           canInstall={!standalone && !!installEvent}
            onInstall={installApp}
@@ -1511,7 +1556,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
                onSend={sendMessage}
                onInitialPositioned={() => { isInitializingConversationRef.current = false }}
-                onDelete={handleDelete}
+                onDelete={(message) => {
+                  if (!message.deletedAt && message.userId === me.id && me.accountStatus !== 'READ_ONLY') setPendingDelete(message)
+                }}
                 onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
                 onReaction={(message, emoji) => void reactMessage(message, emoji)}
               onStartDm={startDirectConversation}
@@ -1520,6 +1567,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                onSearchResult={addSearchResult}
                onPollUpdated={addSearchResult}
                 onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
+               onOpenRoom={openRoom}
              />
           )}
         </main>
@@ -1560,6 +1608,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={showToast} />}
+      {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
       {!online && (
         <div className="offline-banner" role="alert">
@@ -1712,7 +1762,6 @@ const Sidebar = memo(function Sidebar({
   favoriteConversations,
   regularConversations,
   activeRoomId,
-  unread,
   search,
   userResults,
   onSearch,
@@ -1724,6 +1773,7 @@ const Sidebar = memo(function Sidebar({
   onTheme,
   onEditProfile,
   onAbout,
+  onReportIssue,
   myAvatarVersion,
   canInstall,
   onInstall,
@@ -1738,7 +1788,6 @@ const Sidebar = memo(function Sidebar({
   favoriteConversations: Room[]
   regularConversations: Room[]
   activeRoomId: string | null
-  unread: Record<string, number>
   search: string
   userResults: DirectoryUser[]
   onSearch: (q: string) => void
@@ -1750,6 +1799,7 @@ const Sidebar = memo(function Sidebar({
   onTheme: () => void
   onEditProfile: () => void
   onAbout: () => void
+  onReportIssue: () => void
   myAvatarVersion: string
   canInstall: boolean
   onInstall: () => void
@@ -1814,7 +1864,7 @@ const Sidebar = memo(function Sidebar({
             {favoritesOpen && <div className="nav-list" id="favorites-list">
               {favoriteConversations.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
                 <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
-                <span className="room-name">{roomDisplayName(room)}</span>{!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>)}
             </div>}
         </div>}
@@ -1848,13 +1898,13 @@ const Sidebar = memo(function Sidebar({
                   className="room-thumb"
                   fallback={
                     <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                      {ROOM_ICON[room.type] ?? '#'}
+                      {getRoomIcon(room)}
                     </span>
                   }
                   alt={roomDisplayName(room)}
                 />
                 <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>
             ))}
           </div>}
@@ -1893,7 +1943,7 @@ const Sidebar = memo(function Sidebar({
                   />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
                 </span>
                 <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
+                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
               </button>
             ))}
           </div>}
@@ -1945,6 +1995,7 @@ const Sidebar = memo(function Sidebar({
              </button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
+              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
               {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
              <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
@@ -2238,6 +2289,8 @@ function Modal({
   className?: string
   overlayClassName?: string
 }) {
+  const titleId = `modal-title-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+  const closeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -2245,13 +2298,14 @@ function Modal({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+  useEffect(() => { closeRef.current?.focus() }, [])
 
   return (
     <div className={`modal-overlay ${overlayClassName}`} onMouseDown={onClose}>
-      <div className={`modal ${className}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Fechar">
+          <h3 id={titleId}>{title}</h3>
+          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Fechar">
             ×
           </button>
         </div>
@@ -2259,6 +2313,13 @@ function Modal({
       </div>
     </div>
   )
+}
+
+function ConfirmModal({ title, message, onClose, onConfirm }: { title: string; message: string; onClose: () => void; onConfirm: () => void }) {
+  return <Modal title={title} onClose={onClose} className="confirm-modal">
+    <p className="confirm-message">{message}</p>
+    <div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="danger-action confirm-danger" onClick={onConfirm}>Excluir</button></div>
+  </Modal>
 }
 
 function useEscapeClose(onClose: () => void) {
@@ -2625,6 +2686,7 @@ function RoomView({
   onSearchResult,
   onPollUpdated,
   onRoomUpdated,
+  onOpenRoom,
 }: {
   room: Room
   rooms: Room[]
@@ -2649,6 +2711,7 @@ function RoomView({
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
+  onOpenRoom: (roomId: string) => void
 }) {
   const [draft, setDraft] = useState('')
   const [composerExpanded, setComposerExpanded] = useState(false)
@@ -2661,9 +2724,12 @@ function RoomView({
   const [readMessageId, setReadMessageId] = useState<string | null>(null)
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null)
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null)
+  const [respondMessage, setRespondMessage] = useState<Message | null>(null)
   const [pinnedActionId, setPinnedActionId] = useState<string | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
+  const [profileCommonRooms, setProfileCommonRooms] = useState<Room[]>([])
+  const [profileCommonRoomsLoading, setProfileCommonRoomsLoading] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profilePosition, setProfilePosition] = useState({ top: 80, left: 24 })
   const [roomInfoOpen, setRoomInfoOpen] = useState(false)
@@ -2708,6 +2774,9 @@ function RoomView({
   const isRoomOwner = room.type !== 'DIRECT' && roomMembers.some((member) =>
     member.userId === me.id && member.active && member.role === 'OWNER',
   )
+  const isBugReportsRoom = room.name === 'bug-reports'
+  const isAdmin = me.roles.includes('ADMIN')
+  const canRespondToReport = isBugReportsRoom && isAdmin
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
     setAudioMode(recording)
@@ -2984,6 +3053,37 @@ function RoomView({
     requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessage(result.id)))
   }
 
+  const canManagePin = room.type !== 'DIRECT' && (isRoomOwner || me.roles.includes('ADMIN'))
+
+  const handlePin = async (message: Message) => {
+    try {
+      const updated = await api.pinMessage(room.id, message.id)
+      onRoomUpdated(updated)
+      notify('Mensagem fixada')
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Não foi possível fixar a mensagem')
+    }
+  }
+
+  const handleUnpin = async () => {
+    try {
+      const updated = await api.unpinMessage(room.id)
+      onRoomUpdated(updated)
+      notify('Mensagem desafixada')
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Não foi possível desafixar a mensagem')
+    }
+  }
+
+  const handleJumpToPinned = () => {
+    if (!room.pinnedMessage) return
+    const msg = room.pinnedMessage
+    if (!messages.some((m) => m.id === msg.id)) {
+      onSearchResult(msg)
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessage(msg.id)))
+  }
+
   const grouped = useMemo(() => {
     const out: { day: string; items: Message[] }[] = []
     for (const m of messages) {
@@ -3064,9 +3164,19 @@ function RoomView({
       })
     }
     setProfileLoading(true)
-    try { setProfile(await api.userProfile(userId)) }
-    catch { notify('Não foi possível carregar o perfil') }
-    finally { setProfileLoading(false) }
+    setProfileCommonRoomsLoading(true)
+    const currentRoomIsCommon = room.type !== 'DIRECT' && roomMembers.some((member) => member.userId === userId && member.active)
+    setProfileCommonRooms(currentRoomIsCommon ? [room] : [])
+    const [profileResult, commonRoomsResult] = await Promise.allSettled([api.userProfile(userId), api.commonRooms(userId)])
+    if (profileResult.status === 'fulfilled') setProfile(profileResult.value)
+    else { setProfile(null); notify('Não foi possível carregar o perfil') }
+    setProfileLoading(false)
+    if (commonRoomsResult.status === 'fulfilled') {
+      const roomsById = new Map(commonRoomsResult.value.map((commonRoom) => [commonRoom.id, commonRoom]))
+      if (currentRoomIsCommon) roomsById.set(room.id, room)
+      setProfileCommonRooms([...roomsById.values()])
+    }
+    setProfileCommonRoomsLoading(false)
   }
 
   const showRoomInfo = (event: React.MouseEvent) => {
@@ -3205,7 +3315,7 @@ function RoomView({
             <AvatarImage
               path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
               className="room-header-avatar"
-              fallback={<div className="room-header-icon">{ROOM_ICON[room.type] ?? '#'}</div>}
+              fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
               alt={roomDisplayName(room)}
             />
             <div className="room-header-text">
@@ -3279,6 +3389,39 @@ function RoomView({
         </div>
       </div>
 
+      {room.pinnedMessage && !room.pinnedMessage.deletedAt && (
+        <div className="pinned-message-banner" role="region" aria-label="Mensagem fixada">
+          <button type="button" className="pinned-message-content" onClick={handleJumpToPinned} title="Ir para a mensagem fixada">
+            <span className="pinned-icon" aria-hidden="true">📌</span>
+            <div className="pinned-text-wrap">
+              <span className="pinned-label">
+                Mensagem fixada {room.pinnedMessage.username ? `• ${room.pinnedMessage.username}` : ''}
+              </span>
+              <span className="pinned-snippet">
+                {room.pinnedMessage.content
+                  ? room.pinnedMessage.content.replace(/\s+/g, ' ').trim()
+                  : room.pinnedMessage.attachment
+                  ? (room.pinnedMessage.attachment.originalName || 'Anexo')
+                  : room.pinnedMessage.poll
+                  ? `📊 Enquete: ${room.pinnedMessage.poll.question}`
+                  : 'Mensagem fixada'}
+              </span>
+            </div>
+          </button>
+          {canManagePin && (
+            <button
+              type="button"
+              className="pinned-unpin-btn"
+              onClick={(e) => { e.stopPropagation(); void handleUnpin() }}
+              title="Desafixar mensagem"
+              aria-label="Desafixar mensagem"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
        <div className={`message-list ${conversationReady ? '' : 'message-list-initializing'}`} data-message-list ref={messageListRef} onScroll={(event) => {
         const container = event.currentTarget
         const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
@@ -3338,6 +3481,7 @@ function RoomView({
                   requestAnimationFrame(() => inputRef.current?.focus())
                 }}
                 onForward={() => setForwardMessage(m)}
+                onRespond={canRespondToReport && m.userId !== me.id ? () => setRespondMessage(m) : undefined}
                 onReaction={(emoji) => onReaction(m, emoji)}
                 actionPinned={pinnedActionId === m.id}
                 onPinAction={(pinned) => setPinnedActionId(pinned ? m.id : null)}
@@ -3346,6 +3490,15 @@ function RoomView({
                 readReceiptsEnabled={readReceiptsEnabled}
                 onShowReads={() => setReadMessageId(m.id)}
                 onVotePoll={(optionId) => void (m.poll && onPollUpdated && api.votePoll(m.poll.id, optionId).then(onPollUpdated).catch(() => notify('Não foi possível registrar o voto')))}
+                canPin={canManagePin}
+                isPinned={room.pinnedMessage?.id === m.id}
+                onTogglePin={() => {
+                  if (room.pinnedMessage?.id === m.id) {
+                    void handleUnpin()
+                  } else {
+                    void handlePin(m)
+                  }
+                }}
               />
          ))}
           </div>
@@ -3502,9 +3655,10 @@ function RoomView({
         const readMessage = messages.find((message) => message.id === readMessageId)
         return readMessage ? <ReadReceiptsModal message={readMessage} onClose={() => setReadMessageId(null)} /> : null
       })()}
-      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} />}
+      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
       {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={notify} />}
+      {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={notify} />}
       {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={notify} />}
     </div>
   )
@@ -3563,7 +3717,7 @@ function RoomEditModal({ room, onClose, onSaved, notify }: {
           <AvatarImage
             path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
             className="edit-room-avatar"
-            fallback={<span className="edit-room-avatar room-header-icon">{ROOM_ICON[room.type] ?? '#'}</span>}
+            fallback={<span className="edit-room-avatar room-header-icon">{getRoomIcon(room)}</span>}
             alt={roomDisplayName(room)}
           />
           {preview && <img src={preview} className="edit-room-avatar" alt="Prévia da nova imagem" />}
@@ -3621,6 +3775,7 @@ function MessageRow({
   onQuote,
   onForward,
   onReaction,
+  onRespond,
   actionPinned,
   onPinAction,
   highlighted,
@@ -3628,6 +3783,9 @@ function MessageRow({
   readReceiptsEnabled,
   onShowReads,
   onVotePoll,
+  canPin,
+  isPinned,
+  onTogglePin,
 }: {
   msg: Message
   isMine: boolean
@@ -3640,6 +3798,7 @@ function MessageRow({
   onQuote: () => void
   onForward: () => void
   onReaction: (emoji: string) => void
+  onRespond?: () => void
   actionPinned: boolean
   onPinAction: (pinned: boolean) => void
   highlighted: boolean
@@ -3647,6 +3806,9 @@ function MessageRow({
   readReceiptsEnabled: boolean
   onShowReads: () => void
   onVotePoll: (optionId: string) => void
+  canPin?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
 }) {
   const deleted = !!msg.deletedAt
   const [actionDismissed, setActionDismissed] = useState(false)
@@ -3671,6 +3833,7 @@ function MessageRow({
         <div className="message-meta">
           {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>}
           <span className="message-time">{formatTime(msg.createdAt)}</span>
+          {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
           {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
           {isMine && readReceiptsEnabled && !deleted && (
             <button type="button" className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`} onClick={onShowReads}>
@@ -3678,7 +3841,20 @@ function MessageRow({
             </button>
           )}
         </div>
-        {!deleted && canWrite && <MessageActionBar pinned={actionPinned} onPin={onPinAction} onQuote={onQuote} onForward={onForward} onEdit={isMine && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined} onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }} />}
+        {!deleted && canWrite && (
+          <MessageActionBar
+            pinned={actionPinned}
+            onPin={onPinAction}
+            onQuote={onQuote}
+            onForward={onForward}
+            onEdit={isMine && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }}
+            onRespond={onRespond}
+            canPin={canPin}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+          />
+        )}
         {!deleted && (
           <>
             {msg.quotedMessage && <button type="button" className="quoted-message" onClick={() => onJumpToQuoted(msg.quotedMessage!.id)}><strong>{msg.quotedMessage.username}</strong><span>{msg.quotedMessage.content || 'Anexo'}</span></button>}
@@ -3699,7 +3875,29 @@ function MessageRow({
   )
 }
 
-function MessageActionBar({ pinned, onPin, onQuote, onForward, onEdit, onEmoji }: { pinned: boolean; onPin: (pinned: boolean) => void; onQuote: () => void; onForward: () => void; onEdit?: () => void; onEmoji: (emoji: string) => void }) {
+function MessageActionBar({
+  pinned,
+  onPin,
+  onQuote,
+  onForward,
+  onEdit,
+  onEmoji,
+  onRespond,
+  canPin,
+  isPinned,
+  onTogglePin,
+}: {
+  pinned: boolean
+  onPin: (pinned: boolean) => void
+  onQuote: () => void
+  onForward: () => void
+  onEdit?: () => void
+  onEmoji: (emoji: string) => void
+  onRespond?: () => void
+  canPin?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -3730,7 +3928,34 @@ function MessageActionBar({ pinned, onPin, onQuote, onForward, onEdit, onEmoji }
     window.addEventListener('resize', onScroll)
     return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll) }
   }, [open])
-  return <div className="message-actions" ref={ref}><div className="message-emoji-action"><button ref={btnRef} type="button" title="Emoji" onClick={() => { onPin(true); setOpen((value) => !value) }}>😊</button>{open && pos && createPortal(<div ref={menuRef} className="message-emoji-menu message-emoji-menu-portal" style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 10000 }}><Picker data={data} onEmojiSelect={(emoji: EmojiSelection) => { if (emoji.native) onEmoji(emoji.native); setOpen(false); setPos(null); onPin(false) }} previewPosition="none" skinTonePosition="none" /></div>, document.body)}</div>{onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}<button type="button" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>↩</button><button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button></div>
+  return (
+    <div className="message-actions" ref={ref}>
+      <div className="message-emoji-action">
+        <button ref={btnRef} type="button" title="Emoji" onClick={() => { onPin(true); setOpen((value) => !value) }}>😊</button>
+        {open && pos && createPortal(
+          <div ref={menuRef} className="message-emoji-menu message-emoji-menu-portal" style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 10000 }}>
+            <Picker data={data} onEmojiSelect={(emoji: EmojiSelection) => { if (emoji.native) onEmoji(emoji.native); setOpen(false); setPos(null); onPin(false) }} previewPosition="none" skinTonePosition="none" />
+          </div>,
+          document.body,
+        )}
+      </div>
+      {canPin && onTogglePin && (
+        <button
+          type="button"
+          className={`message-action-pin ${isPinned ? 'active' : ''}`}
+          title={isPinned ? 'Desafixar mensagem' : 'Fixar mensagem'}
+          aria-label={isPinned ? 'Desafixar mensagem' : 'Fixar mensagem'}
+          onClick={() => { onPin(false); onTogglePin() }}
+        >
+          📌
+        </button>
+      )}
+      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>💬</button>}
+      {onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}
+      <button type="button" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>↩</button>
+      <button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button>
+    </div>
+  )
 }
 
 function CreatePollModal({ roomId, onClose, onCreated, notify }: { roomId: string; onClose: () => void; onCreated: (message: Message) => void; notify: (text: string) => void }) {
@@ -3811,7 +4036,7 @@ function usePopoverDismiss(cardRef: React.RefObject<HTMLDivElement | null>, onCl
   }, [cardRef, onClose])
 }
 
-function UserProfileCard({ profile, loading, position, onClose, onContact }: { profile: PublicProfile | null; loading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void }) {
+function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, position, onClose, onContact, onOpenRoom }: { profile: PublicProfile | null; loading: boolean; commonRooms: Room[]; commonRoomsLoading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void; onOpenRoom?: (roomId: string) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   usePopoverDismiss(cardRef, onClose)
 
@@ -3827,6 +4052,12 @@ function UserProfileCard({ profile, loading, position, onClose, onContact }: { p
           <div className="profile-info-row"><span>Email</span><strong>{profile.email || 'E-mail não informado'}</strong></div>
           <div className="profile-info-row"><span>Status</span><strong>{presenceLabel(profile.presenceStatus)}</strong></div>
         </div>
+        <section className="profile-common-rooms" aria-label="Grupos e canais em comum">
+          <strong>Grupos e canais em comum</strong>
+          {commonRoomsLoading && <span className="profile-common-rooms-empty">Carregando...</span>}
+          {!commonRoomsLoading && commonRooms.length === 0 && <span className="profile-common-rooms-empty">Nenhum grupo ou canal em comum.</span>}
+          {!commonRoomsLoading && commonRooms.length > 0 && <div className="profile-common-rooms-list">{commonRooms.map((room) => <button type="button" key={room.id} className="profile-common-room" title={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} aria-label={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} disabled={!onOpenRoom} onClick={() => onOpenRoom && onOpenRoom(room.id)}><b>{room.type === 'CHANNEL' ? '#' : '🔒'}</b>{room.displayName || room.name}</button>)}</div>}
+        </section>
         {onContact && <button type="button" className="profile-contact-button" onClick={onContact} title="Conversar com este usuário" aria-label="Conversar com este usuário"><MessageCircleIcon /></button>}
       </div>
     </div>}
@@ -3851,7 +4082,7 @@ function RoomInfoCard({ room, members, position, onClose }: {
       <AvatarImage
         path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
         className="profile-avatar"
-        fallback={<span className="profile-avatar room-info-fallback">{ROOM_ICON[room.type] ?? '#'}</span>}
+        fallback={<span className="profile-avatar room-info-fallback">{getRoomIcon(room)}</span>}
         alt={name}
       />
       <div className="profile-details">
@@ -3906,6 +4137,61 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
     finally { setBusy(false) }
   }
   return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Encaminhar mensagem</h3><button className="modal-close" onClick={onClose}>×</button></div><input autoComplete="off" className="input" placeholder="Pesquisar pessoa, grupo ou canal" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="forward-list">{candidates.map((destination) => <button type="button" className="forward-user" disabled={busy} key={`${destination.type}-${destination.id}`} onClick={() => void forward(destination)}>{destination.type === 'user' ? <AvatarImage path={userAvatarPath(destination.id)} className="admin-member-avatar" fallback={<span className="admin-member-avatar">{initials(destination.name)}</span>} alt={destination.name} /> : <span className="admin-member-avatar forward-room-icon" aria-hidden="true">{ROOM_ICON[destination.room.type] ?? '#'}</span>}<span><strong>{destination.name}</strong><small>{destination.subtitle}</small></span></button>)}</div></div></div>
+}
+
+function RespondToReportModal({ message, onClose, onResponded, notify }: { message: Message; onClose: () => void; onResponded: () => void; notify: (text: string) => void }) {
+  useEscapeClose(onClose)
+  const [content, setContent] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!content.trim() || busy) return
+    setBusy(true)
+    try {
+      await api.respondToReport(message.id, content.trim())
+      notify('Resposta enviada por mensagem direta ao usuário')
+      onResponded()
+      onClose()
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao enviar resposta')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay">
+      <div className="admin-modal">
+        <div className="modal-head">
+          <h3>Responder ao relato</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+        <div className="modal-fields">
+          <div className="report-original-message">
+            <strong>Relato original de {message.username || 'usuário'}:</strong>
+            <span>{message.content || 'Anexo'}</span>
+          </div>
+          <label className="admin-label">
+            Sua resposta (será enviada por DM)
+            <textarea
+              className="input"
+              style={{ minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', padding: '8px' }}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Digite a resposta ao relato..."
+              maxLength={2000}
+            />
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn-primary" disabled={busy || !content.trim()} onClick={submit}>
+            {busy ? 'Enviando...' : 'Enviar resposta'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RoomFilesPanel({ files, loading, error, query, type, onQueryChange, onTypeChange, onClose, onRetry }: {
@@ -4284,3 +4570,60 @@ function AutostartButton() {
     </button>
   )
 }
+
+function ReportIssueModal({
+  onClose,
+  notify,
+}: {
+  onClose: () => void
+  notify: (text: string) => void
+}) {
+  useEscapeClose(onClose)
+  const [content, setContent] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!content.trim() || busy) return
+    setBusy(true)
+    try {
+      await api.reportIssue(content.trim())
+      notify('Relato enviado com sucesso aos administradores!')
+      onClose()
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao enviar relato')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay">
+      <div className="admin-modal">
+        <div className="modal-head">
+          <h3>Relatar Problema</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+        <div className="modal-fields">
+          <label className="admin-label">
+            Descreva a sugestão ou bug
+            <textarea
+              className="input"
+              style={{ minHeight: '120px', resize: 'vertical', fontFamily: 'inherit', padding: '8px' }}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Digite detalhadamente o problema ou sugestão..."
+              maxLength={2000}
+            />
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn-primary" disabled={busy || !content.trim()} onClick={submit}>
+            {busy ? 'Enviando...' : 'Enviar relato'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+

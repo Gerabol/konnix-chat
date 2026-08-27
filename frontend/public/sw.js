@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v3';
+const VERSION = 'konnix-shell-v4';
 
 const CORE_ASSETS = [
   '/',
@@ -44,7 +44,8 @@ self.addEventListener('fetch', (event) => {
   // Never cache Vite source/HMR requests. A stale module can keep old React
   // state logic running while the rest of the page appears updated.
   if (url.pathname === '/sw.js' || url.pathname.startsWith('/@') ||
-      url.pathname.startsWith('/src/') || url.pathname.startsWith('/node_modules/')) {
+      url.pathname.startsWith('/src/') || url.pathname.startsWith('/node_modules/') ||
+      url.pathname.startsWith('/api/')) {
     return;
   }
   if (request.mode === 'navigate') {

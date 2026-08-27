@@ -1,5 +1,6 @@
 package br.gov.pb.cge.konnix.domain.room;
 
+import br.gov.pb.cge.konnix.domain.message.Message;
 import br.gov.pb.cge.konnix.domain.user.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -36,6 +37,10 @@ public class Room {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "pinned_message_id")
+    private Message pinnedMessage;
 
     @Column(name = "read_only", nullable = false)
     private boolean readOnly = false;
@@ -92,6 +97,14 @@ public class Room {
 
     public void setCreatedBy(User createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public Message getPinnedMessage() {
+        return pinnedMessage;
+    }
+
+    public void setPinnedMessage(Message pinnedMessage) {
+        this.pinnedMessage = pinnedMessage;
     }
 
     public boolean isReadOnly() {

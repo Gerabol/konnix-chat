@@ -318,14 +318,21 @@ class FileStorageIntegrationTest {
 
     private String createUser(String username) {
         try {
+            String temporaryPassword = "primeiro-acesso-" + PASSWORD;
             MvcResult result = mockMvc.perform(post("/api/v1/users")
                             .header("Authorization", "Bearer " + adminToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"username\":\"" + username + "\",\"name\":\"" + username
-                                    + "\",\"email\":\"" + username + "@test.local\",\"password\":\"" + PASSWORD + "\"}"))
+                                    + "\",\"email\":\"" + username + "@test.local\",\"password\":\"" + temporaryPassword + "\"}"))
                     .andExpect(status().isOk())
                     .andReturn();
             JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            String token = login(username, temporaryPassword);
+            mockMvc.perform(post("/api/v1/auth/change-required-password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"newPassword\":\"" + PASSWORD + "\",\"confirmPassword\":\"" + PASSWORD + "\"}"))
+                    .andExpect(status().isOk());
             return body.path("data").path("id").asText();
         } catch (Exception e) {
             throw new RuntimeException(e);

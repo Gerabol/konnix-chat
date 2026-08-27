@@ -37,6 +37,18 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     long countByRoomIdAndDeletedAtIsNull(UUID roomId);
 
+                @Query(value = """
+                                                select to_char(date_trunc('day', created_at at time zone :zone), 'YYYY-MM-DD') as day,
+                                                                         count(*) as messages,
+                                                                         count(distinct user_id) as active_users
+                                                from messages
+                                                where deleted_at is null
+                                                        and created_at >= :from
+                                                group by 1
+                                                order by 1
+                                                """, nativeQuery = true)
+                List<Object[]> countActivitySince(@Param("from") Instant from, @Param("zone") String zone);
+
     @Query("""
             select m from Message m
             where m.room.id = :roomId

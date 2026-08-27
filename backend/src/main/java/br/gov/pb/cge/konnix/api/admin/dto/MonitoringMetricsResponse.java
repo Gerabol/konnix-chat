@@ -13,5 +13,9 @@ public record MonitoringMetricsResponse(
         long dailyLogins,
         long activeSessions,
         long totalAuditEvents,
-        long databaseSizeBytes) {
+                long databaseSizeBytes,
+                java.util.List<ActivityPoint> activity) {
+
+        public record ActivityPoint(String day, long messages, long activeUsers) {
+        }
 }

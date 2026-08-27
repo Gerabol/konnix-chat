@@ -11,7 +11,9 @@ import br.gov.pb.cge.konnix.domain.room.Room;
 import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
+import br.gov.pb.cge.konnix.domain.message.Message;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
+import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
@@ -86,7 +88,9 @@ public class RoomService {
                         lastMessageByRoom.getOrDefault(room.getId(), room.getUpdatedAt() != null
                                 ? room.getUpdatedAt() : room.getCreatedAt()),
                         unreadByRoom.getOrDefault(room.getId(), 0L),
-                        favoriteOf(room, actor.id(), membersByRoom.getOrDefault(room.getId(), List.of()))))
+                        favoriteOf(room, actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
+                        room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                                ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null))
                 .filter(response -> response.directPartner() == null
                         || !"DISABLED".equals(response.directPartner().accountStatus()))
                 .sorted(Comparator.comparing(RoomResponse::lastActivityAt,
@@ -94,13 +98,34 @@ public class RoomService {
                 .toList();
     }
 
+            @Transactional(readOnly = true)
+            public List<RoomResponse> commonRooms(AuthenticatedUser actor, UUID otherUserId) {
+            var actorRoomIds = roomMemberRepository.findByUserId(actor.id()).stream()
+                .filter(RoomMember::isActive)
+                .map(RoomMember::getRoom)
+                .filter(room -> !TYPE_DIRECT.equals(room.getType()))
+                .map(Room::getId)
+                .collect(Collectors.toSet());
+            if (actorRoomIds.isEmpty()) return List.of();
+            return roomMemberRepository.findByUserId(otherUserId).stream()
+                .filter(RoomMember::isActive)
+                .map(RoomMember::getRoom)
+                .filter(room -> actorRoomIds.contains(room.getId()) && !TYPE_DIRECT.equals(room.getType()))
+                .distinct()
+                .sorted(Comparator.comparing(Room::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(RoomResponse::from)
+                .toList();
+            }
+
     @Transactional(readOnly = true)
     public RoomResponse get(UUID id, AuthenticatedUser actor) {
         Room room = roomOrThrow(id);
         requireMember(room, actor);
         List<RoomMember> members = roomMemberRepository.findByRoomId(id);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(room, actor.id(), members));
+                favoriteOf(room, actor.id(), members),
+                room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
     }
 
     @Transactional
@@ -116,7 +141,10 @@ public class RoomService {
                 .orElseThrow(ApiExceptions::notRoomMember);
         membership.setFavorite(!membership.isFavorite());
         roomMemberRepository.save(membership);
-        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite());
+        chatEventPublisher.publishFavoriteUpdated(actor.id(), roomId, membership.isFavorite());
+        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
+                room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
     }
 
     @Transactional
@@ -225,6 +253,7 @@ public class RoomService {
             room.setDisplayName(name);
             roomRepository.save(room);
             auditService.record("ROOM_UPDATED", actorUser(actor.id()), "room", roomId.toString(), ipAddress);
+            chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         }
         return RoomResponse.from(room);
     }
@@ -236,6 +265,7 @@ public class RoomService {
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         auditService.record("ROOM_AVATAR_UPDATED", actorUser(actor.id()), "room", roomId.toString(), ipAddress);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         return RoomResponse.from(room);
     }
 
@@ -256,6 +286,7 @@ public class RoomService {
         roomRepository.save(room);
         auditService.record("ROOM_UPDATED", actor, "room", roomId.toString(), ipAddress);
         if (readOnlyChanged) auditService.record("ROOM_READ_ONLY_CHANGED", actor, "room", roomId.toString(), ipAddress);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         return RoomResponse.from(room);
     }
 
@@ -267,6 +298,7 @@ public class RoomService {
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, target.getId())) throw ApiExceptions.alreadyMember();
         RoomMember member = addMembership(room, target, request.role() == null || request.role().isBlank() ? ROLE_MEMBER : request.role().trim());
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_ADDED", actor, "member", roomId + ":" + target.getId(), ipAddress);
         return RoomMemberResponse.from(member);
     }
@@ -279,6 +311,7 @@ public class RoomService {
                 .orElseThrow(() -> ApiExceptions.notFound("member/" + userId));
         roomMemberRepository.delete(member);
         chatEventPublisher.publishRoomRemoved(userId, roomId);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_REMOVED", actor, "member", roomId + ":" + userId, ipAddress);
     }
 
@@ -312,6 +345,53 @@ public class RoomService {
         }
     }
 
+    private void requireCanPin(Room room, AuthenticatedUser actor) {
+        if (TYPE_DIRECT.equals(room.getType())) {
+            throw ApiExceptions.forbidden("Apenas canais e grupos permitem fixar mensagens");
+        }
+        requireAdminRoom(room);
+        if (!actor.hasRole("ADMIN")
+                && (!roomMemberRepository.existsByRoomIdAndUserId(room.getId(), actor.id()) || !isOwner(room, actor))) {
+            throw ApiExceptions.forbidden("Apenas administradores e proprietários podem fixar mensagens");
+        }
+    }
+
+    @Transactional
+    public RoomResponse pinMessage(UUID roomId, UUID messageId, AuthenticatedUser actor, String ipAddress) {
+        Room room = roomOrThrow(roomId);
+        requireCanPin(room, actor);
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> ApiExceptions.notFound("message/" + messageId));
+        if (!message.getRoom().getId().equals(roomId)) {
+            throw ApiExceptions.conflict("MESSAGE_ROOM_MISMATCH", "A mensagem não pertence a esta sala");
+        }
+        room.setPinnedMessage(message);
+        roomRepository.save(room);
+        auditService.record("ROOM_MESSAGE_PINNED", actorUser(actor.id()), "room", roomId + ":" + messageId, ipAddress);
+        MessageResponse pinnedResponse = messageService.responseFor(message, actor.id());
+        chatEventPublisher.publishPinnedMessage(roomId, pinnedResponse);
+        List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
+        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
+                favoriteOf(room, actor.id(), members), pinnedResponse);
+    }
+
+    @Transactional
+    public RoomResponse unpinMessage(UUID roomId, AuthenticatedUser actor, String ipAddress) {
+        Room room = roomOrThrow(roomId);
+        requireCanPin(room, actor);
+        if (room.getPinnedMessage() != null) {
+            UUID oldMessageId = room.getPinnedMessage().getId();
+            room.setPinnedMessage(null);
+            roomRepository.save(room);
+            auditService.record("ROOM_MESSAGE_UNPINNED", actorUser(actor.id()), "room", roomId + ":" + oldMessageId, ipAddress);
+            chatEventPublisher.publishPinnedMessage(roomId, null);
+        }
+        List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
+        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
+                favoriteOf(room, actor.id(), members), null);
+    }
+
     @Transactional
     public RoomMemberResponse addMember(UUID roomId, AddMemberRequest request, AuthenticatedUser actor, String ipAddress) {
         Room room = roomOrThrow(roomId);
@@ -327,6 +407,7 @@ public class RoomService {
                 ? request.role().trim() : ROLE_MEMBER;
         RoomMember member = addMembership(room, target, role);
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_ADDED", actorUser(actor.id()), "member",
                 roomId + ":" + target.getId(), ipAddress);
         messageService.createSystem(roomId,
@@ -344,6 +425,7 @@ public class RoomService {
         User target = member.getUser();
         roomMemberRepository.delete(member);
         chatEventPublisher.publishRoomRemoved(targetUserId, roomId);
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         auditService.record("ROOM_MEMBER_REMOVED", actorUser(actor.id()), "member",
                 roomId + ":" + targetUserId, ipAddress);
         messageService.createSystem(roomId,
