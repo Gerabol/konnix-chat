@@ -70,6 +70,9 @@ curl -X {{method}} "{BASE_URL}{{path}}" \
 Template por endpoint selecionado na tela "Exportar requests.http":
 
 ```http
+@baseUrl = http://localhost:8081
+@token =
+
 ### {{summary}}
 # @name {{camelCaseName}}
 {{method}} {{baseUrl}}{{path}}
@@ -81,14 +84,7 @@ Template por endpoint selecionado na tela "Exportar requests.http":
 {{/if}}
 ```
 
-Gerar também um arquivo `http-client.env.json` com `baseUrl` e `token` como variáveis de ambiente, em vez de valores fixos:
-
-```json
-{
-  "dev": { "baseUrl": "http://localhost:3000", "token": "" },
-  "prod": { "baseUrl": "https://api.konnix.chat", "token": "" }
-}
-```
+As variáveis `baseUrl` e `token` devem ficar no próprio `requests.http`. A exportação gera somente esse arquivo; não são gerados arquivos separados de ambiente ou cURL. A porta `8081` é a porta publicada pelo backend no Docker Compose (`8081:8080`).
 
 ## 5. Corrigir path params na exportação
 
