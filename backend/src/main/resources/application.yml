@@ -26,7 +26,7 @@ spring:
 
 konnix:
   uploads:
-    dir: ${KONNIX_UPLOADS_DIR:/app/uploads}
+    dir: ${KONNIX_UPLOADS_DIR:./uploads}
   files:
      max-size: ${KONNIX_MAX_FILE_SIZE:20971520}
   vapid:

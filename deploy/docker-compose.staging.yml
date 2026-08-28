@@ -1,0 +1,95 @@
+name: konnix-staging
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: konnix-staging-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-konnix}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-konnix_staging_pass}"
+      POSTGRES_DB: "${POSTGRES_DB:-konnix_staging}"
+    volumes:
+      - konnix_staging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-konnix} -d ${POSTGRES_DB:-konnix_staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - konnix_staging_net
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: konnix-staging-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-konnix_staging}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-konnix}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:-konnix_staging_pass}"
+
+      KONNIX_UPLOADS_DIR: "/app/uploads"
+
+      KONNIX_ADMIN_USERNAME: "${KONNIX_ADMIN_USERNAME:-admin}"
+      KONNIX_ADMIN_NAME: "${KONNIX_ADMIN_NAME:-Administrador Homologação}"
+      KONNIX_ADMIN_EMAIL: "${KONNIX_ADMIN_EMAIL:-admin-homolog@konnix.local}"
+      KONNIX_ADMIN_PASSWORD: "${KONNIX_ADMIN_PASSWORD:-}"
+
+      KONNIX_VAPID_PUBLIC_KEY: "${KONNIX_VAPID_PUBLIC_KEY:-}"
+      KONNIX_VAPID_PRIVATE_KEY: "${KONNIX_VAPID_PRIVATE_KEY:-}"
+      KONNIX_VAPID_SUBJECT: "${KONNIX_VAPID_SUBJECT:-mailto:homolog@konnix.local}"
+
+    ports:
+      - "127.0.0.1:${STAGING_BACKEND_PORT:-8082}:8080"
+
+    volumes:
+      - konnix_staging_uploads:/app/uploads
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -s http://127.0.0.1:8080/api/public/server-info > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+    networks:
+      - konnix_staging_net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.prod
+    container_name: konnix-staging-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${STAGING_FRONTEND_PORT:-5175}:80"
+    networks:
+      - konnix_staging_net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: konnix-staging-cloudflared
+    restart: unless-stopped
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_STAGING_TUNNEL_TOKEN:-}"
+    command: ${CLOUDFLARED_CMD:-tunnel --no-autoupdate run}
+    networks:
+      - konnix_staging_net
+
+networks:
+  konnix_staging_net:
+    name: konnix_staging_net
+    driver: bridge
+
+volumes:
+  konnix_staging_postgres_data:
+    name: konnix_staging_postgres_data
+  konnix_staging_uploads:
+    name: konnix_staging_uploads

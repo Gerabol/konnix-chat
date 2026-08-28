@@ -131,6 +131,8 @@ public class MessageService {
             message.setForwardedFromUser(original.getUser());
         }
 
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
         auditService.record("MESSAGE_CREATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
@@ -267,6 +269,8 @@ public class MessageService {
         message.setUser(actor);
         message.setContent(content);
         message.setMessageType("SYSTEM");
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
         MessageResponse response = responseFor(message, actor.getId());
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);

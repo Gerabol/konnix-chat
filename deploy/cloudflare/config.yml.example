@@ -1,0 +1,27 @@
+# ==============================================================================
+# Exemplo de Ingress Rules para Cloudflare Tunnel (Named Tunnel)
+# ==============================================================================
+
+tunnel: <SEU_TUNNEL_UUID_AQUI>
+credentials-file: /etc/cloudflared/<SEU_TUNNEL_UUID_AQUI>.json
+
+ingress:
+  # ----------------------------------------------------------------------------
+  # Opção 1: Quando o cloudflared roda dentro do Docker Compose (Recomendado)
+  # O tráfego é direcionado via DNS interno do Docker para o serviço 'frontend' na porta 80
+  # ----------------------------------------------------------------------------
+  - hostname: chat-staging.seudominio.com.br
+    service: http://frontend:80
+  - hostname: chat.seudominio.com.br
+    service: http://frontend:80
+
+  # ----------------------------------------------------------------------------
+  # Opção 2: Se você instalou o cloudflared diretamente no SO do host (sem Docker)
+  # - hostname: chat-staging.seudominio.com.br
+  #   service: http://127.0.0.1:5175
+  # - hostname: chat.seudominio.com.br
+  #   service: http://127.0.0.1:80
+  # ----------------------------------------------------------------------------
+
+  # Regra catch-all obrigatória da Cloudflare (Retorna 404 para hosts não mapeados)
+  - service: http_status:404

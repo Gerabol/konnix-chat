@@ -2,6 +2,8 @@ package br.gov.pb.cge.konnix.websocket;
 
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.slf4j.Logger;
@@ -12,6 +14,8 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.util.UUID;
+
 @Component
 public class ChatWebSocketHandler extends TextWebSocketHandler {
 
@@ -20,13 +24,16 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatWebSocketSessionRegistry sessionRegistry;
     private final UserRepository userRepository;
     private final ChatEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper;
 
     public ChatWebSocketHandler(ChatWebSocketSessionRegistry sessionRegistry,
                                 UserRepository userRepository,
-                                ChatEventPublisher eventPublisher) {
+                                ChatEventPublisher eventPublisher,
+                                ObjectMapper objectMapper) {
         this.sessionRegistry = sessionRegistry;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -71,6 +78,21 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        // Eventos são enviados apenas pelo servidor (server push); sem echo.
+        User user = AuthHandshakeInterceptor.authenticatedUser(session.getAttributes());
+        if (user == null) return;
+        try {
+            JsonNode node = objectMapper.readTree(message.getPayload());
+            String type = node.path("type").asText();
+            if ("chat.typing".equals(type)) {
+                String roomIdStr = node.path("roomId").asText();
+                boolean isTyping = node.path("isTyping").asBoolean(true);
+                if (roomIdStr != null && !roomIdStr.isBlank()) {
+                    UUID roomId = UUID.fromString(roomIdStr);
+                    eventPublisher.publishTyping(roomId, user.getId(), user.getUsername(), user.getName(), isTyping);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Frame WebSocket ignorado: {}", e.getMessage());
+        }
     }
 }
