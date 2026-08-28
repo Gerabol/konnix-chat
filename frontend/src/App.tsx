@@ -1617,8 +1617,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
-  const favoriteConversations = useMemo(() => conversations.filter((room) => room.favorite), [conversations])
+  const favoriteRooms = useMemo(() => rooms.filter((room) => room.favorite && room.directPartner?.accountStatus !== 'DISABLED'), [rooms])
   const regularConversations = useMemo(() => conversations.filter((room) => !room.favorite), [conversations])
+  const regularChannels = useMemo(() => channels.filter((room) => !room.favorite), [channels])
 
   return (
     <div className="chat-shell">
@@ -1627,8 +1628,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         <Sidebar
           me={me}
           theme={effectiveTheme}
-          channels={channels}
-          favoriteConversations={favoriteConversations}
+          channels={regularChannels}
+          favoriteRooms={favoriteRooms}
           regularConversations={regularConversations}
           activeRoomId={activeRoomId}
           search={search}
@@ -1877,7 +1878,7 @@ const Sidebar = memo(function Sidebar({
   me,
   theme,
   channels,
-  favoriteConversations,
+  favoriteRooms,
   regularConversations,
   activeRoomId,
   search,
@@ -1904,7 +1905,7 @@ const Sidebar = memo(function Sidebar({
   me: User
   theme: Theme
   channels: Room[]
-  favoriteConversations: Room[]
+  favoriteRooms: Room[]
   regularConversations: Room[]
   activeRoomId: string | null
   search: string
@@ -1975,30 +1976,17 @@ const Sidebar = memo(function Sidebar({
 
       <nav className="sidebar-nav">
         {search.trim() && <div className="nav-section search-users-section"><div className="nav-section-head"><span className="nav-section-title">Usuários</span></div><div className="nav-list">{userResults.length === 0 && <span className="nav-empty">Nenhum usuário encontrado</span>}{userResults.map((user) => <button key={user.id} className="room-item search-user-item" onClick={() => void onStartUserDm(user.id)}><span className="sidebar-avatar-wrap"><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />{user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}</span><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small></span></button>)}</div></div>}
-        {favoriteConversations.length > 0 && <div className="nav-section">
+        {favoriteRooms.length > 0 && <div className="nav-section">
             <div className="nav-section-head">
               <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
                 <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span><span className="nav-section-title">Favoritos</span>
               </button>
             </div>
             {favoritesOpen && <div className="nav-list" id="favorites-list">
-              {favoriteConversations.map((room) => {
-                const typingText = formatTypingText(typingByRoom[room.id], true)
-                return (
-                  <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
-                    <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
-                    <span className="room-name">
-                      {roomDisplayName(room)}
-                      {typingText && (
-                        <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                          {typingText}
-                        </span>
-                      )}
-                    </span>
-                    {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-                  </button>
-                )
-              })}
+              {favoriteRooms.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
+                {room.type === 'DIRECT' ? <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span> : <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
+                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+              </button>)}
             </div>}
         </div>}
 
@@ -2734,6 +2722,33 @@ function AddMembersModal({
   )
 }
 
+function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
+  const [currentMembers, setCurrentMembers] = useState<RoomMember[]>([])
+
+  useEffect(() => {
+    api.members(room.id).then(setCurrentMembers).catch(() => setCurrentMembers([]))
+  }, [room.id])
+
+  const owners = currentMembers.filter((member) => member.role === 'OWNER')
+  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER')
+
+  return (
+    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
+      <div className="modal-fields">
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+      </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 function RoomPeopleSection({ title, tone, members }: { title: string; tone: 'owner' | 'member'; members: RoomMember[] }) {
   const [open, setOpen] = useState(true)
   return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span></div>)}</div>}</div>
@@ -2925,6 +2940,7 @@ function RoomView({
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [readMessageId, setReadMessageId] = useState<string | null>(null)
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null)
@@ -3581,9 +3597,19 @@ function RoomView({
             </button>
             </>
           )}
-          {room.type === 'DIRECT' && <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar usuário'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar usuário'} aria-pressed={room.favorite}>
+          {room.type !== 'DIRECT' && !isRoomOwner && !me.roles.includes('ADMIN') && roomMembers.some((member) => member.userId === me.id) && (
+            <button
+              className="icon-btn header-add"
+              onClick={() => setMembersOpen(true)}
+              title="Ver membros"
+              aria-label="Ver membros"
+            >
+              <PersonIcon size={20} />
+            </button>
+          )}
+          <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
             {room.favorite ? '★' : '☆'}
-          </button>}
+          </button>
           <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
             <IconClip size={18} />
           </button>
@@ -3872,6 +3898,9 @@ function RoomView({
 
       {addOpen && (
         <AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={notify} />
+      )}
+      {membersOpen && (
+        <MembersModal room={room} onClose={() => setMembersOpen(false)} />
       )}
       {removeOpen && (
         <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={notify} />

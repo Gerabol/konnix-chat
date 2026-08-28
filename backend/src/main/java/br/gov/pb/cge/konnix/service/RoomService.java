@@ -131,9 +131,6 @@ public class RoomService {
     @Transactional
     public RoomResponse toggleFavorite(UUID roomId, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
-        if (!TYPE_DIRECT.equals(room.getType())) {
-            throw ApiExceptions.conflict("FAVORITE_ONLY_DIRECT", "Somente conversas diretas podem ser favoritedas");
-        }
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         RoomMember membership = members.stream()
                 .filter(member -> member.getUser().getId().equals(actor.id()) && member.isActive())
