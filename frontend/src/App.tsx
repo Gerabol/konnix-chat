@@ -2582,6 +2582,33 @@ function AddMembersModal({
   )
 }
 
+function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
+  const [currentMembers, setCurrentMembers] = useState<RoomMember[]>([])
+
+  useEffect(() => {
+    api.members(room.id).then(setCurrentMembers).catch(() => setCurrentMembers([]))
+  }, [room.id])
+
+  const owners = currentMembers.filter((member) => member.role === 'OWNER')
+  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER')
+
+  return (
+    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
+      <div className="modal-fields">
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+      </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 function RoomPeopleSection({ title, tone, members }: { title: string; tone: 'owner' | 'member'; members: RoomMember[] }) {
   const [open, setOpen] = useState(true)
   return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span></div>)}</div>}</div>
@@ -2721,6 +2748,7 @@ function RoomView({
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [readMessageId, setReadMessageId] = useState<string | null>(null)
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null)
@@ -3355,6 +3383,16 @@ function RoomView({
             </button>
             </>
           )}
+          {room.type !== 'DIRECT' && !isRoomOwner && !me.roles.includes('ADMIN') && roomMembers.some((member) => member.userId === me.id) && (
+            <button
+              className="icon-btn header-add"
+              onClick={() => setMembersOpen(true)}
+              title="Ver membros"
+              aria-label="Ver membros"
+            >
+              <PersonIcon size={20} />
+            </button>
+          )}
           <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
             {room.favorite ? '★' : '☆'}
           </button>
@@ -3640,6 +3678,9 @@ function RoomView({
 
       {addOpen && (
         <AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={notify} />
+      )}
+      {membersOpen && (
+        <MembersModal room={room} onClose={() => setMembersOpen(false)} />
       )}
       {removeOpen && (
         <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={notify} />
