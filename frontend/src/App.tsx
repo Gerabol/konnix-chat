@@ -1181,11 +1181,23 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             const msg = evt.data
             const activeRoomVisible = msg.roomId === activeRoomIdRef.current && (!isTauri || (document.visibilityState === 'visible' && document.hasFocus()))
             const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
-            setRooms((prev) => prev.map((room) =>
-              room.id === msg.roomId
-                ? { ...room, lastActivityAt: msg.createdAt, unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (room.unreadCount ?? 0) }
-                : room,
-            ))
+            setRooms((prev) => {
+              const exists = prev.some((room) => room.id === msg.roomId)
+              if (!exists) {
+                void loadRooms()
+                return prev
+              }
+              const updated = prev.map((room) =>
+                room.id === msg.roomId
+                  ? {
+                      ...room,
+                      lastActivityAt: msg.createdAt,
+                      unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (activeRoomVisible ? 0 : (room.unreadCount ?? 0)),
+                    }
+                  : room,
+              )
+              return updated.sort((a, b) => roomActivityTime(b) - roomActivityTime(a))
+            })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
                if (activeRoomVisible && msg.messageType !== 'SYSTEM' && msg.userId !== me.id) {
@@ -1255,7 +1267,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
-              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [...prev, room])
+              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [room, ...prev])
             }
           } else if (evt.type === 'room.removed') {
             const removedRoomId = evt.roomId
@@ -1434,7 +1446,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const startDirectConversation = useCallback(async (userId: string) => {
     try {
       const room = await api.createDm(userId)
-      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [...previous, room])
+      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [room, ...previous])
       await openRoom(room.id)
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
   }, [openRoom, showToast])
