@@ -28,6 +28,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -121,6 +122,8 @@ public class FileService {
             message.setUser(actorUser);
             message.setContent(content == null || content.isBlank() ? originalName.trim() : content.trim());
             message.setMessageType("FILE");
+            room.setUpdatedAt(Instant.now());
+            roomRepository.save(room);
             messageRepository.save(message);
 
             Attachment attachment = new Attachment();

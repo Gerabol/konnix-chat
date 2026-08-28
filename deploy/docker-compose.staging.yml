@@ -79,9 +79,7 @@ services:
     restart: unless-stopped
     depends_on:
       - frontend
-    environment:
-      TUNNEL_TOKEN: "${CLOUDFLARE_STAGING_TUNNEL_TOKEN:-}"
-    command: ${CLOUDFLARED_CMD:-tunnel --no-autoupdate run}
+    command: ["tunnel", "--no-autoupdate", "--url", "http://frontend:80"]
     networks:
       - konnix_staging_net
 

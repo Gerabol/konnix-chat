@@ -204,6 +204,7 @@ public class RoomService {
         addMembership(room, actorUser, ROLE_MEMBER);
         if (!otherUserId.equals(actor.id())) {
             addMembership(room, other, ROLE_MEMBER);
+            chatEventPublisher.publishRoomAdded(other.getId(), RoomResponse.from(room, directPartnerFor(actorUser)));
         }
         auditService.record("ROOM_CREATED", actorUser, "room", room.getId().toString(), ipAddress);
         return RoomResponse.from(room, directPartnerFor(partner));

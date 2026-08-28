@@ -642,6 +642,33 @@ function roomActivityTime(room: Room): number {
   return Date.parse(room.lastActivityAt ?? room.updatedAt ?? room.createdAt) || 0
 }
 
+export type TypingUser = {
+  userId: string
+  username: string
+  name: string
+  timestamp: number
+}
+
+export function TypingDots() {
+  return (
+    <span className="typing-dots" aria-hidden="true">
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+    </span>
+  )
+}
+
+function formatTypingText(typingMap: Record<string, TypingUser> | undefined, isDirect: boolean): string | null {
+  if (!typingMap) return null
+  const users = Object.values(typingMap)
+  if (users.length === 0) return null
+  if (isDirect) return 'digitando...'
+  if (users.length === 1) return `${users[0].name || users[0].username} está digitando...`
+  if (users.length === 2) return `${users[0].name || users[0].username} e ${users[1].name || users[1].username} estão digitando...`
+  return `${users[0].name || users[0].username} e outros estão digitando...`
+}
+
 function formatRecordingTime(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -988,6 +1015,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
+  const [typingByRoom, setTypingByRoom] = useState<Record<string, Record<string, TypingUser>>>({})
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [standalone] = useState(
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -1079,6 +1107,44 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const setMessageNotifications = useCallback((enabled: boolean) => {
     setMessageNotificationsEnabled(enabled)
     try { localStorage.setItem('konnix-message-notifications', String(enabled)) } catch { /* preferência opcional */ }
+  }, [])
+
+  const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: 'chat.typing', roomId, isTyping }))
+      } catch {
+        /* ignora erro */
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now()
+      setTypingByRoom((prev) => {
+        let changed = false
+        const next: Record<string, Record<string, TypingUser>> = {}
+        for (const [roomId, users] of Object.entries(prev)) {
+          const activeUsers: Record<string, TypingUser> = {}
+          for (const [userId, user] of Object.entries(users)) {
+            if (now - user.timestamp < 4500) {
+              activeUsers[userId] = user
+            } else {
+              changed = true
+            }
+          }
+          if (Object.keys(activeUsers).length > 0) {
+            next[roomId] = activeUsers
+          } else if (Object.keys(users).length > 0) {
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+    }, 1000)
+    return () => clearInterval(interval)
   }, [])
 
   const loadRooms = useCallback(async () => {
@@ -1179,13 +1245,33 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           }
           if (evt.type === 'message.created') {
             const msg = evt.data
+            if (msg.userId) {
+              setTypingByRoom((prev) => {
+                if (!prev[msg.roomId] || !prev[msg.roomId][msg.userId!]) return prev
+                const roomTyping = { ...prev[msg.roomId] }
+                delete roomTyping[msg.userId!]
+                return { ...prev, [msg.roomId]: roomTyping }
+              })
+            }
             const activeRoomVisible = msg.roomId === activeRoomIdRef.current && (!isTauri || (document.visibilityState === 'visible' && document.hasFocus()))
             const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
-            setRooms((prev) => prev.map((room) =>
-              room.id === msg.roomId
-                ? { ...room, lastActivityAt: msg.createdAt, unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (room.unreadCount ?? 0) }
-                : room,
-            ))
+            setRooms((prev) => {
+              const exists = prev.some((room) => room.id === msg.roomId)
+              if (!exists) {
+                void loadRooms()
+                return prev
+              }
+              const updated = prev.map((room) =>
+                room.id === msg.roomId
+                  ? {
+                      ...room,
+                      lastActivityAt: msg.createdAt,
+                      unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (activeRoomVisible ? 0 : (room.unreadCount ?? 0)),
+                    }
+                  : room,
+              )
+              return updated.sort((a, b) => roomActivityTime(b) - roomActivityTime(a))
+            })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
                if (activeRoomVisible && msg.messageType !== 'SYSTEM' && msg.userId !== me.id) {
@@ -1205,6 +1291,35 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                  }
                }
              }
+          } else if (evt.type === 'chat.typing') {
+            const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
+            const roomId = evt.roomId
+            if (roomId && payload?.userId && payload.userId !== me.id) {
+              if (payload.isTyping) {
+                setTypingByRoom((prev) => {
+                  const currentRoomTyping = { ...(prev[roomId] ?? {}) }
+                  currentRoomTyping[payload.userId] = {
+                    userId: payload.userId,
+                    username: payload.username,
+                    name: payload.name,
+                    timestamp: Date.now(),
+                  }
+                  return { ...prev, [roomId]: currentRoomTyping }
+                })
+              } else {
+                setTimeout(() => {
+                  setTypingByRoom((prev) => {
+                    const currentRoomTyping = prev[roomId]
+                    if (!currentRoomTyping || !currentRoomTyping[payload.userId]) return prev
+                    const user = currentRoomTyping[payload.userId]
+                    if (Date.now() - user.timestamp < 1200) return prev
+                    const updated = { ...currentRoomTyping }
+                    delete updated[payload.userId]
+                    return { ...prev, [roomId]: updated }
+                  })
+                }, 1200)
+              }
+            }
           } else if (evt.type === 'message.read') {
             const receipt = evt.data as unknown as ReadReceipt & { messageId: string }
             if (receipt.messageId) {
@@ -1255,7 +1370,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
-              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [...prev, room])
+              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [room, ...prev])
             }
           } else if (evt.type === 'room.removed') {
             const removedRoomId = evt.roomId
@@ -1434,7 +1549,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const startDirectConversation = useCallback(async (userId: string) => {
     try {
       const room = await api.createDm(userId)
-      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [...previous, room])
+      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [room, ...previous])
       await openRoom(room.id)
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
   }, [openRoom, showToast])
@@ -1513,29 +1628,30 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           me={me}
           theme={effectiveTheme}
           channels={channels}
-           favoriteConversations={favoriteConversations}
-           regularConversations={regularConversations}
+          favoriteConversations={favoriteConversations}
+          regularConversations={regularConversations}
           activeRoomId={activeRoomId}
-           search={search}
-           userResults={searchUsers}
+          search={search}
+          userResults={searchUsers}
           onSearch={setSearch}
           onOpenRoom={openRoom}
-           onNewRoom={openNewRoom}
-            onNewDm={openNewDm}
-            onStartUserDm={startUserDmFromSearch}
-           onLogout={onLogout}
+          onNewRoom={openNewRoom}
+          onNewDm={openNewDm}
+          onStartUserDm={startUserDmFromSearch}
+          onLogout={onLogout}
           onTheme={openTheme}
-            onEditProfile={openProfileEdit}
-            onAbout={openAbout}
-            onReportIssue={openReportIssue}
+          onEditProfile={openProfileEdit}
+          onAbout={openAbout}
+          onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
           canInstall={!standalone && !!installEvent}
-           onInstall={installApp}
-             onPresenceChange={changePresenceManually}
-            onPresenceError={showToast}
-            messageNotificationsEnabled={messageNotificationsEnabled}
-             onMessageNotificationsChange={setMessageNotifications}
-          />
+          onInstall={installApp}
+          onPresenceChange={changePresenceManually}
+          onPresenceError={showToast}
+          messageNotificationsEnabled={messageNotificationsEnabled}
+          onMessageNotificationsChange={setMessageNotifications}
+          typingByRoom={typingByRoom}
+        />
 
         <main className="main">
           {!activeRoom ? (
@@ -1553,22 +1669,24 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               online={online}
               me={me}
               myAvatarVersion={myAvatarVersion}
-               onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
-               onSend={sendMessage}
-               onInitialPositioned={() => { isInitializingConversationRef.current = false }}
-                onDelete={(message) => {
-                  if (!message.deletedAt && message.userId === me.id && me.accountStatus !== 'READ_ONLY') setPendingDelete(message)
-                }}
-                onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
-                onReaction={(message, emoji) => void reactMessage(message, emoji)}
+              typingUsers={typingByRoom[activeRoom.id]}
+              onTyping={(isTyping) => sendTypingStatus(activeRoom.id, isTyping)}
+              onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
+              onSend={sendMessage}
+              onInitialPositioned={() => { isInitializingConversationRef.current = false }}
+              onDelete={(message) => {
+                if (!message.deletedAt && message.userId === me.id && me.accountStatus !== 'READ_ONLY') setPendingDelete(message)
+              }}
+              onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
+              onReaction={(message, emoji) => void reactMessage(message, emoji)}
               onStartDm={startDirectConversation}
               notify={showToast}
               readReceiptsEnabled={readReceiptsEnabled}
-               onSearchResult={addSearchResult}
-               onPollUpdated={addSearchResult}
-                onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
-               onOpenRoom={openRoom}
-             />
+              onSearchResult={addSearchResult}
+              onPollUpdated={addSearchResult}
+              onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
+              onOpenRoom={openRoom}
+            />
           )}
         </main>
       </div>
@@ -1781,6 +1899,7 @@ const Sidebar = memo(function Sidebar({
   onPresenceError,
   messageNotificationsEnabled,
   onMessageNotificationsChange,
+  typingByRoom,
 }: {
   me: User
   theme: Theme
@@ -1807,6 +1926,7 @@ const Sidebar = memo(function Sidebar({
   onPresenceError: (message: string) => void
   messageNotificationsEnabled: boolean
   onMessageNotificationsChange: (enabled: boolean) => void
+  typingByRoom: Record<string, Record<string, TypingUser>>
 }) {
   const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
@@ -1862,10 +1982,23 @@ const Sidebar = memo(function Sidebar({
               </button>
             </div>
             {favoritesOpen && <div className="nav-list" id="favorites-list">
-              {favoriteConversations.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
-                <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
-                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-              </button>)}
+              {favoriteConversations.map((room) => {
+                const typingText = formatTypingText(typingByRoom[room.id], true)
+                return (
+                  <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
+                    <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
+                    <span className="room-name">
+                      {roomDisplayName(room)}
+                      {typingText && (
+                        <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                          {typingText}
+                        </span>
+                      )}
+                    </span>
+                    {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                  </button>
+                )
+              })}
             </div>}
         </div>}
 
@@ -1887,26 +2020,36 @@ const Sidebar = memo(function Sidebar({
           </div>
           {channelsOpen && <div className="nav-list" id="channels-list">
              {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-            {channels.map((room) => (
-              <button
-                key={room.id}
-                className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                onClick={() => onOpenRoom(room.id)}
-              >
-                <AvatarImage
-                   path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                  className="room-thumb"
-                  fallback={
-                    <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                      {getRoomIcon(room)}
-                    </span>
-                  }
-                  alt={roomDisplayName(room)}
-                />
-                <span className="room-name">{roomDisplayName(room)}</span>
-                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-              </button>
-            ))}
+            {channels.map((room) => {
+              const typingText = formatTypingText(typingByRoom[room.id], false)
+              return (
+                <button
+                  key={room.id}
+                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                  onClick={() => onOpenRoom(room.id)}
+                >
+                  <AvatarImage
+                     path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                    className="room-thumb"
+                    fallback={
+                      <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                        {getRoomIcon(room)}
+                      </span>
+                    }
+                    alt={roomDisplayName(room)}
+                  />
+                  <span className="room-name">
+                    {roomDisplayName(room)}
+                    {typingText && (
+                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                        {typingText}
+                      </span>
+                    )}
+                  </span>
+                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                </button>
+              )
+            })}
           </div>}
         </div>
 
@@ -1928,24 +2071,34 @@ const Sidebar = memo(function Sidebar({
           </div>
           {conversationsOpen && <div className="nav-list" id="conversations-list">
              {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
-             {regularConversations.map((room) => (
-              <button
-                key={room.id}
-                className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                onClick={() => onOpenRoom(room.id)}
-              >
-                <span className="room-icon direct">
-                  <span className="sidebar-avatar-wrap"><AvatarImage
-                    path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                    className="mini-avatar"
-                    fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
-                    alt={roomDisplayName(room)}
-                  />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
-                </span>
-                <span className="room-name">{roomDisplayName(room)}</span>
-                {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-              </button>
-            ))}
+             {regularConversations.map((room) => {
+              const typingText = formatTypingText(typingByRoom[room.id], true)
+              return (
+                <button
+                  key={room.id}
+                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                  onClick={() => onOpenRoom(room.id)}
+                >
+                  <span className="room-icon direct">
+                    <span className="sidebar-avatar-wrap"><AvatarImage
+                      path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                      className="mini-avatar"
+                      fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                      alt={roomDisplayName(room)}
+                    />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
+                  </span>
+                  <span className="room-name">
+                    {roomDisplayName(room)}
+                    {typingText && (
+                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                        {typingText}
+                      </span>
+                    )}
+                  </span>
+                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                </button>
+              )
+            })}
           </div>}
         </div>
       </nav>
@@ -2674,6 +2827,8 @@ function RoomView({
   online,
   me,
   myAvatarVersion,
+  typingUsers,
+  onTyping,
   onBack,
   onSend,
   onInitialPositioned,
@@ -2699,6 +2854,8 @@ function RoomView({
   online: boolean
   me: User
   myAvatarVersion: string
+  typingUsers?: Record<string, TypingUser>
+  onTyping?: (isTyping: boolean) => void
   onBack: () => void
    onSend: (content: string, parentMessageId?: string, attachments?: File[]) => Promise<boolean>
   onInitialPositioned: () => void
@@ -2713,6 +2870,54 @@ function RoomView({
   onRoomUpdated: (room: Room) => void
   onOpenRoom: (roomId: string) => void
 }) {
+  const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
+  const lastTypingSentRef = useRef(0)
+  const typingTimeoutRef = useRef<number | null>(null)
+  const stopTypingTimeoutRef = useRef<number | null>(null)
+
+  const stopTyping = useCallback((immediate: boolean = false) => {
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
+    if (stopTypingTimeoutRef.current !== null) {
+      window.clearTimeout(stopTypingTimeoutRef.current)
+      stopTypingTimeoutRef.current = null
+    }
+    lastTypingSentRef.current = 0
+    if (immediate) {
+      onTyping?.(false)
+    } else {
+      stopTypingTimeoutRef.current = window.setTimeout(() => {
+        onTyping?.(false)
+      }, 1500)
+    }
+  }, [onTyping])
+
+  const notifyTyping = useCallback(() => {
+    if (stopTypingTimeoutRef.current !== null) {
+      window.clearTimeout(stopTypingTimeoutRef.current)
+      stopTypingTimeoutRef.current = null
+    }
+    const now = Date.now()
+    if (now - lastTypingSentRef.current > 1800) {
+      lastTypingSentRef.current = now
+      onTyping?.(true)
+    }
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current)
+    }
+    typingTimeoutRef.current = window.setTimeout(() => {
+      stopTyping(false)
+    }, 4000)
+  }, [onTyping, stopTyping])
+
+  useEffect(() => {
+    return () => {
+      stopTyping(true)
+    }
+  }, [room.id, stopTyping])
+
   const [draft, setDraft] = useState('')
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
@@ -3108,6 +3313,7 @@ function RoomView({
   }
 
   const submit = async () => {
+    stopTyping(true)
     if ((!draft.trim() && pendingAttachments.length === 0) || muted || composing) return
     const sendingAttachments = pendingAttachments.length > 0
     if (editingMessage) {
@@ -3147,6 +3353,7 @@ function RoomView({
   }
 
   const cancelEditing = () => {
+    stopTyping()
     setEditingMessage(null)
     setDraft('')
     setComposerExpanded(false)
@@ -3191,12 +3398,18 @@ function RoomView({
     setRoomInfoOpen(true)
   }
 
-  const updateDraft = (value: string, cursor: number) => {
+  const updateDraft = (value: string, cursor: number | null = null) => {
     setDraft(value)
+    if (value.trim().length > 0) {
+      notifyTyping()
+    } else {
+      stopTyping()
+    }
     if (room.type === 'DIRECT') {
       setMention(null)
       return
     }
+    if (cursor === null) return
     const beforeCursor = value.slice(0, cursor)
     const match = beforeCursor.match(/(^|\s)@([a-zA-Z0-9._-]*)$/)
     if (!match) {
@@ -3307,7 +3520,14 @@ function RoomView({
             </span>
             <div className="room-header-text">
               <h2>{roomDisplayName(room)}</h2>
-              <span className="room-type">{roomSubtitle(room)}</span>
+              {typingText ? (
+                <span className="room-type typing-active">
+                  {typingText}
+                  <TypingDots />
+                </span>
+              ) : (
+                <span className="room-type">{roomSubtitle(room)}</span>
+              )}
             </div>
           </button>
         ) : (
@@ -3320,7 +3540,14 @@ function RoomView({
             />
             <div className="room-header-text">
               <h2>{roomDisplayName(room)}</h2>
-              <span className="room-type">{roomSubtitle(room)}</span>
+              {typingText ? (
+                <span className="room-type typing-active">
+                  {typingText}
+                  <TypingDots />
+                </span>
+              ) : (
+                <span className="room-type">{roomSubtitle(room)}</span>
+              )}
             </div>
           </button>
         )}
@@ -3517,6 +3744,12 @@ function RoomView({
              <IconStop size={15} /> <span>Parar</span>
            </button>
          </div>}
+         {typingText && (
+            <div className="typing-indicator-bar" role="status" aria-live="polite">
+              <TypingDots />
+              <span>{typingText}</span>
+            </div>
+          )}
          <div className="composer-top">
           <EmojiButton disabled={muted} onPick={insertText} />
           <input
