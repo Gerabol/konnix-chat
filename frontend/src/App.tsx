@@ -428,6 +428,107 @@ function AudioRecordButton({
   )
 }
 
+function IconX({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
+function ComposerActionBox({
+  roomType,
+  readOnlyAccount,
+  roomReadOnly,
+  muted,
+  clearDisabled,
+  editing,
+  onAttach,
+  onCode,
+  onPoll,
+  onClear,
+  onCancelEdit,
+}: {
+  roomType: Room['type']
+  readOnlyAccount: boolean
+  roomReadOnly: boolean
+  muted: boolean
+  clearDisabled: boolean
+  editing: boolean
+  onAttach: () => void
+  onCode: () => void
+  onPoll: () => void
+  onClear: () => void
+  onCancelEdit: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const showPoll = roomType === 'PRIVATE_GROUP' && !readOnlyAccount && !roomReadOnly
+
+  return (
+    <div className="composer-action-box" ref={ref}>
+      <button
+        type="button"
+        className="composer-action-trigger"
+        aria-label="Mais ações"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Mais ações"
+        disabled={muted}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <IconPlus size={22} />
+      </button>
+      {open && (
+        <div className="composer-actions-popover" role="menu" aria-label="Mais ações">
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconClip size={18} /></span>
+            <span>Anexar Arquivo</span>
+          </button>
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCode(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconCode size={18} /></span>
+            <span>Bloco de Código</span>
+          </button>
+          {showPoll && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onPoll(); setOpen(false) }}>
+              <span className="composer-action-box-icon"><span aria-hidden="true">▣</span></span>
+              <span>Criar Enquete</span>
+            </button>
+          )}
+          <button type="button" role="menuitem" className="composer-action-box-item composer-action-box-item-danger" onClick={() => { onClear(); setOpen(false) }} disabled={clearDisabled}>
+            <span className="composer-action-box-icon"><IconTrash size={18} /></span>
+            <span>Limpar Mensagem</span>
+          </button>
+          {editing && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCancelEdit(); setOpen(false) }} disabled={muted}>
+              <span className="composer-action-box-icon"><IconX size={18} /></span>
+              <span>Cancelar Edição</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function IconCode({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -490,6 +591,17 @@ function IconSend({ size = 15 }: { size?: number }) {
     </svg>
   )
 }
+
+function IconPlus({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+
 
 function PersonIcon({ size = 19 }: { size?: number }) {
   return (
@@ -3852,6 +3964,20 @@ function RoomView({
               ))}
             </div>
           )}
+          <ComposerActionBox
+            roomType={room.type}
+            readOnlyAccount={readOnlyAccount}
+            roomReadOnly={room.readOnly}
+            muted={muted}
+            clearDisabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+            editing={Boolean(editingMessage)}
+            onAttach={() => fileInputRef.current?.click()}
+            onCode={toggleCode}
+            onPoll={() => setPollOpen(true)}
+            onClear={clearDraft}
+            onCancelEdit={cancelEditing}
+          />
+          <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
             <span>{editingMessage ? 'Editar' : 'Enviar'}</span>
@@ -3878,7 +4004,6 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
           {room.type === 'PRIVATE_GROUP' && !readOnlyAccount && !room.readOnly && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
