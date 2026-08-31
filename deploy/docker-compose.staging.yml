@@ -77,8 +77,6 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: konnix-staging-cloudflared
     restart: unless-stopped
-    depends_on:
-      - frontend
     environment:
       TUNNEL_TOKEN: "${CLOUDFLARE_STAGING_TUNNEL_TOKEN:-}"
     command: ${CLOUDFLARED_CMD:-tunnel --no-autoupdate run}

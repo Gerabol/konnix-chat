@@ -121,7 +121,7 @@ DOWNLOAD_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERS
 
 # Checksums SHA-256 oficiais da versão v2.322.0
 declare -A CHECKSUMS=(
-    ["linux-x64"]="b13b784808359f31bc76b0d612e5f922aa53d2bd3230c10b42dd748ec0cb4901"
+    ["linux-x64"]="b13b784808359f31bc79b08a191f5f83757852957dd8fe3dbfcc38202ccf5768"
     ["linux-arm64"]="501d6836109dfb00355f3f0907e155ea1b4f4cbe6ebc5e219fb0934091a13fa4"
     ["osx-x64"]="a64284d728514936b8017c603fc5b9319be7fefae8a7efbc7f0ad72a39a9c97b"
     ["osx-arm64"]="cf2b4dbad5fa16f86b763ec813eb4d8ee590e0c0347895d36e2f1837a76059fd"

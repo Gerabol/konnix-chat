@@ -448,6 +448,100 @@ class ChatCoreIntegrationTest {
                 .andExpect(jsonPath("$.data.hasMore").value(false));
     }
 
+    @Test
+    void adminFixaEDesafixaMensagemEmCanal() throws Exception {
+        String roomId = createRoom(adminToken, "canal-fixar-admin", "CHANNEL");
+        String messageId = sendMessage(adminToken, roomId, "importante aviso");
+
+        // Fixar mensagem
+        mockMvc.perform(post("/api/v1/rooms/{id}/pin/{messageId}", roomId, messageId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage.id").value(messageId))
+                .andExpect(jsonPath("$.data.pinnedMessage.content").value("importante aviso"));
+
+        // Verificar que ao consultar a sala a mensagem fixada vem preenchida
+        mockMvc.perform(get("/api/v1/rooms/{id}", roomId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage.id").value(messageId));
+
+        // Desafixar mensagem
+        mockMvc.perform(delete("/api/v1/rooms/{id}/pin", roomId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage").isEmpty());
+
+        // Verificar que sala não possui mais mensagem fixada
+        mockMvc.perform(get("/api/v1/rooms/{id}", roomId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage").isEmpty());
+    }
+
+    @Test
+    void ownerFixaMensagemEmGrupoPrivado() throws Exception {
+        createUser("owner-grupo-pin");
+        String ownerToken = login("owner-grupo-pin", PASSWORD);
+        String roomId = createRoom(ownerToken, "grupo-privado-pin", "PRIVATE_GROUP");
+        String messageId = sendMessage(ownerToken, roomId, "regras do grupo");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/pin/{messageId}", roomId, messageId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage.id").value(messageId))
+                .andExpect(jsonPath("$.data.pinnedMessage.content").value("regras do grupo"));
+    }
+
+    @Test
+    void membroComumNaoFixaMensagem() throws Exception {
+        String roomId = createRoom(adminToken, "canal-membro-sem-pin", "CHANNEL");
+        String messageId = sendMessage(adminToken, roomId, "aviso geral");
+        String memberId = createUser("membro-sem-pin");
+        addMember(adminToken, roomId, memberId);
+        String memberToken = login("membro-sem-pin", PASSWORD);
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/pin/{messageId}", roomId, messageId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void excluirMensagemFixadaLimpaPinnedMessageDaSala() throws Exception {
+        String roomId = createRoom(adminToken, "canal-del-pin", "CHANNEL");
+        String messageId = sendMessage(adminToken, roomId, "mensagem temporaria fixada");
+
+        // Fixar
+        mockMvc.perform(post("/api/v1/rooms/{id}/pin/{messageId}", roomId, messageId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage.id").value(messageId));
+
+        // Excluir a mensagem
+        mockMvc.perform(delete("/api/v1/messages/{id}", messageId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+
+        // Verificar que sala teve pinnedMessage limpa
+        mockMvc.perform(get("/api/v1/rooms/{id}", roomId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pinnedMessage").isEmpty());
+    }
+
+    @Test
+    void fixarMensagemDeOutraSalaRetornaConflito() throws Exception {
+        String roomA = createRoom(adminToken, "canal-pin-a", "CHANNEL");
+        String roomB = createRoom(adminToken, "canal-pin-b", "CHANNEL");
+        String msgA = sendMessage(adminToken, roomA, "msg da sala A");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/pin/{messageId}", roomB, msgA)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("MESSAGE_ROOM_MISMATCH"));
+    }
+
     private String login(String username, String password) {
         try {
             MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
@@ -463,14 +557,21 @@ class ChatCoreIntegrationTest {
 
     private String createUser(String username) {
         try {
+            String temporaryPassword = "primeiro-acesso-" + PASSWORD;
             MvcResult result = mockMvc.perform(post("/api/v1/users")
                             .header("Authorization", "Bearer " + adminToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"username\":\"" + username + "\",\"name\":\"" + username
-                                    + "\",\"email\":\"" + username + "@test.local\",\"password\":\"" + PASSWORD + "\"}"))
+                                    + "\",\"email\":\"" + username + "@test.local\",\"password\":\"" + temporaryPassword + "\"}"))
                     .andExpect(status().isOk())
                     .andReturn();
             JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            String token = login(username, temporaryPassword);
+            mockMvc.perform(post("/api/v1/auth/change-required-password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"newPassword\":\"" + PASSWORD + "\",\"confirmPassword\":\"" + PASSWORD + "\"}"))
+                    .andExpect(status().isOk());
             return body.path("data").path("id").asText();
         } catch (Exception e) {
             throw new RuntimeException(e);

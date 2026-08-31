@@ -113,7 +113,8 @@ class AuthSecurityIntegrationTest {
     @Test
     void usuarioComumNaoPodeAcessarAdmin() throws Exception {
         createUser("comum01", "Usuário Comum", "comum01@test.local", "senha-comum-01");
-        String comumToken = login("comum01", "senha-comum-01");
+        completarPrimeiroAcesso("comum01", "senha-comum-01", "senha-comum-nova");
+        String comumToken = login("comum01", "senha-comum-nova");
 
         mockMvc.perform(get("/api/v1/users")
                         .header("Authorization", "Bearer " + comumToken))
@@ -140,7 +141,8 @@ class AuthSecurityIntegrationTest {
     @Test
     void usuarioEditaApenasNomeEmailEMantemCamposProtegidos() throws Exception {
         createUser("perfil01", "Perfil Original", "perfil01@test.local", "senha-perfil-01");
-        String token = login("perfil01", "senha-perfil-01");
+        completarPrimeiroAcesso("perfil01", "senha-perfil-01", "senha-perfil-final");
+        String token = login("perfil01", "senha-perfil-final");
 
         mockMvc.perform(patch("/api/v1/auth/profile")
                         .header("Authorization", "Bearer " + token)
@@ -153,7 +155,7 @@ class AuthSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.active").value(true))
                 .andExpect(jsonPath("$.data.username").value("perfil01"));
 
-        assertThat(login("perfil01", "senha-perfil-01")).isNotBlank();
+        assertThat(login("perfil01", "senha-perfil-final")).isNotBlank();
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -171,7 +173,8 @@ class AuthSecurityIntegrationTest {
     @Test
     void usuarioAtualizaApenasOProprioTema() throws Exception {
         createUser("tema01", "Usuário Tema", "tema01@test.local", "senha-tema-01");
-        String token = login("tema01", "senha-tema-01");
+        completarPrimeiroAcesso("tema01", "senha-tema-01", "senha-tema-nova");
+        String token = login("tema01", "senha-tema-nova");
 
         mockMvc.perform(patch("/api/v1/auth/preferences")
                         .header("Authorization", "Bearer " + token)
@@ -205,18 +208,46 @@ class AuthSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.active").value(true))
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist())
                 .andExpect(jsonPath("$.data.roles", org.hamcrest.Matchers.hasItem("USER")))
+                .andExpect(jsonPath("$.data.passwordChangeRequired").value(true))
                 .andReturn();
 
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(body.path("data").path("id").asText()).isNotBlank();
 
-        String comumToken = login("novouser", "senha-novo-123");
+        MvcResult firstLogin = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"novouser\",\"password\":\"senha-novo-123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.passwordChangeRequired").value(true))
+                .andReturn();
+        String comumToken = objectMapper.readTree(firstLogin.getResponse().getContentAsString()).path("data").path("token").asText();
         assertThat(comumToken).isNotBlank();
+
+        mockMvc.perform(get("/api/v1/rooms")
+                        .header("Authorization", "Bearer " + comumToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("PASSWORD_CHANGE_REQUIRED"));
     }
 
     @Test
     void senhaRedefinidaPeloAdminExigeTrocaEInvalidaSessoes() throws Exception {
-        String userId = createUser("troca-obrigatoria", "Troca Obrigatória", "troca@test.local", "senha-original-123");
+        String userId = createUser("troca-obrigatoria", "Troca Obrigatória", "troca@test.local", "senha-inicial-123");
+
+        MvcResult primeiroAcesso = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"troca-obrigatoria\",\"password\":\"senha-inicial-123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.passwordChangeRequired").value(true))
+                .andReturn();
+        String primeiroToken = objectMapper.readTree(primeiroAcesso.getResponse().getContentAsString()).path("data").path("token").asText();
+
+        mockMvc.perform(post("/api/v1/auth/change-required-password")
+                        .header("Authorization", "Bearer " + primeiroToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"senha-original-123\",\"confirmPassword\":\"senha-original-123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.passwordChangeRequired").value(false));
+
         String oldToken = login("troca-obrigatoria", "senha-original-123");
 
         mockMvc.perform(patch("/api/v1/users/{id}", userId)
@@ -320,6 +351,17 @@ class AuthSecurityIntegrationTest {
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return body.path("data").path("token").asText();
+    }
+
+    private void completarPrimeiroAcesso(String username, String senhaTemporaria, String novaSenha) throws Exception {
+        String token = login(username, senhaTemporaria);
+        assertThat(token).isNotBlank();
+        mockMvc.perform(post("/api/v1/auth/change-required-password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"" + novaSenha + "\",\"confirmPassword\":\"" + novaSenha + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.passwordChangeRequired").value(false));
     }
 
     private String createUser(String username, String name, String email, String password) throws Exception {

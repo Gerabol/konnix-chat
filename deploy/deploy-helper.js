@@ -28,18 +28,27 @@ if (action === 'prepare-staging-env') {
     fs.copyFileSync(exampleFile, persistentEnv);
   }
 
-  // Verifica se o token do Cloudflare Tunnel foi configurado
-  let content = fs.readFileSync(envFile, 'utf8');
-  const tokenMatch = content.match(/^CLOUDFLARE_STAGING_TUNNEL_TOKEN=(.+)$/m);
-  const token = tokenMatch ? tokenMatch[1].trim() : '';
+  // Sanitiza linhas: mantém apenas comentários (#), linhas em branco ou KEY=VALUE válidos
+  let rawContent = fs.readFileSync(envFile, 'utf8').replace(/\r/g, '');
+  const cleanLines = rawContent.split('\n').filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    if (trimmed.startsWith('#')) return true;
+    return /^[A-Za-z0-9_]+\s*=/.test(trimmed);
+  });
+  let content = cleanLines.join('\n');
 
-  content = content.replace(/\r/g, '').replace(/^CLOUDFLARED_CMD=.*$/m, '').trim();
+  // Verifica se o token do Cloudflare Tunnel foi configurado
+  const tokenMatch = content.match(/^CLOUDFLARE_STAGING_TUNNEL_TOKEN=(.+)$/m);
+  const token = tokenMatch ? tokenMatch[1].trim().replace(/^['"]|['"]$/g, '') : '';
+
+  content = content.replace(/^CLOUDFLARED_CMD=.*$/m, '').trim();
   if (token && token.length > 10) {
     console.log('✓ Token do Cloudflare Tunnel detectado! Configurando modo de Túnel Nomeado com Domínio Fixo...');
-    content += '\nCLOUDFLARED_CMD="tunnel --no-autoupdate run"\n';
+    content += `\nCLOUDFLARED_CMD=tunnel --no-autoupdate run --token ${token}\n`;
   } else {
     console.log('ℹ Nenhum token configurado. Utilizando modo Quick Tunnel gratuito...');
-    content += '\nCLOUDFLARED_CMD="tunnel --no-autoupdate --url http://frontend:80"\n';
+    content += '\nCLOUDFLARED_CMD=tunnel --no-autoupdate --url http://frontend:80\n';
   }
   fs.writeFileSync(envFile, content, 'utf8');
 } else if (action === 'check-prod-env') {
@@ -120,7 +129,10 @@ if (action === 'prepare-staging-env') {
       fs.appendFileSync(summaryFile, md, 'utf8');
     }
   }
-  checkStaging();
+  checkStaging().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
 } else if (action === 'healthcheck-prod') {
   async function checkProd() {
     console.log('==> Aguardando inicialização completa do Backend de Produção...');
@@ -164,7 +176,10 @@ if (action === 'prepare-staging-env') {
       fs.appendFileSync(summaryFile, md, 'utf8');
     }
   }
-  checkProd();
+  checkProd().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
 } else {
   console.error('Ação desconhecida: ' + action);
   process.exit(1);

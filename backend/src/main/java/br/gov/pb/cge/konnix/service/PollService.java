@@ -24,6 +24,7 @@ import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
@@ -77,6 +78,8 @@ public class PollService {
         message.setUser(user);
         message.setContent(request.question().trim());
         message.setMessageType("POLL");
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
 
         Poll poll = new Poll();

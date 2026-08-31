@@ -15,7 +15,9 @@ type ApiEndpoint = {
   query?: ApiField[]
   body?: ApiField[]
   request?: string
+  requestBody?: Record<string, unknown>
   response: string
+  responseExample?: unknown
   statuses: string[]
 }
 type ApiModule = { id: string; name: string; endpoints: ApiEndpoint[] }
@@ -23,6 +25,45 @@ type ApiModule = { id: string; name: string; endpoints: ApiEndpoint[] }
 const field = (name: string, type: string, required: boolean, description: string): ApiField => ({ name, type, required, description })
 const json = (value: unknown) => JSON.stringify(value, null, 2)
 const commonErrors = ['400 - Requisição inválida', '401 - Não autenticado', '403 - Sem permissão', '404 - Recurso não encontrado', '500 - Erro interno']
+
+const exampleValues: Record<string, unknown> = {
+  username: 'joao123', name: 'Joao Silva', email: 'joao@exemplo.com', password: 'SenhaSegura123!',
+  confirmPassword: 'SenhaSegura123!', newPassword: 'SenhaSegura123!', content: 'Exemplo de conteúdo enviado pela API.',
+  displayName: 'Canal de exemplo', type: 'CHANNEL', userId: 'usr_01h2konnix', roomId: 'room_01h2konnix',
+  id: 'usr_01h2konnix', messageId: 'msg_01h2konnix', forwardedMessageId: 'msg_01h2konnix',
+  parentMessageId: 'msg_01h2konnix', pollId: 'poll_01h2konnix', optionId: 'opt_01h2konnix',
+  emoji: '👍', role: 'MEMBER', roles: ['USER'], status: 'ACTIVE', enabled: true, readOnly: false,
+  question: 'Qual horário funciona melhor?', options: ['09:00', '14:00'], allowMultiple: false,
+  endpoint: 'https://push.example.test/subscription', p256dh: 'example-public-key', auth: 'example-auth-secret',
+  expirationDate: '2027-08-27', q: 'relatorio', limit: 50, before: '2026-08-27T12:00:00Z',
+  page: 0, size: 25, resource: 'USER', action: 'USER_UPDATED', user: 'usr_01h2konnix',
+  from: '2026-08-20T00:00:00Z', to: '2026-08-27T23:59:59Z', maxUploadBytes: 62914560,
+}
+
+function exampleBody(endpoint: ApiEndpoint): Record<string, unknown> | undefined {
+  if (!endpoint.body?.length || endpoint.body.some((field) => field.type === 'MultipartFile')) return undefined
+  return Object.fromEntries(endpoint.body.map((field) => [field.name, exampleValues[field.name] ?? (field.type.startsWith('Array') ? ['example'] : field.type === 'Boolean' ? false : field.type.includes('Integer') || field.type.includes('Long') ? 1 : `example-${field.name}`)]))
+}
+
+function exampleResponse(endpoint: ApiEndpoint): unknown {
+  if (endpoint.responseExample !== undefined) return endpoint.responseExample
+  if (endpoint.path.includes('/server-info')) return { product: 'Konnix Chat', version: '1.0.0', serverName: 'Konnix Chat' }
+  if (endpoint.path.includes('/messages') && endpoint.method === 'GET') return { messages: [], hasMore: false, nextBefore: null }
+  if (endpoint.path.includes('/files') && endpoint.method === 'GET') return []
+  if (endpoint.path.includes('/members') && endpoint.method === 'GET') return []
+  if (endpoint.path.includes('/audit')) return { items: [], page: 0, size: 25, totalItems: 0, totalPages: 0 }
+  if (endpoint.path.includes('/monitoring/metrics')) return { totalFiles: 12, totalFileBytes: 5242880, totalMessages: 18492, totalUsers: 42, activeUsers: 18, readOnlyUsers: 2, disabledUsers: 1, totalGroups: 8, totalChannels: 5, dailyLogins: 21, activeSessions: 12, totalAuditEvents: 380, databaseSizeBytes: 104857600, activity: [] }
+  if (endpoint.path.includes('/settings/read-receipts')) return { enabled: true }
+  if (endpoint.path.includes('/push/public-key')) return { publicKey: 'BExampleVapidPublicKey' }
+  if (endpoint.path.includes('/push/')) return null
+  if (endpoint.path.includes('/polls/') || endpoint.path.includes('/polls')) return { id: 'msg_01h2konnix', messageType: 'POLL', content: null, poll: { id: 'poll_01h2konnix', question: 'Qual horario funciona melhor?', options: [] } }
+  if (endpoint.path.includes('/rooms') && endpoint.method === 'GET') return []
+  if (endpoint.path.includes('/avatar')) return 'binary image resource'
+  if (endpoint.path.includes('/support/report')) return { message: 'Relato enviado com sucesso' }
+  if (endpoint.response === 'null') return null
+  if (endpoint.response.startsWith('[')) return []
+  return { id: 'usr_01h2konnix', username: 'joao123', name: 'Joao Silva', email: 'joao@exemplo.com', createdAt: '2026-08-27T12:00:00Z' }
+}
 
 const modules: ApiModule[] = [
   {
@@ -46,18 +87,23 @@ const modules: ApiModule[] = [
       { method: 'POST', path: '/api/v1/users/{id}/deactivate', title: 'Desativa usuário', description: 'Desativa uma conta.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Identificador do usuário.')], response: '{ ...UserResponse }', statuses: commonErrors },
       { method: 'PATCH', path: '/api/v1/users/{id}/roles', title: 'Atualiza roles', description: 'Substitui as roles administrativas do usuário.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Identificador do usuário.')], body: [field('roles', 'Array<String>', true, 'Roles ADMIN, USER ou BOT.')], response: '{ ...UserResponse }', statuses: ['200 - Roles atualizadas', ...commonErrors] },
       { method: 'GET', path: '/api/v1/users/directory', title: 'Diretório de usuários', description: 'Lista usuários para seleção em conversas.', auth: 'Obrigatória', permission: 'Usuário autenticado', query: [field('q', 'String', false, 'Termo de busca.')], response: '[ ...UserDirectoryResponse ]', statuses: ['200 - Lista retornada', '401 - Não autenticado'] },
-      { method: 'GET', path: '/api/v1/profiles/users/{id}', title: 'Perfil público', description: 'Consulta o perfil público de outro usuário.', auth: 'Obrigatória', permission: 'Usuário autenticado', params: [field('id', 'UUID', true, 'Identificador do usuário.')], response: '{ ...PublicProfileResponse }', statuses: commonErrors },
+        { method: 'GET', path: '/api/v1/profiles/users/{id}', title: 'Perfil público', description: 'Consulta o perfil público de outro usuário.', auth: 'Obrigatória', permission: 'Usuário autenticado', params: [field('id', 'UUID', true, 'Identificador do usuário.')], response: '{ ...PublicProfileResponse }', statuses: commonErrors },
+        { method: 'GET', path: '/api/v1/profiles/users/{id}/common-rooms', title: 'Grupos e canais em comum', description: 'Lista grupos e canais compartilhados com outro usuário.', auth: 'Obrigatória', permission: 'Usuário autenticado', params: [field('id', 'UUID', true, 'Usuário consultado.')], response: '[ ...RoomResponse ]', statuses: commonErrors },
     ],
   },
   {
     id: 'rooms', name: 'Conversas, canais e grupos', endpoints: [
       { method: 'GET', path: '/api/v1/rooms', title: 'Lista conversas', description: 'Lista as salas acessíveis ao usuário.', auth: 'Obrigatória', permission: 'Usuário autenticado', response: '[ ...RoomResponse ]', statuses: ['200 - Salas retornadas', '401 - Não autenticado'] },
       { method: 'GET', path: '/api/v1/rooms/{id}', title: 'Busca sala', description: 'Retorna os dados de uma sala.', auth: 'Obrigatória', permission: 'Membro da sala', params: [field('id', 'UUID', true, 'Identificador da sala.')], response: '{ ...RoomResponse }', statuses: commonErrors },
+      { method: 'PATCH', path: '/api/v1/rooms/{id}', title: 'Atualiza nome da sala', description: 'Atualiza o nome de uma sala conforme a permissão do usuário.', auth: 'Obrigatória', permission: 'Permissão da sala', params: [field('id', 'UUID', true, 'Identificador da sala.')], body: [field('name', 'String', true, 'Novo nome técnico.')], response: '{ ...RoomResponse }', statuses: commonErrors },
       { method: 'POST', path: '/api/v1/rooms', title: 'Cria canal ou grupo', description: 'Cria uma nova sala.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('name', 'String', true, 'Nome técnico.'), field('displayName', 'String', false, 'Nome exibido.'), field('type', 'String', true, 'PRIVATE_GROUP ou CHANNEL.')], response: '{ ...RoomResponse }', statuses: ['200 - Sala criada', ...commonErrors] },
       { method: 'POST', path: '/api/v1/direct-messages', title: 'Inicia conversa direta', description: 'Cria ou recupera uma conversa privada.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('userId', 'UUID', true, 'Usuário destinatário.')], response: '{ ...RoomResponse }', statuses: commonErrors },
+      { method: 'POST', path: '/api/v1/rooms/{id}/favorite', title: 'Alterna favorito da sala', description: 'Marca ou remove uma sala dos favoritos do usuário.', auth: 'Obrigatória', permission: 'Membro da sala', params: [field('id', 'UUID', true, 'Sala.')], response: '{ ...RoomResponse }', statuses: commonErrors },
       { method: 'GET', path: '/api/v1/rooms/{roomId}/members', title: 'Lista membros', description: 'Lista os membros ativos e seus papéis.', auth: 'Obrigatória', permission: 'Membro da sala', params: [field('roomId', 'UUID', true, 'Identificador da sala.')], response: '[ ...RoomMemberResponse ]', statuses: commonErrors },
       { method: 'POST', path: '/api/v1/rooms/{roomId}/members', title: 'Adiciona membro', description: 'Adiciona um usuário à sala.', auth: 'Obrigatória', permission: 'Permissão da sala', params: [field('roomId', 'UUID', true, 'Identificador da sala.')], body: [field('userId', 'UUID', true, 'Usuário a adicionar.')], response: '{ ...RoomMemberResponse }', statuses: commonErrors },
       { method: 'DELETE', path: '/api/v1/rooms/{roomId}/members/{userId}', title: 'Remove membro', description: 'Remove um membro da sala.', auth: 'Obrigatória', permission: 'Permissão da sala', params: [field('roomId', 'UUID', true, 'Sala.'), field('userId', 'UUID', true, 'Membro.')], response: 'null', statuses: commonErrors },
+      { method: 'POST', path: '/api/v1/rooms/{id}/pin/{messageId}', title: 'Fixa mensagem', description: 'Define uma mensagem fixada na sala.', auth: 'Obrigatória', permission: 'Permissão da sala', params: [field('id', 'UUID', true, 'Sala.'), field('messageId', 'UUID', true, 'Mensagem.')], response: '{ ...RoomResponse }', statuses: commonErrors },
+      { method: 'DELETE', path: '/api/v1/rooms/{id}/pin', title: 'Remove mensagem fixada', description: 'Remove a mensagem fixada da sala.', auth: 'Obrigatória', permission: 'Permissão da sala', params: [field('id', 'UUID', true, 'Sala.')], response: '{ ...RoomResponse }', statuses: commonErrors },
     ],
   },
   {
@@ -91,11 +137,18 @@ const modules: ApiModule[] = [
   },
   {
     id: 'push-settings', name: 'Push e configurações', endpoints: [
+      { method: 'GET', path: '/api/public/server-info', title: 'Informações públicas do servidor', description: 'Retorna produto, versão e nome do servidor.', auth: 'Não necessária', permission: 'Público', response: '{ product, version, serverName }', statuses: ['200 - Informações retornadas'] },
       { method: 'GET', path: '/api/v1/push/public-key', title: 'Chave pública push', description: 'Retorna a chave VAPID pública.', auth: 'Não necessária', permission: 'Público', response: '{ publicKey: String }', statuses: ['200 - Chave retornada'] },
       { method: 'POST', path: '/api/v1/push/subscribe', title: 'Inscreve push', description: 'Registra uma assinatura de notificações.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('endpoint', 'String', true, 'Endpoint do PushSubscription.'), field('p256dh', 'String', true, 'Chave pública.'), field('auth', 'String', true, 'Segredo da assinatura.')], response: 'null', statuses: commonErrors },
       { method: 'DELETE', path: '/api/v1/push/unsubscribe', title: 'Remove inscrição push', description: 'Remove uma assinatura de notificações.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('endpoint', 'String', true, 'Endpoint a remover.')], response: 'null', statuses: commonErrors },
       { method: 'GET', path: '/api/v1/settings/read-receipts', title: 'Consulta confirmação de leitura', description: 'Consulta a configuração de confirmação de leitura.', auth: 'Obrigatória', permission: 'Usuário autenticado', response: '{ enabled: Boolean }', statuses: commonErrors },
       { method: 'PUT', path: '/api/v1/settings/read-receipts', title: 'Atualiza confirmação de leitura', description: 'Ativa ou desativa confirmações de leitura.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('enabled', 'Boolean', true, 'Configuração desejada.')], response: '{ enabled: Boolean }', statuses: commonErrors },
+    ],
+  },
+  {
+    id: 'support', name: 'Suporte', endpoints: [
+      { method: 'POST', path: '/api/v1/support/report', title: 'Relata problema', description: 'Envia um relato para o suporte.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('content', 'String', true, 'Descrição do problema.')], response: '{ message: String }', statuses: commonErrors },
+      { method: 'POST', path: '/api/v1/support/respond', title: 'Responde relato', description: 'Responde a um relato por mensagem direta.', auth: 'Obrigatória', permission: 'ADMIN', body: [field('messageId', 'UUID', true, 'Mensagem do relato.'), field('content', 'String', true, 'Resposta.')], response: '{ ...MessageResponse }', statuses: commonErrors },
     ],
   },
   {
@@ -105,6 +158,9 @@ const modules: ApiModule[] = [
       { method: 'POST', path: '/api/v1/admin/users/{id}/activate', title: 'Ativa conta', description: 'Ativa uma conta pelo painel administrativo.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Usuário.')], response: '{ ...UserResponse }', statuses: commonErrors },
       { method: 'POST', path: '/api/v1/admin/users/{id}/deactivate', title: 'Desativa conta', description: 'Desativa uma conta pelo painel administrativo.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Usuário.')], response: '{ ...UserResponse }', statuses: commonErrors },
       { method: 'PATCH', path: '/api/v1/admin/users/{id}/status', title: 'Atualiza status da conta', description: 'Define ACTIVE, READ_ONLY ou DISABLED.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Usuário.')], body: [field('status', 'String', true, 'ACTIVE, READ_ONLY ou DISABLED.')], response: '{ ...UserResponse }', statuses: commonErrors },
+      { method: 'GET', path: '/api/v1/admin/api-tokens', title: 'Lista tokens administrativos', description: 'Lista metadados dos tokens emitidos.', auth: 'Obrigatória', permission: 'ADMIN', response: '[ ...ApiTokenMetadata ]', statuses: commonErrors },
+      { method: 'POST', path: '/api/v1/admin/api-tokens', title: 'Gera token administrativo', description: 'Gera um token Bearer para acesso à API.', auth: 'Obrigatória', permission: 'ADMIN', body: [field('username', 'String', true, 'Usuário do token.'), field('password', 'String', true, 'Senha do usuário.'), field('expirationDate', 'LocalDate', true, 'Data de expiração.')], response: '{ token, metadata }', statuses: commonErrors },
+      { method: 'DELETE', path: '/api/v1/admin/api-tokens/{id}', title: 'Revoga token administrativo', description: 'Revoga um token emitido.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Token.')], response: 'null', statuses: commonErrors },
       { method: 'GET', path: '/api/v1/admin/rooms', title: 'Lista todas as salas', description: 'Lista salas e grupos para administração.', auth: 'Obrigatória', permission: 'ADMIN', response: '[ ...RoomResponse ]', statuses: commonErrors },
       { method: 'PATCH', path: '/api/v1/admin/rooms/{id}', title: 'Atualiza sala', description: 'Atualiza nome, exibição e modo somente leitura.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Sala.')], body: [field('name', 'String', false, 'Nome técnico.'), field('displayName', 'String', false, 'Nome exibido.'), field('readOnly', 'Boolean', false, 'Modo somente leitura.')], response: '{ ...RoomResponse }', statuses: commonErrors },
       { method: 'GET', path: '/api/v1/admin/rooms/{id}/members', title: 'Lista membros administrativos', description: 'Lista membros de uma sala.', auth: 'Obrigatória', permission: 'ADMIN', params: [field('id', 'UUID', true, 'Sala.')], response: '[ ...RoomMemberResponse ]', statuses: commonErrors },
@@ -235,13 +291,30 @@ function ApiRequestExportPanel() {
   })
   const allSelected = allEndpointKeys.every((key) => selected.has(key))
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allEndpointKeys))
+  const exportPath = (endpoint: ApiEndpoint) => {
+    let path = endpoint.path.replace(/\{([^}]+)\}/g, '{{$1}}')
+    if (endpoint.query) {
+      const queryFields = endpoint.query.flatMap((item) => item.name.split('/'))
+      const uniqueFields = [...new Set(queryFields)]
+      if (uniqueFields.length > 0) path += `?${uniqueFields.map((name) => `${name}={{${name}}}`).join('&')}`
+    }
+    return path
+  }
   const download = () => {
-    const lines = ['@baseUrl = http://localhost:5174', '@token = XXXXXXXXXXXXX', '', '# Konnix Chat REST Client requests', '# Backend Spring REST API (PostgreSQL). The frontend proxies the local installation.', '# API responses are JSON. Replace @baseUrl only when the server is published elsewhere.', '']
+    const lines = ['# Konnix Chat REST Client requests', '# Backend Spring REST API (PostgreSQL).', '@baseUrl = http://localhost:8081', '@token =', '']
     modules.forEach((module) => module.endpoints.forEach((endpoint) => {
       const key = `${module.id}-${endpoint.method}-${endpoint.path}`
       if (!selected.has(key)) return
-      lines.push(`### ${endpoint.title}`, `${endpoint.method} {{baseUrl}}${endpoint.path}`, 'Authorization: Bearer {{token}}', 'Accept: application/json', 'Content-Type: application/json', '')
-      if (endpoint.request) lines.push(endpoint.request)
+      const multipart = endpoint.body?.some((field) => field.type === 'MultipartFile')
+      const requestBody = endpoint.requestBody ?? exampleBody(endpoint)
+      lines.push(`### ${endpoint.title}`, `# @name ${endpoint.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, `${endpoint.method} {{baseUrl}}${exportPath(endpoint)}`)
+      if (endpoint.auth !== 'Não necessária') lines.push('Authorization: Bearer {{token}}')
+      lines.push('Accept: application/json')
+      if (!multipart && endpoint.body) lines.push('Content-Type: application/json')
+      if (multipart) lines.push('Content-Type: multipart/form-data')
+      lines.push('')
+      if (multipart) lines.push('file=@./arquivo.ext')
+      else if (requestBody) lines.push(json(requestBody))
       lines.push('')
     }))
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
@@ -253,7 +326,12 @@ function ApiRequestExportPanel() {
 
 function ApiEndpointDetails({ endpoint, copied, onCopy }: { endpoint: ApiEndpoint; copied: string | null; onCopy: (value: string, key: string) => void }) {
   const routeKey = `${endpoint.method} ${endpoint.path}`
-  const curl = `curl -X ${endpoint.method} "{BASE_URL}${endpoint.path}" \\\n  -H "Authorization: Bearer <TOKEN>"`
+  const body = endpoint.requestBody ?? exampleBody(endpoint)
+  const multipart = endpoint.body?.some((field) => field.type === 'MultipartFile') ?? false
+  const curlPath = endpoint.path.replace(/\{([^}]+)\}/g, '{{$1}}')
+  const authHeader = endpoint.auth === 'Não necessária' ? '' : ` \\\n+  -H "Authorization: Bearer <TOKEN>"`
+  const curlBody = multipart ? ` \\\n+  -F "file=@./arquivo.ext"` : body ? ` \\\n+  -H "Content-Type: application/json" \\\n+  -d '${JSON.stringify(body)}'` : ''
+  const curl = `curl -X ${endpoint.method} "{BASE_URL}${curlPath}"${authHeader}${curlBody}`.replace(/\\n\+/g, '\\n')
   return <div className="api-endpoint-details">
     <div className="api-detail-head"><div><strong>{endpoint.method} {endpoint.path}</strong><p>{endpoint.description}</p></div><button type="button" className="api-copy" onClick={() => void onCopy(routeKey, `${routeKey}-route`)}>{copied === `${routeKey}-route` ? 'Copiado!' : 'Copiar rota'}</button></div>
     <div className="api-security"><span>🔐 Autenticação: <strong>{endpoint.auth}</strong></span><span>Permissão: <strong>{endpoint.permission}</strong></span></div>
@@ -261,8 +339,8 @@ function ApiEndpointDetails({ endpoint, copied, onCopy }: { endpoint: ApiEndpoin
     {endpoint.query && <ApiFieldTable title="Query parameters" fields={endpoint.query} />}
     {endpoint.body && <ApiFieldTable title="Body" fields={endpoint.body} />}
     <ApiCodeBlock title="Exemplo cURL" value={curl} copyKey={`${routeKey}-curl`} copied={copied} onCopy={onCopy} language="bash" />
-    {endpoint.request && <ApiCodeBlock title="Exemplo de requisição" value={endpoint.request} copyKey={`${routeKey}-request`} copied={copied} onCopy={onCopy} language="json" />}
-    <ApiCodeBlock title="Resposta" value={endpoint.response} copyKey={`${routeKey}-response`} copied={copied} onCopy={onCopy} language="json" />
+    {body && <ApiCodeBlock title="Exemplo de requisição" value={json(body)} copyKey={`${routeKey}-request`} copied={copied} onCopy={onCopy} language="json" />}
+    <ApiCodeBlock title="Resposta" value={json(exampleResponse(endpoint))} copyKey={`${routeKey}-response`} copied={copied} onCopy={onCopy} language="json" />
     <div className="api-statuses"><h4>Status e erros</h4>{endpoint.statuses.map((status) => <span key={status}>{status}</span>)}</div>
   </div>
 }

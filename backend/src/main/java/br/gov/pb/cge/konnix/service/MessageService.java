@@ -131,6 +131,8 @@ public class MessageService {
             message.setForwardedFromUser(original.getUser());
         }
 
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
         auditService.record("MESSAGE_CREATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
@@ -247,6 +249,12 @@ public class MessageService {
         }
         message.setDeletedAt(Instant.now());
         messageRepository.save(message);
+        Room room = message.getRoom();
+        if (room != null && room.getPinnedMessage() != null && room.getPinnedMessage().getId().equals(id)) {
+            room.setPinnedMessage(null);
+            roomRepository.save(room);
+            eventPublisher.publishPinnedMessage(room.getId(), null);
+        }
         auditService.record("MESSAGE_DELETED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
         eventPublisher.publish(message.getRoom().getId(), EVENT_MESSAGE_DELETED, response);
@@ -261,6 +269,8 @@ public class MessageService {
         message.setUser(actor);
         message.setContent(content);
         message.setMessageType("SYSTEM");
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
         MessageResponse response = responseFor(message, actor.getId());
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
