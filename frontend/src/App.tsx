@@ -839,9 +839,55 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const handleViewport = () => {
+      if (window.visualViewport) {
+        const vh = window.visualViewport.height
+        document.documentElement.style.setProperty('--app-height', `${vh}px`)
+      } else {
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+      }
+    }
+
+    handleViewport()
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewport)
+      window.visualViewport.addEventListener('scroll', handleViewport)
+    } else {
+      window.addEventListener('resize', handleViewport)
+    }
+
+    const preventOverscroll = (e: TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && !target.closest('.message-list, .sidebar-nav, .modal-body, .room-files-panel, .emoji-picker-popover, .room-search-results, .mention-menu')) {
+        if (e.touches.length === 1 && !target.closest('input, textarea, button, a')) {
+          e.preventDefault()
+        }
+      }
+    }
+
+    const handleScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0)
+      }
+    }
+
     const onPopState = () => setPathname(window.location.pathname)
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    document.addEventListener('touchmove', preventOverscroll, { passive: false })
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('scroll', handleScroll)
+      document.removeEventListener('touchmove', preventOverscroll)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewport)
+        window.visualViewport.removeEventListener('scroll', handleViewport)
+      } else {
+        window.removeEventListener('resize', handleViewport)
+      }
+    }
   }, [])
 
   useEffect(() => {

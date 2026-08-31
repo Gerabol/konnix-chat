@@ -326,13 +326,24 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
+#root {
+  height: 100%;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  display: flex;
+  flex-direction: column;
 }
 
 body {
@@ -345,6 +356,9 @@ body {
   overscroll-behavior-y: none;
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  height: var(--app-height, 100dvh);
 }
 
 button,
@@ -3556,8 +3570,8 @@ img.room-header-avatar {
   .main,
   .room-view,
   .desktop-shell {
-    height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
     overflow: hidden;
   }
 
