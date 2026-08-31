@@ -601,6 +601,41 @@ function IconPlus({ size = 22 }: { size?: number }) {
   )
 }
 
+function IconSearch({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function IconSettings({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function IconMessage({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function IconArrowLeft({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  )
+}
+
 
 
 function PersonIcon({ size = 19 }: { size?: number }) {
@@ -1810,6 +1845,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           messageNotificationsEnabled={messageNotificationsEnabled}
           onMessageNotificationsChange={setMessageNotifications}
           typingByRoom={typingByRoom}
+          onClose={() => setSidebarOpen(false)}
         />
 
         <main className="main">
@@ -2059,6 +2095,7 @@ const Sidebar = memo(function Sidebar({
   messageNotificationsEnabled,
   onMessageNotificationsChange,
   typingByRoom,
+  onClose,
 }: {
   me: User
   theme: Theme
@@ -2086,14 +2123,17 @@ const Sidebar = memo(function Sidebar({
   messageNotificationsEnabled: boolean
   onMessageNotificationsChange: (enabled: boolean) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
+  onClose?: () => void
 }) {
   const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [menuOpen, setMenuOpen] = useState(false)
+  const [searchMode, setSearchMode] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!menuOpen) return
@@ -2104,149 +2144,387 @@ const Sidebar = memo(function Sidebar({
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
+  const handleSelectRoom = (roomId: string) => {
+    if (searchMode) {
+      setSearchMode(false)
+      onSearch('')
+    }
+    onOpenRoom(roomId)
+  }
+
+  const handleSelectUser = async (userId: string) => {
+    if (searchMode) {
+      setSearchMode(false)
+      onSearch('')
+    }
+    await onStartUserDm(userId)
+  }
+
+  const hasSearchResults = userResults.length > 0 || favoriteRooms.length > 0 || channels.length > 0 || regularConversations.length > 0
+
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
-        <div className="sidebar-brand-content">
-          <div className="sidebar-wordmark">
-            <strong>Konnix</strong>
-            <span>Chat</span>
+    <aside className={`sidebar ${searchMode ? 'sidebar-in-search-mode' : ''}`}>
+      {searchMode ? (
+        <div className="sidebar-search-header">
+          <button
+            type="button"
+            className="icon-btn sidebar-search-back-btn"
+            onClick={() => {
+              setSearchMode(false)
+              onSearch('')
+            }}
+            aria-label="Voltar às conversas"
+            title="Voltar às conversas"
+          >
+            <IconArrowLeft size={20} />
+          </button>
+          <div className="sidebar-search-input-wrap">
+            <input
+              ref={searchInputRef}
+              className="sidebar-search-page-input"
+              placeholder="Buscar conversas e usuários…"
+              value={search}
+              autoFocus
+              onChange={(e) => onSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchMode(false)
+                  onSearch('')
+                }
+              }}
+            />
+            {search.trim().length > 0 && (
+              <button
+                type="button"
+                className="search-clear"
+                onClick={() => {
+                  onSearch('')
+                  searchInputRef.current?.focus()
+                }}
+                aria-label="Limpar busca"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
-        <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
-      </div>
-
-      <div className="sidebar-search">
-        <span className="search-icon">⌕</span>
-        <input
-          className="search-input"
-          placeholder="Buscar…"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-        />
-        {search && (
-          <button className="search-clear" onClick={() => onSearch('')} aria-label="Limpar busca">
-            ×
+      ) : (
+        <div className="sidebar-brand">
+          <button
+            type="button"
+            className="sidebar-brand-btn"
+            onClick={onClose}
+            title="Voltar para tela de descanso"
+            aria-label="Voltar para tela de descanso"
+          >
+            <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
+            <div className="sidebar-wordmark">
+              <strong>Konnix</strong>
+              <span>Chat</span>
+            </div>
           </button>
-        )}
-      </div>
+
+          <div className="sidebar-header-actions" ref={menuRef}>
+            <button
+              type="button"
+              className="icon-btn sidebar-search-toggle"
+              onClick={() => {
+                setSearchMode(true)
+                requestAnimationFrame(() => searchInputRef.current?.focus())
+              }}
+              title="Pesquisar conversas"
+              aria-label="Pesquisar conversas"
+            >
+              <IconSearch size={18} />
+            </button>
+            <button
+              type="button"
+              className={`icon-btn sidebar-settings-toggle ${menuOpen ? 'active' : ''}`}
+              onClick={() => setMenuOpen((open) => !open)}
+              title="Configurações"
+              aria-label="Configurações"
+              aria-expanded={menuOpen}
+            >
+              <IconSettings size={18} />
+            </button>
+            <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
+            {menuOpen && (
+              <div className="user-menu sidebar-header-dropdown">
+                <div className="menu-label">Configurações</div>
+                <NotificationButton />
+                <AutostartButton />
+                <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}>
+                  <IconBell />
+                  <span>Alertas de novas mensagens</span>
+                  <small>{messageNotificationsEnabled ? 'Ativo' : 'Desativado'}</small>
+                </button>
+                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
+                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
+                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
+                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
+                {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
+                <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
+                  <IconLogout />
+                  Sair
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <nav className="sidebar-nav">
-        {search.trim() && <div className="nav-section search-users-section"><div className="nav-section-head"><span className="nav-section-title">Usuários</span></div><div className="nav-list">{userResults.length === 0 && <span className="nav-empty">Nenhum usuário encontrado</span>}{userResults.map((user) => <button key={user.id} className="room-item search-user-item" onClick={() => void onStartUserDm(user.id)}><span className="sidebar-avatar-wrap"><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />{user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}</span><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small></span></button>)}</div></div>}
-        {favoriteRooms.length > 0 && <div className="nav-section">
-            <div className="nav-section-head">
-              <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
-                <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span><span className="nav-section-title">Favoritos</span>
-              </button>
+        {searchMode ? (
+          search.trim().length === 0 ? (
+            <div className="sidebar-search-prompt">
+              <span className="search-prompt-icon"><IconSearch size={28} /></span>
+              <p>Digite para buscar conversas, canais ou contatos…</p>
             </div>
-            {favoritesOpen && <div className="nav-list" id="favorites-list">
-              {favoriteRooms.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
-                {room.type === 'DIRECT' ? <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span> : <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
-                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-              </button>)}
-            </div>}
-        </div>}
+          ) : !hasSearchResults ? (
+            <div className="sidebar-search-empty">
+              <p>Nenhum resultado encontrado para &ldquo;{search}&rdquo;</p>
+            </div>
+          ) : (
+            <>
+              {userResults.length > 0 && (
+                <div className="nav-section search-users-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Usuários ({userResults.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {userResults.map((user) => (
+                      <button key={user.id} className="room-item search-user-item" onClick={() => void handleSelectUser(user.id)}>
+                        <span className="sidebar-avatar-wrap">
+                          <AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />
+                          {user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}
+                        </span>
+                        <span className="picker-item-text">
+                          <strong>{user.name || user.username}</strong>
+                          <small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-        <div className="nav-section">
-          <div className="nav-section-head">
-            <button
-              type="button"
-              className="nav-section-toggle"
-              onClick={() => setChannelsOpen((open) => !open)}
-              aria-expanded={channelsOpen}
-              aria-controls="channels-list"
-            >
-              <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-               <span className="nav-section-title">Grupos</span>
-            </button>
-             <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
-              +
-            </button>
-          </div>
-          {channelsOpen && <div className="nav-list" id="channels-list">
-             {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-            {channels.map((room) => {
-              const typingText = formatTypingText(typingByRoom[room.id], false)
-              return (
-                <button
-                  key={room.id}
-                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                  onClick={() => onOpenRoom(room.id)}
-                >
-                  <AvatarImage
-                     path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                    className="room-thumb"
-                    fallback={
-                      <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                        {getRoomIcon(room)}
-                      </span>
-                    }
-                    alt={roomDisplayName(room)}
-                  />
-                  <span className="room-name">
-                    {roomDisplayName(room)}
-                    {typingText && (
-                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                        {typingText}
-                      </span>
-                    )}
-                  </span>
-                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-                </button>
-              )
-            })}
-          </div>}
-        </div>
+              {favoriteRooms.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Favoritos ({favoriteRooms.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {favoriteRooms.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-        <div className="nav-section">
-          <div className="nav-section-head">
-            <button
-              type="button"
-              className="nav-section-toggle"
-              onClick={() => setConversationsOpen((open) => !open)}
-              aria-expanded={conversationsOpen}
-              aria-controls="conversations-list"
-            >
-              <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
-              <span className="nav-section-title">Conversas</span>
-            </button>
-            <button className="nav-add" onClick={onNewDm} title="Nova conversa">
-              +
-            </button>
-          </div>
-          {conversationsOpen && <div className="nav-list" id="conversations-list">
-             {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
-             {regularConversations.map((room) => {
-              const typingText = formatTypingText(typingByRoom[room.id], true)
-              return (
+              {channels.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Grupos & Canais ({channels.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {channels.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={<span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {regularConversations.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Conversas ({regularConversations.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {regularConversations.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        ) : (
+          <>
+            {favoriteRooms.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
+                    <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Favoritos</span>
+                  </button>
+                </div>
+                {favoritesOpen && (
+                  <div className="nav-list" id="favorites-list">
+                    {favoriteRooms.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="nav-section">
+              <div className="nav-section-head">
                 <button
-                  key={room.id}
-                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                  onClick={() => onOpenRoom(room.id)}
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setChannelsOpen((open) => !open)}
+                  aria-expanded={channelsOpen}
+                  aria-controls="channels-list"
                 >
-                  <span className="room-icon direct">
-                    <span className="sidebar-avatar-wrap"><AvatarImage
-                      path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                      className="mini-avatar"
-                      fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
-                      alt={roomDisplayName(room)}
-                    />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
-                  </span>
-                  <span className="room-name">
-                    {roomDisplayName(room)}
-                    {typingText && (
-                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                        {typingText}
-                      </span>
-                    )}
-                  </span>
-                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                  <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Grupos</span>
                 </button>
-              )
-            })}
-          </div>}
-        </div>
+                <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
+                  +
+                </button>
+              </div>
+              {channelsOpen && (
+                <div className="nav-list" id="channels-list">
+                  {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+                  {channels.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], false)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={
+                            <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                              {getRoomIcon(room)}
+                            </span>
+                          }
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="nav-section">
+              <div className="nav-section-head">
+                <button
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setConversationsOpen((open) => !open)}
+                  aria-expanded={conversationsOpen}
+                  aria-controls="conversations-list"
+                >
+                  <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Conversas</span>
+                </button>
+                <button className="nav-add" onClick={onNewDm} title="Nova conversa">
+                  +
+                </button>
+              </div>
+              {conversationsOpen && (
+                <div className="nav-list" id="conversations-list">
+                  {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
+                  {regularConversations.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], true)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </nav>
 
       {canInstall && (
@@ -2634,12 +2912,13 @@ function useEscapeClose(onClose: () => void) {
 function EmptyState({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   return (
     <div className="empty-state">
-      <button className="empty-back btn-ghost" onClick={onOpenSidebar}>
-        ☰ Conversas
-      </button>
       <img src="/icons/icon-192.png" alt="Konnix" className="empty-logo" />
       <h2>Konnix Chat</h2>
-      <p>Selecione uma conversa ou grupo para começar.</p>
+      <p>Comunicação corporativa segura e em tempo real.</p>
+      <button type="button" className="btn-primary empty-chat-action" onClick={onOpenSidebar}>
+        <IconMessage size={18} />
+        <span>Conversar</span>
+      </button>
       <AboutDetails className="empty-about-details" />
     </div>
   )
