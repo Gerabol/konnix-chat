@@ -4,6 +4,7 @@ import br.gov.pb.cge.konnix.domain.attachment.Attachment;
 import br.gov.pb.cge.konnix.domain.message.Message;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,7 +25,8 @@ public record MessageResponse(
         QuotedMessage quotedMessage,
         List<MessageReactionResponse> reactions,
         String forwardedFromUsername,
-        PollData poll) {
+        PollData poll,
+        List<String> roles) {
 
     public record QuotedMessage(UUID id, String username, String content) {}
 
@@ -32,7 +34,7 @@ public record MessageResponse(
                            String messageType, UUID parentMessageId, AttachmentMetadata attachment,
                            Instant createdAt, Instant updatedAt, Instant editedAt, Instant deletedAt) {
         this(id, roomId, userId, username, content, messageType, parentMessageId, attachment,
-                createdAt, updatedAt, editedAt, deletedAt, List.of(), null, List.of(), null, null);
+                createdAt, updatedAt, editedAt, deletedAt, List.of(), null, List.of(), null, null, List.of());
     }
 
     public record PollData(UUID id, String question, boolean allowMultiple, int totalMembers,
@@ -67,6 +69,14 @@ public record MessageResponse(
                                        List<ReadReceiptResponse> readBy,
                                        List<MessageReactionResponse> reactions,
                                        PollData poll) {
+        return from(message, attachment, readBy, reactions, poll, List.of());
+    }
+
+    public static MessageResponse from(Message message, Attachment attachment,
+                                       List<ReadReceiptResponse> readBy,
+                                       List<MessageReactionResponse> reactions,
+                                       PollData poll,
+                                       List<String> roles) {
         return new MessageResponse(
                 message.getId(),
                 message.getRoom().getId(),
@@ -88,6 +98,25 @@ public record MessageResponse(
                         message.getParentMessage().getContent()),
                  reactions,
                   message.getForwardedFromUser() == null ? null : message.getForwardedFromUser().getUsername(),
-                  poll);
+                  poll,
+                  roles);
+    }
+
+    /**
+     * Builds the roles list for a message author based on room membership role and global user roles.
+     *
+     * @param roomMemberRole the role of the user within the room (e.g. "OWNER", "ADMIN", "MEMBER")
+     * @param isGlobalAdmin  whether the user has the global ADMIN role
+     * @return list of role tags (e.g. ["OWNER"], ["ADMIN"], ["OWNER", "ADMIN"], or [])
+     */
+    public static List<String> buildRoles(String roomMemberRole, boolean isGlobalAdmin) {
+        List<String> result = new ArrayList<>();
+        if ("OWNER".equalsIgnoreCase(roomMemberRole)) {
+            result.add("OWNER");
+        }
+        if (isGlobalAdmin) {
+            result.add("ADMIN");
+        }
+        return List.copyOf(result);
     }
 }

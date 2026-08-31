@@ -314,7 +314,17 @@ public class MessageService {
 
     public MessageResponse responseFor(Message message, UUID actorId) {
         Attachment attachment = attachmentRepository.findByMessageId(message.getId()).orElse(null);
-        return MessageResponse.from(message, attachment, List.of(), List.of(), pollFor(message, actorId));
+        List<String> roles = List.of();
+        if (message.getUser() != null) {
+            String roomMemberRole = roomMemberRepository
+                    .findByRoomIdAndUserId(message.getRoom().getId(), message.getUser().getId())
+                    .map(rm -> rm.getRole())
+                    .orElse("MEMBER");
+            boolean isGlobalAdmin = message.getUser().getRoles().stream()
+                    .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+            roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
+        }
+        return MessageResponse.from(message, attachment, List.of(), List.of(), pollFor(message, actorId), roles);
     }
 
     private List<MessageResponse> toResponses(List<Message> messages, UUID actorId) {
@@ -331,10 +341,32 @@ public class MessageService {
                 .collect(Collectors.groupingBy(reaction -> reaction.getMessage().getId(),
                         Collectors.mapping(MessageReactionResponse::from, Collectors.toList())));
         boolean enabled = systemSettingService.readReceiptsEnabled();
-        return messages.stream().map(m -> MessageResponse.from(m, attachmentsByMessage.get(m.getId()),
+
+        // Batch-load room members for all message authors to compute roles
+        UUID roomId = messages.get(0).getRoom().getId();
+        List<UUID> authorIds = messages.stream()
+                .filter(m -> m.getUser() != null)
+                .map(m -> m.getUser().getId())
+                .distinct()
+                .toList();
+        Map<UUID, String> memberRoleByUserId = roomMemberRepository
+                .findByRoomIdAndUserIdIn(roomId, authorIds)
+                .stream()
+                .collect(Collectors.toMap(rm -> rm.getUser().getId(), rm -> rm.getRole(), (a, b) -> a));
+
+        return messages.stream().map(m -> {
+            List<String> roles = List.of();
+            if (m.getUser() != null) {
+                String roomMemberRole = memberRoleByUserId.getOrDefault(m.getUser().getId(), "MEMBER");
+                boolean isGlobalAdmin = m.getUser().getRoles().stream()
+                        .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+                roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
+            }
+            return MessageResponse.from(m, attachmentsByMessage.get(m.getId()),
                 enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
                         ? readsByMessage.getOrDefault(m.getId(), List.of()) : List.of(),
-                reactionsByMessage.getOrDefault(m.getId(), List.of()), pollFor(m, actorId))).toList();
+                reactionsByMessage.getOrDefault(m.getId(), List.of()), pollFor(m, actorId), roles);
+        }).toList();
     }
 
     private MessageResponse.PollData pollFor(Message message, UUID actorId) {

@@ -90,6 +90,7 @@ export type Message = {
   reactions: MessageReaction[]
   forwardedFromUsername: string | null
   poll: Poll | null
+  roles: string[]
 }
 
 export type Poll = {
@@ -339,9 +340,15 @@ export const api = {
       method: 'PATCH', body: JSON.stringify({ name, email }),
     })
   },
-  reportIssue(content: string) {
+  reportIssue(content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
     return request<{ message: string }>('/api/v1/support/report', {
-      method: 'POST', body: JSON.stringify({ content }),
+      method: 'POST',
+      body: form,
     })
   },
   respondToReport(messageId: string, content: string) {

@@ -32,7 +32,7 @@ services:
       SPRING_DATASOURCE_USERNAME: konnix
       SPRING_DATASOURCE_PASSWORD: konnix
 
-      KONNIX_UPLOADS_DIR: /app/uploads
+      KONNIX_UPLOADS_DIR: /tmp/konnix-uploads
 
       KONNIX_ADMIN_USERNAME: ${KONNIX_ADMIN_USERNAME:-admin}
       KONNIX_ADMIN_NAME: ${KONNIX_ADMIN_NAME:-Administrador}

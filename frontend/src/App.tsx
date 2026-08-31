@@ -4298,7 +4298,7 @@ function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, po
         <div className="profile-info-table">
           <div className="profile-info-row"><span>Username</span><strong>@{profile.username}</strong></div>
           <div className="profile-info-row"><span>Email</span><strong>{profile.email || 'E-mail não informado'}</strong></div>
-          <div className="profile-info-row"><span>Status</span><strong>{presenceLabel(profile.presenceStatus)}</strong></div>
+          <div className="profile-info-row"><span>Status</span><strong className={`profile-status presence-${profile.presenceStatus}`}>{presenceLabel(profile.presenceStatus)}</strong></div>
         </div>
         <section className="profile-common-rooms" aria-label="Grupos e canais em comum">
           <strong>Grupos e canais em comum</strong>
@@ -4872,13 +4872,27 @@ function ReportIssueModal({
 }) {
   useEscapeClose(onClose)
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const submit = async () => {
     if (!content.trim() || busy) return
     setBusy(true)
     try {
-      await api.reportIssue(content.trim())
+      await api.reportIssue(content.trim(), files.length > 0 ? files : undefined)
       notify('Relato enviado com sucesso aos administradores!')
       onClose()
     } catch (error) {
@@ -4907,6 +4921,42 @@ function ReportIssueModal({
               maxLength={2000}
             />
           </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
