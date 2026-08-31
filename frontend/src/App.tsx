@@ -3936,6 +3936,11 @@ function RoomView({
                  setComposerExpanded(true)
                }
             }}
+            onFocus={() => {
+              if (window.visualViewport) {
+                window.scrollTo(0, 0)
+              }
+            }}
             onPaste={handlePaste}
             placeholder={muted ? 'Sem conexão — envio desabilitado' : 'Escreva sua mensagem…'}
             disabled={muted}
