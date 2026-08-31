@@ -999,9 +999,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
-  const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
-    try { return localStorage.getItem('konnix-message-notifications') !== 'false' } catch { return true }
-  })
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [searchUsers, setSearchUsers] = useState<DirectoryUser[]>([])
@@ -1030,8 +1027,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const onlineRef = useRef(online)
   onlineRef.current = online
   const wsRef = useRef<WebSocket | null>(null)
-  const messageNotificationsEnabledRef = useRef(messageNotificationsEnabled)
-  messageNotificationsEnabledRef.current = messageNotificationsEnabled
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const roomLoadRequestRef = useRef(0)
   const isInitializingConversationRef = useRef(false)
@@ -1102,11 +1097,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     setToast({ id: Date.now(), text })
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 5000)
-  }, [])
-
-  const setMessageNotifications = useCallback((enabled: boolean) => {
-    setMessageNotificationsEnabled(enabled)
-    try { localStorage.setItem('konnix-message-notifications', String(enabled)) } catch { /* preferência opcional */ }
   }, [])
 
   const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
@@ -1253,7 +1243,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                 return { ...prev, [msg.roomId]: roomTyping }
               })
             }
-            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && (!isTauri || (document.visibilityState === 'visible' && document.hasFocus()))
+            const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
+            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && !appInBackground
             const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
             setRooms((prev) => {
               const exists = prev.some((room) => room.id === msg.roomId)
@@ -1278,19 +1269,25 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                  api.markRoomRead(msg.roomId).catch(() => undefined)
                }
              }
-             if (shouldUnread) {
+               if (shouldUnread) {
                 const room = roomsRef.current.find((r) => r.id === msg.roomId)
-               const label = room ? roomDisplayName(room) : 'Chat'
-               const snippet = msg.content.replace(/\s+/g, ' ').trim()
-               if (messageNotificationsEnabledRef.current) {
-                 const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-                 if (isTauri) {
-                   void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                 } else if (msg.roomId !== activeRoomIdRef.current) {
-                   showToast(`${label} • ${body}`)
-                 }
-               }
-             }
+                const label = room ? roomDisplayName(room) : 'Chat'
+                const snippet = msg.content.replace(/\s+/g, ' ').trim()
+                const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
+                if (appInBackground) {
+                  let enabled = false
+                  try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
+                  if (enabled) {
+                    if (isTauri) {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    }
+                  }
+                } else if (msg.roomId !== activeRoomIdRef.current) {
+                  showToast(`${label} • ${body}`)
+                }
+              }
           } else if (evt.type === 'chat.typing') {
             const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
             const roomId = evt.roomId
@@ -1649,8 +1646,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onInstall={installApp}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
-          messageNotificationsEnabled={messageNotificationsEnabled}
-          onMessageNotificationsChange={setMessageNotifications}
           typingByRoom={typingByRoom}
         />
 
@@ -1898,8 +1893,6 @@ const Sidebar = memo(function Sidebar({
   onInstall,
   onPresenceChange,
   onPresenceError,
-  messageNotificationsEnabled,
-  onMessageNotificationsChange,
   typingByRoom,
 }: {
   me: User
@@ -1925,8 +1918,6 @@ const Sidebar = memo(function Sidebar({
   onInstall: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
-  messageNotificationsEnabled: boolean
-  onMessageNotificationsChange: (enabled: boolean) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
 }) {
   const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
@@ -2129,11 +2120,6 @@ const Sidebar = memo(function Sidebar({
             <div className="menu-label">Configurações</div>
               <NotificationButton />
               <AutostartButton />
-             <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}>
-               <IconBell />
-               <span>Alertas de novas mensagens</span>
-               <small>{messageNotificationsEnabled ? 'Ativo' : 'Desativado'}</small>
-             </button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
               <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
@@ -4737,6 +4723,9 @@ function NotificationButton() {
     () => !isTauri && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator,
   )
   const [subscribed, setSubscribed] = useState(false)
+  const [nativeOn, setNativeOn] = useState(() => {
+    try { return localStorage.getItem('konnix-system-notifications') === 'true' } catch { return false }
+  })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -4754,16 +4743,18 @@ function NotificationButton() {
     }
   }, [supported])
 
-  if (!supported) return null
-
   const enable = async () => {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
+      if (!supported) {
+        setError('Seu navegador não suporta notificações do sistema.')
+        return
+      }
       const perm = await Notification.requestPermission()
       if (perm !== 'granted') {
-        setError('Permissão de notificação negada no navegador')
+        setError('Permissão de notificação negada no navegador. Desbloqueie as notificações do site nas configurações do navegador para ativar esta opção.')
         return
       }
       const reg = await navigator.serviceWorker.ready
@@ -4777,7 +4768,9 @@ function NotificationButton() {
         p256dh: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('p256dh') ?? new ArrayBuffer(0))),
         auth: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('auth') ?? new ArrayBuffer(0))),
       })
+      try { localStorage.setItem('konnix-system-notifications', 'true') } catch { /* preferência opcional */ }
       setSubscribed(true)
+      setNativeOn(true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao ativar notificações')
     } finally {
@@ -4785,19 +4778,56 @@ function NotificationButton() {
     }
   }
 
+  const disable = async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        try {
+          await api.pushUnsubscribe(sub.endpoint)
+        } catch {
+          /* best-effort */
+        }
+        await sub.unsubscribe().catch(() => undefined)
+      }
+      try { localStorage.setItem('konnix-system-notifications', 'false') } catch { /* preferência opcional */ }
+      setSubscribed(false)
+      setNativeOn(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleNative = async () => {
+    if (busy) return
+    const next = !nativeOn
+    setBusy(true)
+    setError(null)
+    try {
+      try { localStorage.setItem('konnix-system-notifications', String(next)) } catch { /* preferência opcional */ }
+      setNativeOn(next)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const on = isTauri ? nativeOn : subscribed
+
   return (
-    <div className="user-menu-item user-menu-notifications">
+    <div className="user-menu-item notification-row">
       <IconBell />
-      <span className="notif-wrap">
-      {error && <span className="notif-error">{error}</span>}
-      {subscribed ? (
-        <span className="chip-ok">Notificações ativadas</span>
+      <span className="notification-label">Notificações</span>
+      {busy ? (
+        <button className="user-menu-item-btn" disabled>Processando…</button>
+      ) : on ? (
+        <button className="user-menu-item-btn notification-disable-btn" onClick={isTauri ? toggleNative : disable}>Desativar</button>
       ) : (
-        <button className="user-menu-item-btn" onClick={enable} disabled={busy}>
-          {busy ? 'Ativando…' : 'Ativar notificações'}
-        </button>
-        )}
-      </span>
+        <button className="user-menu-item-btn notification-enable-btn" onClick={isTauri ? toggleNative : enable}>Ativar</button>
+      )}
+      {error && <span className="notif-error">{error}</span>}
     </div>
   )
 }

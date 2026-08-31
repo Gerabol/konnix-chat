@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v4';
+const VERSION = 'konnix-shell-v5';
 
 const CORE_ASSETS = [
   '/',
@@ -86,14 +86,20 @@ self.addEventListener('push', (event) => {
     }
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: 'konnix-message',
-      renotify: false,
-      data: payload.data || {},
-    })
+    (async () => {
+      // Se houver alguma aba do app aberta, o WebSocket já emite a notificação
+      // (new Notification). Evita notificação duplicada do push.
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (clients.length > 0) return;
+      await self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: 'konnix-message',
+        renotify: false,
+        data: payload.data || {},
+      });
+    })()
   );
 });
 

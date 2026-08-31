@@ -243,6 +243,7 @@
   --konnix-sidebar: #5b4cf0;
   --konnix-button: #5b4cf0;
   --sidebar-strong-text-accent: #d8d4ff;
+  --sidebar-typing-color: #eeeaff;
   --sidebar-strong-light: #7669f5;
   --sidebar-strong-dark: #3d30b8;
   --konnix-sidebar-ink: #ffffff;
@@ -262,6 +263,7 @@
   --konnix-primary: #1fa463;
   --konnix-button: #188a53;
   --sidebar-strong-text-accent: #b3e58a;
+  --sidebar-typing-color: #e6f7e8;
   --konnix-primary-hover: #27b56e;
   --konnix-primary-deep: #146c42;
   --konnix-accent: #27b56e;
@@ -285,6 +287,7 @@
   --konnix-primary: #e84d8a;
   --konnix-button: #d93e7c;
   --sidebar-strong-text-accent: #efbfd3;
+  --sidebar-typing-color: #ffedf5;
   --konnix-primary-hover: #f0629b;
   --konnix-primary-deep: #a92f62;
   --konnix-accent: #f0629b;
@@ -308,6 +311,7 @@
   --konnix-primary: #d94141;
   --konnix-button: #c83232;
   --sidebar-strong-text-accent: #efc0c0;
+  --sidebar-typing-color: #ffeded;
   --konnix-primary-hover: #e15353;
   --konnix-primary-deep: #9d2626;
   --konnix-accent: #e15353;
@@ -1036,6 +1040,10 @@ button:disabled {
   color: var(--konnix-sidebar-soft);
 }
 
+[data-theme$="-strong"] .sidebar .room-type.typing-active {
+  color: var(--sidebar-typing-color, #f4f0ff);
+}
+
 [data-theme$="-strong"] .sidebar .presence-online { color: #b7ff3c; background: rgba(183, 255, 60, 0.24); --presence-dot-color: #b7ff3c; }
 [data-theme$="-strong"] .sidebar .presence-away { color: #ffe45c; background: rgba(255, 228, 92, 0.24); --presence-dot-color: #ffe45c; }
 [data-theme$="-strong"] .sidebar .presence-busy { color: #ff6b6b; background: rgba(255, 107, 107, 0.24); --presence-dot-color: #ff6b6b; }
@@ -1476,6 +1484,33 @@ button:disabled {
 .notif-error {
   color: var(--konnix-danger);
   font-size: 0.75rem;
+}
+
+.notification-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notification-row {
+  gap: 0.55rem;
+}
+.notification-row > svg {
+  flex: none;
+  color: var(--konnix-ink-soft);
+}
+.notification-row .user-menu-item-btn {
+  flex: none;
+  width: auto;
+  margin-left: auto;
+}
+.notification-enable-btn {
+  color: var(--konnix-primary);
+  font-weight: 600;
+}
+.notification-disable-btn {
+  color: var(--konnix-danger);
 }
 
 .menu-label {
