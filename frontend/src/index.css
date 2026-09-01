@@ -767,6 +767,7 @@ button:disabled {
   align-items: center;
   gap: 0.35rem;
   margin-left: auto;
+  position: relative;
 }
 
 .sidebar-logo {
@@ -1548,55 +1549,125 @@ button:disabled {
   bottom: calc(100% + 6px);
   left: 0.8rem;
   right: 0.8rem;
-  z-index: 10;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
-  padding: 0.3rem;
+  padding: 0.35rem;
   border: 1px solid var(--konnix-border);
   border-radius: 12px;
   background: var(--konnix-surface);
   box-shadow: var(--konnix-shadow);
+  animation: dropdown-enter 0.15s ease-out;
+}
+
+.sidebar-header-dropdown {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  bottom: auto !important;
+  left: auto !important;
+  right: 0 !important;
+  z-index: 1200;
+  width: 290px;
+  max-width: calc(100vw - 1rem);
+  box-shadow: var(--konnix-shadow);
+  border: 1px solid var(--konnix-border);
+  border-radius: 12px;
+  background: var(--konnix-surface);
 }
 
 .user-menu-item {
   display: flex;
   align-items: center;
+  gap: 0.45rem;
   width: 100%;
-  min-height: 38px;
-  padding: 0.4rem 0.6rem;
+  min-height: 36px;
+  padding: 0.38rem 0.55rem;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--konnix-ink);
-  font-size: 0.88rem;
+  font-size: 0.81rem;
+  letter-spacing: -0.015em;
+  font-family: inherit;
   text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
 }
-
-.user-menu-action,
-.user-menu-notifications { gap: 0.55rem; }
-.user-menu-item > svg { flex: none; color: var(--konnix-ink-soft); }
-.palette-icon { width: 17px; height: 17px; flex: none; }
 
 .user-menu-item:hover {
   background: var(--konnix-bg);
 }
 
-.user-menu-item-btn {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--konnix-primary);
-  font-size: 0.88rem;
-  text-align: left;
-  padding: 0.2rem 0;
+.user-menu-item:active {
+  background: var(--konnix-border);
 }
 
-.user-menu-notifications { min-height: 38px; }
-.user-menu-notifications .notif-wrap { min-width: 0; }
-.message-notifications-toggle { justify-content: flex-start; }
-.message-notifications-toggle > span[aria-hidden="true"] { flex: 0 0 auto; }
-.message-notifications-toggle span { min-width: 0; flex: 1; }
-.message-notifications-toggle small { color: var(--konnix-ink-soft); font-size: 0.7rem; }
+.user-menu-item > svg,
+.user-menu-item > .palette-icon {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  color: var(--konnix-ink-soft);
+}
+
+.user-menu-item > span:first-of-type,
+.user-menu-action > span:not(.chip-ok):not(.notif-error):not(.status-pill) {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.message-notifications-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.message-notifications-toggle small,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 70px;
+  min-width: 70px;
+  max-width: 70px;
+  height: 22px;
+  color: var(--konnix-ink-soft);
+  font-size: 0.69rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 0 0.25rem;
+  border-radius: 6px;
+  background: var(--konnix-bg);
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.status-pill.status-active {
+  background: rgba(48, 164, 108, 0.14);
+  color: var(--konnix-ok);
+  font-weight: 600;
+}
+
+.status-pill.status-inactive {
+  background: var(--konnix-bg);
+  color: var(--konnix-ink-soft);
+}
+
+.user-menu-logout {
+  color: var(--konnix-danger, #e5484d);
+}
+
+.user-menu-logout > svg {
+  color: var(--konnix-danger, #e5484d);
+}
+
+.user-menu-logout:hover {
+  background: rgba(229, 72, 77, 0.1);
+}
 
 .notif-wrap {
   display: inline-flex;
@@ -3765,12 +3836,15 @@ img.room-header-avatar {
   .sidebar-header-dropdown {
     position: absolute;
     top: calc(100% + 0.45rem);
-    right: 0;
+    bottom: auto !important;
+    left: auto !important;
+    right: 0 !important;
     z-index: 1200;
-    width: 240px;
+    width: 290px;
+    max-width: calc(100vw - 1rem);
     box-shadow: var(--konnix-shadow);
     border: 1px solid var(--konnix-border);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--konnix-surface);
   }
 

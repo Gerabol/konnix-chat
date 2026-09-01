@@ -698,6 +698,16 @@ function IconAlertTriangle({ size = 16 }: { size?: number }) {
   )
 }
 
+function IconInfo({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  )
+}
+
 type InlineMatch = {
   start: number
   end: number
@@ -2132,16 +2142,28 @@ const Sidebar = memo(function Sidebar({
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const headerMenuRef = useRef<HTMLDivElement>(null)
+  const footerUserRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!menuOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (
+        headerMenuRef.current?.contains(target) ||
+        footerUserRef.current?.contains(target)
+      ) {
+        return
+      }
+      setMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
   }, [menuOpen])
 
   const handleSelectRoom = (roomId: string) => {
@@ -2224,7 +2246,7 @@ const Sidebar = memo(function Sidebar({
             </div>
           </button>
 
-          <div className="sidebar-header-actions" ref={menuRef}>
+          <div className="sidebar-header-actions" ref={headerMenuRef}>
             <button
               type="button"
               className="icon-btn sidebar-search-toggle"
@@ -2253,19 +2275,82 @@ const Sidebar = memo(function Sidebar({
                 <div className="menu-label">Configurações</div>
                 <NotificationButton />
                 <AutostartButton />
-                <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}>
-                  <IconBell />
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action message-notifications-toggle"
+                  onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
+                >
+                  <IconBell size={16} />
                   <span>Alertas de novas mensagens</span>
-                  <small>{messageNotificationsEnabled ? 'Ativo' : 'Desativado'}</small>
+                  <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
+                    {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
+                  </small>
                 </button>
-                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
-                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
-                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
-                <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
-                {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
-                <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
-                  <IconLogout />
-                  Sair
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onTheme()
+                  }}
+                >
+                  <PaletteIcon />
+                  <span>Tema</span>
+                </button>
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onEditProfile()
+                  }}
+                >
+                  <PersonIcon size={16} />
+                  <span>Editar meu perfil</span>
+                </button>
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onReportIssue()
+                  }}
+                >
+                  <IconAlertTriangle size={16} />
+                  <span>Relatar Problema</span>
+                </button>
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onAbout()
+                  }}
+                >
+                  <IconInfo size={16} />
+                  <span>Sobre</span>
+                </button>
+                {me.roles.includes('ADMIN') && (
+                  <button
+                    type="button"
+                    className="user-menu-item user-menu-action"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      window.history.pushState({}, '', '/admin')
+                      window.dispatchEvent(new PopStateEvent('popstate'))
+                    }}
+                  >
+                    <IconShield size={16} />
+                    <span>Administração</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-action user-menu-logout"
+                  onClick={() => onLogout()}
+                >
+                  <IconLogout size={16} />
+                  <span>Sair</span>
                 </button>
               </div>
             )}
@@ -2533,7 +2618,7 @@ const Sidebar = memo(function Sidebar({
         </button>
       )}
 
-      <div className="sidebar-footer" ref={menuRef}>
+      <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
           role="button"
@@ -2563,22 +2648,85 @@ const Sidebar = memo(function Sidebar({
         {menuOpen && (
           <div className="user-menu">
             <div className="menu-label">Configurações</div>
-              <NotificationButton />
-              <AutostartButton />
-             <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}>
-               <IconBell />
-               <span>Alertas de novas mensagens</span>
-               <small>{messageNotificationsEnabled ? 'Ativo' : 'Desativado'}</small>
-             </button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
-              {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
-             <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
-               <IconLogout />
-               Sair
-             </button>
+            <NotificationButton />
+            <AutostartButton />
+            <button
+              type="button"
+              className="user-menu-item user-menu-action message-notifications-toggle"
+              onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
+            >
+              <IconBell size={16} />
+              <span>Alertas de novas mensagens</span>
+              <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
+                {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
+              </small>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item user-menu-action"
+              onClick={() => {
+                setMenuOpen(false)
+                onTheme()
+              }}
+            >
+              <PaletteIcon />
+              <span>Tema</span>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item user-menu-action"
+              onClick={() => {
+                setMenuOpen(false)
+                onEditProfile()
+              }}
+            >
+              <PersonIcon size={16} />
+              <span>Editar meu perfil</span>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item user-menu-action"
+              onClick={() => {
+                setMenuOpen(false)
+                onReportIssue()
+              }}
+            >
+              <IconAlertTriangle size={16} />
+              <span>Relatar Problema</span>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item user-menu-action"
+              onClick={() => {
+                setMenuOpen(false)
+                onAbout()
+              }}
+            >
+              <IconInfo size={16} />
+              <span>Sobre</span>
+            </button>
+            {me.roles.includes('ADMIN') && (
+              <button
+                type="button"
+                className="user-menu-item user-menu-action"
+                onClick={() => {
+                  setMenuOpen(false)
+                  window.history.pushState({}, '', '/admin')
+                  window.dispatchEvent(new PopStateEvent('popstate'))
+                }}
+              >
+                <IconShield size={16} />
+                <span>Administração</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="user-menu-item user-menu-action user-menu-logout"
+              onClick={() => onLogout()}
+            >
+              <IconLogout size={16} />
+              <span>Sair</span>
+            </button>
           </div>
         )}
       </div>
@@ -5303,7 +5451,7 @@ function NotificationButton() {
     try {
       const perm = await Notification.requestPermission()
       if (perm !== 'granted') {
-        setError('Permissão de notificação negada no navegador')
+        setError('Permissão negada no navegador')
         return
       }
       const reg = await navigator.serviceWorker.ready
@@ -5319,26 +5467,33 @@ function NotificationButton() {
       })
       setSubscribed(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Falha ao ativar notificações')
+      setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
     } finally {
       setBusy(false)
     }
   }
 
+  if (subscribed) {
+    return (
+      <div className="user-menu-item user-menu-action message-notifications-toggle">
+        <IconBell size={16} />
+        <span>Push no navegador</span>
+        <span className="chip-ok">Ativo</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="user-menu-item user-menu-notifications">
-      <IconBell />
-      <span className="notif-wrap">
-      {error && <span className="notif-error">{error}</span>}
-      {subscribed ? (
-        <span className="chip-ok">Notificações ativadas</span>
-      ) : (
-        <button className="user-menu-item-btn" onClick={enable} disabled={busy}>
-          {busy ? 'Ativando…' : 'Ativar notificações'}
-        </button>
-        )}
-      </span>
-    </div>
+    <button
+      type="button"
+      className="user-menu-item user-menu-action message-notifications-toggle"
+      onClick={enable}
+      disabled={busy}
+    >
+      <IconBell size={16} />
+      <span>{busy ? 'Ativando push…' : 'Ativar push'}</span>
+      {error ? <small className="notif-error">{error}</small> : <small>Desativado</small>}
+    </button>
   )
 }
 
@@ -5365,8 +5520,13 @@ function AutostartButton() {
   }
 
   return (
-    <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => void toggle()} disabled={busy}>
-      <span aria-hidden="true">▣</span>
+    <button
+      type="button"
+      className="user-menu-item user-menu-action message-notifications-toggle"
+      onClick={() => void toggle()}
+      disabled={busy}
+    >
+      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
       <span>Iniciar com o Windows</span>
       <small>{enabled ? 'Ativo' : 'Desativado'}</small>
     </button>
