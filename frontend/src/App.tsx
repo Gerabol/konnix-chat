@@ -3425,6 +3425,8 @@ function RoomView({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
+  const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
   const readOnlyAccount = me.accountStatus === 'READ_ONLY'
   const muted = readOnlyAccount || room.readOnly || !online
   const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
@@ -3435,6 +3437,17 @@ function RoomView({
   const isBugReportsRoom = room.name === 'bug-reports'
   const isAdmin = me.roles.includes('ADMIN')
   const canRespondToReport = isBugReportsRoom && isAdmin
+  const canManageRoom = room.type !== 'DIRECT' && (isRoomOwner || isAdmin)
+  const isMember = roomMembers.some((member) => member.userId === me.id)
+
+  useEffect(() => {
+    if (!roomHeaderMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (roomHeaderMenuRef.current && !roomHeaderMenuRef.current.contains(e.target as Node)) setRoomHeaderMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [roomHeaderMenuOpen])
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
     setAudioMode(recording)
@@ -3956,127 +3969,199 @@ function RoomView({
 
   return (
     <div className={`room-view ${filesOpen ? 'files-open' : ''}`}>
-      <div className="room-header">
-        <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
-          ‹
-        </button>
-        {room.type === 'DIRECT' ? (
-          <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
-            <span className="room-header-avatar-wrap">
-              <AvatarImage
-                path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                className="room-header-avatar"
-                fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
-                alt={roomDisplayName(room)}
+      <div className={`room-header ${searchOpen ? 'room-header-search-mode' : ''}`}>
+        {searchOpen ? (
+          /* ── Mobile Search Mode: full-bar search ── */
+          <div className="room-header-search-bar">
+            <button type="button" className="icon-btn room-search-back" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">
+              <IconArrowLeft size={20} />
+            </button>
+            <div className="room-search-input-wrap">
+              <span className="room-search-icon"><IconSearch size={15} /></span>
+              <input
+                ref={searchInputRef}
+                className="room-search-input"
+                value={searchQuery}
+                placeholder="Pesquisar nesta conversa…"
+                aria-label="Pesquisar nesta conversa"
+                autoFocus
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
+                  if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
+                }}
               />
-              {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
-            </span>
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              {typingText ? (
-                <span className="room-type typing-active">
-                  {typingText}
-                  <TypingDots />
-                </span>
-              ) : (
-                <span className="room-type">{roomSubtitle(room)}</span>
+              {searchQuery.trim().length > 0 && (
+                <button type="button" className="search-clear room-search-clear" onClick={() => { setSearchQuery(''); searchInputRef.current?.focus() }} aria-label="Limpar busca">×</button>
               )}
             </div>
-          </button>
-        ) : (
-          <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
-            <AvatarImage
-              path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-              className="room-header-avatar"
-              fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
-              alt={roomDisplayName(room)}
-            />
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              {typingText ? (
-                <span className="room-type typing-active">
-                  {typingText}
-                  <TypingDots />
-                </span>
-              ) : (
-                <span className="room-type">{roomSubtitle(room)}</span>
-              )}
-            </div>
-          </button>
-        )}
-        {room.readOnly && <span className="chip-chip">Somente leitura</span>}
-          <div className="room-header-actions">
-            {room.type !== 'DIRECT' && (isRoomOwner || me.roles.includes('ADMIN')) && (
-            <>
-             {(isRoomOwner || me.roles.includes('ADMIN')) && <button
-              className="icon-btn header-edit"
-              onClick={() => setEditOpen(true)}
-              title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-              aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-            >
-              <IconPencil size={18} />
-            </button>}
-            <button
-              className="icon-btn header-add"
-              onClick={() => setAddOpen(true)}
-              title="Adicionar membros"
-              aria-label="Adicionar membros"
-            >
-              <PersonIcon size={20} />
-            </button>
-            <button
-              className="icon-btn header-remove"
-              onClick={() => setRemoveOpen(true)}
-              title="Remover membros"
-              aria-label="Remover membros"
-            >
-              <NoEntryIcon size={24} />
-            </button>
-            </>
-          )}
-          {room.type !== 'DIRECT' && !isRoomOwner && !me.roles.includes('ADMIN') && roomMembers.some((member) => member.userId === me.id) && (
-            <button
-              className="icon-btn header-add"
-              onClick={() => setMembersOpen(true)}
-              title="Ver membros"
-              aria-label="Ver membros"
-            >
-              <PersonIcon size={20} />
-            </button>
-          )}
-          <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
-            {room.favorite ? '★' : '☆'}
-          </button>
-          <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
-            <IconClip size={18} />
-          </button>
-          <div className="room-header-search">
-          {searchOpen ? <>
-            <input
-              ref={searchInputRef}
-              className="room-search-input"
-              value={searchQuery}
-              placeholder="Pesquisar nesta conversa"
-              aria-label="Pesquisar nesta conversa"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
-                if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
-              }}
-            />
             <button type="button" className="icon-btn room-search-submit" onClick={() => void searchConversation()} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
-            <button type="button" className="icon-btn room-search-close" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">×</button>
-          </> : <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">⌕</button>}
-          {searchOpen && searchResults.length > 0 && <div className="room-search-results">
-            {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
-              <strong>{result.username}</strong>
-              <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
-              <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
-            </button>)}
-           </div>}
-          {searchOpen && searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
+            {searchResults.length > 0 && <div className="room-search-results">
+              {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
+                <strong>{result.username}</strong>
+                <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
+                <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
+              </button>)}
+            </div>}
+            {searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
           </div>
-        </div>
+        ) : (
+          /* ── Normal Mode: ← | Title (center) | 🔍 | + ── */
+          <>
+            <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
+              ‹
+            </button>
+            {room.type === 'DIRECT' ? (
+              <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
+                <span className="room-header-avatar-wrap">
+                  <AvatarImage
+                    path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                    className="room-header-avatar"
+                    fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
+                    alt={roomDisplayName(room)}
+                  />
+                  {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
+                </span>
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            ) : (
+              <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
+                <AvatarImage
+                  path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                  className="room-header-avatar"
+                  fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
+                  alt={roomDisplayName(room)}
+                />
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            )}
+            {room.readOnly && <span className="chip-chip">Somente leitura</span>}
+            <div className="room-header-actions">
+              {/* Desktop-only: individual action buttons */}
+              <div className="room-header-desktop-actions">
+                {canManageRoom && (
+                  <>
+                    <button
+                      className="icon-btn header-edit"
+                      onClick={() => setEditOpen(true)}
+                      title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                      aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                    >
+                      <IconPencil size={18} />
+                    </button>
+                    <button
+                      className="icon-btn header-add"
+                      onClick={() => setAddOpen(true)}
+                      title="Adicionar membros"
+                      aria-label="Adicionar membros"
+                    >
+                      <PersonIcon size={20} />
+                    </button>
+                    <button
+                      className="icon-btn header-remove"
+                      onClick={() => setRemoveOpen(true)}
+                      title="Remover membros"
+                      aria-label="Remover membros"
+                    >
+                      <NoEntryIcon size={24} />
+                    </button>
+                  </>
+                )}
+                {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                  <button
+                    className="icon-btn header-add"
+                    onClick={() => setMembersOpen(true)}
+                    title="Ver membros"
+                    aria-label="Ver membros"
+                  >
+                    <PersonIcon size={20} />
+                  </button>
+                )}
+                <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
+                  {room.favorite ? '★' : '☆'}
+                </button>
+                <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
+                  <IconClip size={18} />
+                </button>
+              </div>
+
+              {/* Search trigger */}
+              <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">
+                <IconSearch size={17} />
+              </button>
+
+              {/* Mobile-only: + dropdown menu with all actions */}
+              <div className="room-header-mobile-menu" ref={roomHeaderMenuRef}>
+                <button
+                  type="button"
+                  className={`icon-btn room-header-plus-btn ${roomHeaderMenuOpen ? 'active' : ''}`}
+                  onClick={() => setRoomHeaderMenuOpen((v) => !v)}
+                  title="Mais opções"
+                  aria-label="Mais opções"
+                  aria-expanded={roomHeaderMenuOpen}
+                >
+                  <IconPlus size={18} />
+                </button>
+                {roomHeaderMenuOpen && (
+                  <div className="room-header-dropdown">
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setEditOpen(true) }}>
+                        <IconPencil size={16} />
+                        <span>Editar {room.type === 'CHANNEL' ? 'canal' : 'grupo'}</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setAddOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Adicionar membros</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setRemoveOpen(true) }}>
+                        <NoEntryIcon size={18} />
+                        <span>Remover membros</span>
+                      </button>
+                    )}
+                    {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setMembersOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Ver membros</span>
+                      </button>
+                    )}
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito')) }}>
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>{room.favorite ? '★' : '☆'}</span>
+                      <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
+                    </button>
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); toggleFiles() }}>
+                      <IconClip size={16} />
+                      <span>Arquivos da conversa</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {room.pinnedMessage && !room.pinnedMessage.deletedAt && (
