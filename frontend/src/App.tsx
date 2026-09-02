@@ -467,16 +467,18 @@ function ComposerActionBox({
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
@@ -903,11 +905,19 @@ export default function App() {
     }
 
     const preventOverscroll = (e: TouchEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target && !target.closest('.message-list, .sidebar-nav, .modal-body, .room-files-panel, .emoji-picker-popover, .room-search-results, .mention-menu')) {
-        if (e.touches.length === 1 && !target.closest('input, textarea, button, a')) {
-          e.preventDefault()
+      let el = e.target as HTMLElement | null
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.tagName === 'A') {
+          return
         }
+        const style = window.getComputedStyle(el)
+        if (/(auto|scroll)/.test(style.overflowY + style.overflowX + style.overflow)) {
+          return
+        }
+        el = el.parentElement
+      }
+      if (e.touches.length === 1) {
+        e.preventDefault()
       }
     }
 
@@ -1000,17 +1010,22 @@ export default function App() {
   }, [])
 
   const handlePresenceChange = useCallback(async (status: PresenceStatus) => {
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || 'DEFAULT') as Theme
     const user = await api.updatePresence(status)
-    setSession((current) => current ? { ...current, user } : current)
-    return user
-  }, [])
+    const preservedTheme = (currentTheme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => current ? { ...current, user: { ...user, theme: preservedTheme } } : current)
+    cacheTheme(preservedTheme)
+    applyTheme(preservedTheme)
+    return { ...user, theme: preservedTheme }
+  }, [session?.user?.theme])
 
   const [profileRevision, setProfileRevision] = useState(0)
 
   const handleProfileUpdated = useCallback((user: User) => {
-    setSession((current) => (current ? { ...current, user } : current))
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => (current ? { ...current, user: { ...user, theme: user.theme || currentTheme } } : current))
     setProfileRevision((revision) => revision + 1)
-  }, [])
+  }, [session?.user?.theme])
 
   const handleThemeUpdated = useCallback((user: User) => {
     setSession((current) => (current ? { ...current, user } : current))
@@ -2078,6 +2093,113 @@ function PresenceSelector({
   )
 }
 
+function UserSettingsMenuContent({
+  me,
+  messageNotificationsEnabled,
+  onMessageNotificationsChange,
+  onTheme,
+  onEditProfile,
+  onReportIssue,
+  onAbout,
+  onLogout,
+  onClose,
+}: {
+  me: User
+  messageNotificationsEnabled: boolean
+  onMessageNotificationsChange: (enabled: boolean) => void
+  onTheme: () => void
+  onEditProfile: () => void
+  onReportIssue: () => void
+  onAbout: () => void
+  onLogout: () => void
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div className="menu-label">Configurações</div>
+      <NotificationButton />
+      <AutostartButton />
+      <button
+        type="button"
+        className="user-menu-item user-menu-action message-notifications-toggle"
+        onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
+      >
+        <IconBell size={16} />
+        <span>Alertas de novas mensagens</span>
+        <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
+          {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
+        </small>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onTheme()
+        }}
+      >
+        <PaletteIcon />
+        <span>Tema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onEditProfile()
+        }}
+      >
+        <PersonIcon size={16} />
+        <span>Editar meu perfil</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onReportIssue()
+        }}
+      >
+        <IconAlertTriangle size={16} />
+        <span>Relatar Problema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onAbout()
+        }}
+      >
+        <IconInfo size={16} />
+        <span>Sobre</span>
+      </button>
+      {me.roles.includes('ADMIN') && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            window.history.pushState({}, '', '/admin')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          }}
+        >
+          <IconShield size={16} />
+          <span>Administração</span>
+        </button>
+      )}
+      <button
+        type="button"
+        className="user-menu-item user-menu-action user-menu-logout"
+        onClick={() => onLogout()}
+      >
+        <IconLogout size={16} />
+        <span>Sair</span>
+      </button>
+    </>
+  )
+}
+
 const Sidebar = memo(function Sidebar({
   me,
   theme,
@@ -2135,9 +2257,10 @@ const Sidebar = memo(function Sidebar({
   typingByRoom: Record<string, Record<string, TypingUser>>
   onClose?: () => void
 }) {
-  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
+  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [searchMode, setSearchMode] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
@@ -2147,24 +2270,31 @@ const Sidebar = memo(function Sidebar({
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!menuOpen) return
+    if (!headerMenuOpen && !footerMenuOpen) return
     const onDown = (e: MouseEvent | TouchEvent) => {
       const target = e.target as Node
-      if (
-        headerMenuRef.current?.contains(target) ||
-        footerUserRef.current?.contains(target)
-      ) {
-        return
+      if (headerMenuOpen && headerMenuRef.current && !headerMenuRef.current.contains(target)) {
+        setHeaderMenuOpen(false)
       }
-      setMenuOpen(false)
+      if (footerMenuOpen && footerUserRef.current && !footerUserRef.current.contains(target)) {
+        setFooterMenuOpen(false)
+      }
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setHeaderMenuOpen(false)
+        setFooterMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
     }
-  }, [menuOpen])
+  }, [headerMenuOpen, footerMenuOpen])
 
   const handleSelectRoom = (roomId: string) => {
     if (searchMode) {
@@ -2261,97 +2391,31 @@ const Sidebar = memo(function Sidebar({
             </button>
             <button
               type="button"
-              className={`icon-btn sidebar-settings-toggle ${menuOpen ? 'active' : ''}`}
-              onClick={() => setMenuOpen((open) => !open)}
+              className={`icon-btn sidebar-settings-toggle ${headerMenuOpen ? 'active' : ''}`}
+              onClick={() => {
+                setFooterMenuOpen(false)
+                setHeaderMenuOpen((open) => !open)
+              }}
               title="Configurações"
               aria-label="Configurações"
-              aria-expanded={menuOpen}
+              aria-expanded={headerMenuOpen}
             >
               <IconSettings size={18} />
             </button>
             <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
-            {menuOpen && (
+            {headerMenuOpen && (
               <div className="user-menu sidebar-header-dropdown">
-                <div className="menu-label">Configurações</div>
-                <NotificationButton />
-                <AutostartButton />
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action message-notifications-toggle"
-                  onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
-                >
-                  <IconBell size={16} />
-                  <span>Alertas de novas mensagens</span>
-                  <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
-                    {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
-                  </small>
-                </button>
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onTheme()
-                  }}
-                >
-                  <PaletteIcon />
-                  <span>Tema</span>
-                </button>
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onEditProfile()
-                  }}
-                >
-                  <PersonIcon size={16} />
-                  <span>Editar meu perfil</span>
-                </button>
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onReportIssue()
-                  }}
-                >
-                  <IconAlertTriangle size={16} />
-                  <span>Relatar Problema</span>
-                </button>
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onAbout()
-                  }}
-                >
-                  <IconInfo size={16} />
-                  <span>Sobre</span>
-                </button>
-                {me.roles.includes('ADMIN') && (
-                  <button
-                    type="button"
-                    className="user-menu-item user-menu-action"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      window.history.pushState({}, '', '/admin')
-                      window.dispatchEvent(new PopStateEvent('popstate'))
-                    }}
-                  >
-                    <IconShield size={16} />
-                    <span>Administração</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-action user-menu-logout"
-                  onClick={() => onLogout()}
-                >
-                  <IconLogout size={16} />
-                  <span>Sair</span>
-                </button>
+                <UserSettingsMenuContent
+                  me={me}
+                  messageNotificationsEnabled={messageNotificationsEnabled}
+                  onMessageNotificationsChange={onMessageNotificationsChange}
+                  onTheme={onTheme}
+                  onEditProfile={onEditProfile}
+                  onReportIssue={onReportIssue}
+                  onAbout={onAbout}
+                  onLogout={onLogout}
+                  onClose={() => setHeaderMenuOpen(false)}
+                />
               </div>
             )}
           </div>
@@ -2623,13 +2687,17 @@ const Sidebar = memo(function Sidebar({
           className="user-menu-trigger"
           role="button"
           tabIndex={0}
-          aria-expanded={menuOpen}
+          aria-expanded={footerMenuOpen}
           aria-label="Abrir configurações do usuário"
-          onClick={() => setMenuOpen((o) => !o)}
+          onClick={() => {
+            setHeaderMenuOpen(false)
+            setFooterMenuOpen((o) => !o)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
-              setMenuOpen((o) => !o)
+              setHeaderMenuOpen(false)
+              setFooterMenuOpen((o) => !o)
             }
           }}
         >
@@ -2645,88 +2713,19 @@ const Sidebar = memo(function Sidebar({
           </span>
           <span className="settings-btn" aria-hidden="true">⚙</span>
         </div>
-        {menuOpen && (
+        {footerMenuOpen && (
           <div className="user-menu">
-            <div className="menu-label">Configurações</div>
-            <NotificationButton />
-            <AutostartButton />
-            <button
-              type="button"
-              className="user-menu-item user-menu-action message-notifications-toggle"
-              onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
-            >
-              <IconBell size={16} />
-              <span>Alertas de novas mensagens</span>
-              <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
-                {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
-              </small>
-            </button>
-            <button
-              type="button"
-              className="user-menu-item user-menu-action"
-              onClick={() => {
-                setMenuOpen(false)
-                onTheme()
-              }}
-            >
-              <PaletteIcon />
-              <span>Tema</span>
-            </button>
-            <button
-              type="button"
-              className="user-menu-item user-menu-action"
-              onClick={() => {
-                setMenuOpen(false)
-                onEditProfile()
-              }}
-            >
-              <PersonIcon size={16} />
-              <span>Editar meu perfil</span>
-            </button>
-            <button
-              type="button"
-              className="user-menu-item user-menu-action"
-              onClick={() => {
-                setMenuOpen(false)
-                onReportIssue()
-              }}
-            >
-              <IconAlertTriangle size={16} />
-              <span>Relatar Problema</span>
-            </button>
-            <button
-              type="button"
-              className="user-menu-item user-menu-action"
-              onClick={() => {
-                setMenuOpen(false)
-                onAbout()
-              }}
-            >
-              <IconInfo size={16} />
-              <span>Sobre</span>
-            </button>
-            {me.roles.includes('ADMIN') && (
-              <button
-                type="button"
-                className="user-menu-item user-menu-action"
-                onClick={() => {
-                  setMenuOpen(false)
-                  window.history.pushState({}, '', '/admin')
-                  window.dispatchEvent(new PopStateEvent('popstate'))
-                }}
-              >
-                <IconShield size={16} />
-                <span>Administração</span>
-              </button>
-            )}
-            <button
-              type="button"
-              className="user-menu-item user-menu-action user-menu-logout"
-              onClick={() => onLogout()}
-            >
-              <IconLogout size={16} />
-              <span>Sair</span>
-            </button>
+            <UserSettingsMenuContent
+              me={me}
+              messageNotificationsEnabled={messageNotificationsEnabled}
+              onMessageNotificationsChange={onMessageNotificationsChange}
+              onTheme={onTheme}
+              onEditProfile={onEditProfile}
+              onReportIssue={onReportIssue}
+              onAbout={onAbout}
+              onLogout={onLogout}
+              onClose={() => setFooterMenuOpen(false)}
+            />
           </div>
         )}
       </div>
@@ -3590,11 +3589,15 @@ function RoomView({
 
   useEffect(() => {
     if (!roomHeaderMenuOpen) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
       if (roomHeaderMenuRef.current && !roomHeaderMenuRef.current.contains(e.target as Node)) setRoomHeaderMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
   }, [roomHeaderMenuOpen])
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
