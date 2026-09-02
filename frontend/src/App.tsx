@@ -2097,8 +2097,6 @@ function PresenceSelector({
 
 function UserSettingsMenuContent({
   me,
-  messageNotificationsEnabled,
-  onMessageNotificationsChange,
   onTheme,
   onEditProfile,
   onReportIssue,
@@ -2107,8 +2105,6 @@ function UserSettingsMenuContent({
   onClose,
 }: {
   me: User
-  messageNotificationsEnabled: boolean
-  onMessageNotificationsChange: (enabled: boolean) => void
   onTheme: () => void
   onEditProfile: () => void
   onReportIssue: () => void
@@ -2121,17 +2117,6 @@ function UserSettingsMenuContent({
       <div className="menu-label">Configurações</div>
       <NotificationButton />
       <AutostartButton />
-      <button
-        type="button"
-        className="user-menu-item user-menu-action message-notifications-toggle"
-        onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
-      >
-        <IconBell size={16} />
-        <span>Alertas de novas mensagens</span>
-        <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
-          {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
-        </small>
-      </button>
       <button
         type="button"
         className="user-menu-item user-menu-action"
@@ -2264,7 +2249,9 @@ const Sidebar = memo(function Sidebar({
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const headerMenuRef = useRef<HTMLDivElement>(null)
+  const footerUserRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const isAdmin = me.roles.includes('ADMIN')
   const SYSTEM_CHANNEL_NAMES = ['bug-reports']
   const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
@@ -2377,57 +2364,7 @@ const Sidebar = memo(function Sidebar({
             </div>
           </button>
 
-        {isAdmin && systemChannels.length > 0 && (
-          <div className="nav-section">
-            <div className="nav-section-head">
-              <button
-                type="button"
-                className="nav-section-toggle admin-section-toggle"
-                onClick={() => setAdminOpen((open) => !open)}
-                aria-expanded={adminOpen}
-                aria-controls="admin-channels-list"
-              >
-                <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
-                <span className="nav-section-title">Administração</span>
-              </button>
-            </div>
-            {adminOpen && <div className="nav-list" id="admin-channels-list">
-              {systemChannels.map((room) => {
-                const typingText = formatTypingText(typingByRoom[room.id], false)
-                return (
-                  <button
-                    key={room.id}
-                    className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                    onClick={() => onOpenRoom(room.id)}
-                  >
-                    <AvatarImage
-                      path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                      className="room-thumb"
-                      fallback={
-                        <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                          {getRoomIcon(room)}
-                        </span>
-                      }
-                      alt={roomDisplayName(room)}
-                    />
-                    <span className="room-name">
-                      {roomDisplayName(room)}
-                      {typingText && (
-                        <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                          {typingText}
-                        </span>
-                      )}
-                    </span>
-                    {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-                  </button>
-                )
-              })}
-            </div>}
-          </div>
-        )}
-
-        <div className="nav-section">
-          <div className="nav-section-head">
+          <div className="sidebar-header-actions" ref={headerMenuRef}>
             <button
               type="button"
               className="icon-btn sidebar-search-toggle"
@@ -2438,8 +2375,7 @@ const Sidebar = memo(function Sidebar({
               title="Pesquisar conversas"
               aria-label="Pesquisar conversas"
             >
-              <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-               <span className="nav-section-title">Canais e grupos</span>
+              <IconSearch size={18} />
             </button>
             <button
               type="button"
@@ -2459,8 +2395,6 @@ const Sidebar = memo(function Sidebar({
               <div className="user-menu sidebar-header-dropdown">
                 <UserSettingsMenuContent
                   me={me}
-                  messageNotificationsEnabled={messageNotificationsEnabled}
-                  onMessageNotificationsChange={onMessageNotificationsChange}
                   onTheme={onTheme}
                   onEditProfile={onEditProfile}
                   onReportIssue={onReportIssue}
@@ -2471,11 +2405,206 @@ const Sidebar = memo(function Sidebar({
               </div>
             )}
           </div>
-          {channelsOpen && <div className="nav-list" id="channels-list">
-             {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-            {regularChannels.map((room) => {
-              const typingText = formatTypingText(typingByRoom[room.id], false)
-              return (
+        </div>
+      )}
+
+      <nav className="sidebar-nav">
+        {searchMode ? (
+          search.trim().length === 0 ? (
+            <div className="sidebar-search-prompt">
+              <span className="search-prompt-icon"><IconSearch size={28} /></span>
+              <p>Digite para buscar conversas, canais ou contatos…</p>
+            </div>
+          ) : !hasSearchResults ? (
+            <div className="sidebar-search-empty">
+              <p>Nenhum resultado encontrado para &ldquo;{search}&rdquo;</p>
+            </div>
+          ) : (
+            <>
+              {userResults.length > 0 && (
+                <div className="nav-section search-users-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Usuários ({userResults.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {userResults.map((user) => (
+                      <button key={user.id} className="room-item search-user-item" onClick={() => void handleSelectUser(user.id)}>
+                        <span className="sidebar-avatar-wrap">
+                          <AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />
+                          {user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}
+                        </span>
+                        <span className="picker-item-text">
+                          <strong>{user.name || user.username}</strong>
+                          <small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {favoriteRooms.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Favoritos ({favoriteRooms.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {favoriteRooms.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {channels.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Grupos & Canais ({channels.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {channels.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={<span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {regularConversations.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Conversas ({regularConversations.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {regularConversations.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        ) : (
+          <>
+            {favoriteRooms.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
+                    <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Favoritos</span>
+                  </button>
+                </div>
+                {favoritesOpen && (
+                  <div className="nav-list" id="favorites-list">
+                    {favoriteRooms.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isAdmin && systemChannels.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button
+                    type="button"
+                    className="nav-section-toggle admin-section-toggle"
+                    onClick={() => setAdminOpen((open) => !open)}
+                    aria-expanded={adminOpen}
+                    aria-controls="admin-channels-list"
+                  >
+                    <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Administração</span>
+                  </button>
+                </div>
+                {adminOpen && (
+                  <div className="nav-list" id="admin-channels-list">
+                    {systemChannels.map((room) => {
+                      const typingText = formatTypingText(typingByRoom[room.id], false)
+                      return (
+                        <button
+                          key={room.id}
+                          className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                          onClick={() => handleSelectRoom(room.id)}
+                        >
+                          <AvatarImage
+                            path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                            className="room-thumb"
+                            fallback={
+                              <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                                {getRoomIcon(room)}
+                              </span>
+                            }
+                            alt={roomDisplayName(room)}
+                          />
+                          <span className="room-name">
+                            {roomDisplayName(room)}
+                            {typingText && (
+                              <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                                {typingText}
+                              </span>
+                            )}
+                          </span>
+                          {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="nav-section">
+              <div className="nav-section-head">
                 <button
                   type="button"
                   className="nav-section-toggle"
@@ -2484,7 +2613,7 @@ const Sidebar = memo(function Sidebar({
                   aria-controls="channels-list"
                 >
                   <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-                  <span className="nav-section-title">Grupos</span>
+                  <span className="nav-section-title">Canais e grupos</span>
                 </button>
                 <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
                   +
@@ -2492,8 +2621,8 @@ const Sidebar = memo(function Sidebar({
               </div>
               {channelsOpen && (
                 <div className="nav-list" id="channels-list">
-                  {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-                  {channels.map((room) => {
+                  {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+                  {regularChannels.map((room) => {
                     const typingText = formatTypingText(typingByRoom[room.id], false)
                     return (
                       <button
@@ -2623,18 +2752,15 @@ const Sidebar = memo(function Sidebar({
         </div>
         {footerMenuOpen && (
           <div className="user-menu">
-            <div className="menu-label">Configurações</div>
-              <NotificationButton />
-              <AutostartButton />
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onReportIssue() }}><IconAlertTriangle />Relatar Problema</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
-              {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
-             <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
-               <IconLogout />
-               Sair
-             </button>
+            <UserSettingsMenuContent
+              me={me}
+              onTheme={onTheme}
+              onEditProfile={onEditProfile}
+              onReportIssue={onReportIssue}
+              onAbout={onAbout}
+              onLogout={onLogout}
+              onClose={() => setFooterMenuOpen(false)}
+            />
           </div>
         )}
       </div>
@@ -5681,4 +5807,3 @@ function ReportIssueModal({
     </div>
   )
 }
-
