@@ -24,6 +24,7 @@ import { activateDesktopServer } from './desktop/servers/serverManager'
 import { getActiveServerId, getDesktopServers } from './desktop/servers/serverStore'
 import { setActiveServer } from './api'
 import { validatePassword } from './passwordValidation'
+import { RoleBadge } from './RoleBadge'
 
 type EmojiSelection = { native?: string }
 
@@ -36,7 +37,8 @@ if (isTauri) setActiveServer(initialDesktopServer?.url ?? null, initialDesktopSe
 
 const ROOM_ICON: Record<string, string> = {
   CHANNEL: '#',
-  PRIVATE_GROUP: '\u{1F512}',
+  PRIVATE_GROUP: '🔒',
+  PUBLIC_GROUP: '🔒',
   DIRECT: '@',
 }
 
@@ -798,7 +800,8 @@ function roomSubtitle(room: Room): string {
   if (room.type === 'DIRECT') {
     return room.directPartner ? `@${room.directPartner.username} | ${room.directPartner.email || 'sem e-mail'}` : 'Conversa'
   }
-  return room.type === 'CHANNEL' ? 'Grupo' : 'Grupo privado'
+  if (room.type === 'CHANNEL') return 'Canal'
+  return 'Grupo'
 }
 
 function roomActivityTime(room: Room): number {
@@ -1221,9 +1224,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
-  const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
-    try { return localStorage.getItem('konnix-message-notifications') !== 'false' } catch { return true }
-  })
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [searchUsers, setSearchUsers] = useState<DirectoryUser[]>([])
@@ -1252,8 +1252,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const onlineRef = useRef(online)
   onlineRef.current = online
   const wsRef = useRef<WebSocket | null>(null)
-  const messageNotificationsEnabledRef = useRef(messageNotificationsEnabled)
-  messageNotificationsEnabledRef.current = messageNotificationsEnabled
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const roomLoadRequestRef = useRef(0)
   const isInitializingConversationRef = useRef(false)
@@ -1324,11 +1322,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     setToast({ id: Date.now(), text })
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 5000)
-  }, [])
-
-  const setMessageNotifications = useCallback((enabled: boolean) => {
-    setMessageNotificationsEnabled(enabled)
-    try { localStorage.setItem('konnix-message-notifications', String(enabled)) } catch { /* preferência opcional */ }
   }, [])
 
   const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
@@ -1475,7 +1468,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                 return { ...prev, [msg.roomId]: roomTyping }
               })
             }
-            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && (!isTauri || (document.visibilityState === 'visible' && document.hasFocus()))
+            const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
+            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && !appInBackground
             const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
             setRooms((prev) => {
               const exists = prev.some((room) => room.id === msg.roomId)
@@ -1500,19 +1494,25 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                  api.markRoomRead(msg.roomId).catch(() => undefined)
                }
              }
-             if (shouldUnread) {
+               if (shouldUnread) {
                 const room = roomsRef.current.find((r) => r.id === msg.roomId)
-               const label = room ? roomDisplayName(room) : 'Chat'
-               const snippet = msg.content.replace(/\s+/g, ' ').trim()
-               if (messageNotificationsEnabledRef.current) {
-                 const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-                 if (isTauri) {
-                   void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                 } else if (msg.roomId !== activeRoomIdRef.current) {
-                   showToast(`${label} • ${body}`)
-                 }
-               }
-             }
+                const label = room ? roomDisplayName(room) : 'Chat'
+                const snippet = msg.content.replace(/\s+/g, ' ').trim()
+                const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
+                if (appInBackground) {
+                  let enabled = false
+                  try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
+                  if (enabled) {
+                    if (isTauri) {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    }
+                  }
+                } else if (msg.roomId !== activeRoomIdRef.current) {
+                  showToast(`${label} • ${body}`)
+                }
+              }
           } else if (evt.type === 'chat.typing') {
             const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
             const roomId = evt.roomId
@@ -1732,7 +1732,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     const roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY' || activeRoom?.readOnly) return false
+    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY') return false
     setComposing(true)
     try {
       const createdMessages = attachments.length === 0
@@ -1871,8 +1871,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onInstall={installApp}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
-          messageNotificationsEnabled={messageNotificationsEnabled}
-          onMessageNotificationsChange={setMessageNotifications}
           typingByRoom={typingByRoom}
           onClose={() => setSidebarOpen(false)}
         />
@@ -2099,8 +2097,6 @@ function PresenceSelector({
 
 function UserSettingsMenuContent({
   me,
-  messageNotificationsEnabled,
-  onMessageNotificationsChange,
   onTheme,
   onEditProfile,
   onReportIssue,
@@ -2109,8 +2105,6 @@ function UserSettingsMenuContent({
   onClose,
 }: {
   me: User
-  messageNotificationsEnabled: boolean
-  onMessageNotificationsChange: (enabled: boolean) => void
   onTheme: () => void
   onEditProfile: () => void
   onReportIssue: () => void
@@ -2123,17 +2117,6 @@ function UserSettingsMenuContent({
       <div className="menu-label">Configurações</div>
       <NotificationButton />
       <AutostartButton />
-      <button
-        type="button"
-        className="user-menu-item user-menu-action message-notifications-toggle"
-        onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
-      >
-        <IconBell size={16} />
-        <span>Alertas de novas mensagens</span>
-        <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
-          {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
-        </small>
-      </button>
       <button
         type="button"
         className="user-menu-item user-menu-action"
@@ -2228,8 +2211,6 @@ const Sidebar = memo(function Sidebar({
   onInstall,
   onPresenceChange,
   onPresenceError,
-  messageNotificationsEnabled,
-  onMessageNotificationsChange,
   typingByRoom,
   onClose,
 }: {
@@ -2256,8 +2237,6 @@ const Sidebar = memo(function Sidebar({
   onInstall: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
-  messageNotificationsEnabled: boolean
-  onMessageNotificationsChange: (enabled: boolean) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
   onClose?: () => void
 }) {
@@ -2267,11 +2246,16 @@ const Sidebar = memo(function Sidebar({
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [searchMode, setSearchMode] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
+  const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
   const headerMenuRef = useRef<HTMLDivElement>(null)
   const footerUserRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const isAdmin = me.roles.includes('ADMIN')
+  const SYSTEM_CHANNEL_NAMES = ['bug-reports']
+  const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
+  const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
 
   useEffect(() => {
     if (!headerMenuOpen && !footerMenuOpen) return
@@ -2411,8 +2395,6 @@ const Sidebar = memo(function Sidebar({
               <div className="user-menu sidebar-header-dropdown">
                 <UserSettingsMenuContent
                   me={me}
-                  messageNotificationsEnabled={messageNotificationsEnabled}
-                  onMessageNotificationsChange={onMessageNotificationsChange}
                   onTheme={onTheme}
                   onEditProfile={onEditProfile}
                   onReportIssue={onReportIssue}
@@ -2570,6 +2552,57 @@ const Sidebar = memo(function Sidebar({
               </div>
             )}
 
+            {isAdmin && systemChannels.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button
+                    type="button"
+                    className="nav-section-toggle admin-section-toggle"
+                    onClick={() => setAdminOpen((open) => !open)}
+                    aria-expanded={adminOpen}
+                    aria-controls="admin-channels-list"
+                  >
+                    <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Administração</span>
+                  </button>
+                </div>
+                {adminOpen && (
+                  <div className="nav-list" id="admin-channels-list">
+                    {systemChannels.map((room) => {
+                      const typingText = formatTypingText(typingByRoom[room.id], false)
+                      return (
+                        <button
+                          key={room.id}
+                          className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                          onClick={() => handleSelectRoom(room.id)}
+                        >
+                          <AvatarImage
+                            path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                            className="room-thumb"
+                            fallback={
+                              <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                                {getRoomIcon(room)}
+                              </span>
+                            }
+                            alt={roomDisplayName(room)}
+                          />
+                          <span className="room-name">
+                            {roomDisplayName(room)}
+                            {typingText && (
+                              <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                                {typingText}
+                              </span>
+                            )}
+                          </span>
+                          {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="nav-section">
               <div className="nav-section-head">
                 <button
@@ -2580,7 +2613,7 @@ const Sidebar = memo(function Sidebar({
                   aria-controls="channels-list"
                 >
                   <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-                  <span className="nav-section-title">Grupos</span>
+                  <span className="nav-section-title">Canais e grupos</span>
                 </button>
                 <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
                   +
@@ -2588,8 +2621,8 @@ const Sidebar = memo(function Sidebar({
               </div>
               {channelsOpen && (
                 <div className="nav-list" id="channels-list">
-                  {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-                  {channels.map((room) => {
+                  {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+                  {regularChannels.map((room) => {
                     const typingText = formatTypingText(typingByRoom[room.id], false)
                     return (
                       <button
@@ -2721,8 +2754,6 @@ const Sidebar = memo(function Sidebar({
           <div className="user-menu">
             <UserSettingsMenuContent
               me={me}
-              messageNotificationsEnabled={messageNotificationsEnabled}
-              onMessageNotificationsChange={onMessageNotificationsChange}
               onTheme={onTheme}
               onEditProfile={onEditProfile}
               onReportIssue={onReportIssue}
@@ -2753,7 +2784,6 @@ function NewRoomModal({
   const [type, setType] = useState<'PRIVATE_GROUP' | 'CHANNEL'>('PRIVATE_GROUP')
   const [members, setMembers] = useState<DirectoryUser[]>([])
   const [busy, setBusy] = useState(false)
-  const isAdmin = me.roles.includes('ADMIN')
 
   const create = async () => {
     if (!name.trim() || busy) return
@@ -2769,15 +2799,23 @@ function NewRoomModal({
       }
       onCreated(room.id)
     } catch (err) {
-       showToast(err instanceof ApiError ? err.message : 'Falha ao criar grupo')
+       showToast(err instanceof ApiError ? err.message : 'Falha ao criar sala')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Modal title="Criar grupo" onClose={onClose}>
+    <Modal title={type === 'CHANNEL' ? 'Criar canal' : 'Criar grupo'} onClose={onClose}>
       <div className="modal-fields">
+        <label className="field-label">
+          Tipo
+          <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
+            <option value="PRIVATE_GROUP">🔒 Grupo</option>
+            <option value="CHANNEL"># Canal</option>
+          </select>
+          <small className="field-hint">{type === 'CHANNEL' ? 'Somente você (proprietário) e administradores podem escrever. Demais membros leem.' : 'Todos os membros podem escrever.'}</small>
+        </label>
         <label className="field-label">
           Nome
           <input
@@ -2798,18 +2836,6 @@ function NewRoomModal({
             placeholder="ex.: Financeiro"
           />
         </label>
-        {isAdmin && (
-          <label className="field-label">
-            Tipo
-            <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
-              <option value="PRIVATE_GROUP">Grupo privado</option>
-               <option value="CHANNEL">Grupo público</option>
-            </select>
-          </label>
-        )}
-        {!isAdmin && (
-          <p className="modal-hint">Você pode criar grupos privados. Canais públicos são criados pelo administrador.</p>
-        )}
         <label className="field-label">
           Adicionar membros (opcional)
           <MemberPicker selected={members} onChange={setMembers} excludeId={me.id} />
@@ -3243,6 +3269,7 @@ function AddMembersModal({
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyOwnerId, setBusyOwnerId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(true)
 
   useEffect(() => {
@@ -3288,13 +3315,28 @@ function AddMembersModal({
     onClose()
   }
 
+  const toggleOwner = async (member: RoomMember) => {
+    if (busyOwnerId) return
+    setBusyOwnerId(member.userId)
+    try {
+      const role = member.role === 'OWNER' ? 'MEMBER' : 'OWNER'
+      const updated = await api.updateMemberRole(room.id, member.userId, role)
+      setCurrentMembers((prev) => prev.map((x) => (x.userId === updated.userId ? updated : x)))
+      notify(role === 'OWNER' ? `${member.name || member.username} agora é proprietário` : `${member.name || member.username} deixou de ser proprietário`)
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Falha ao alterar proprietário')
+    } finally {
+      setBusyOwnerId(null)
+    }
+  }
+
   return (
     <Modal title={`Adicionar membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
       <div className="members-modal-body">
       <div className="modal-fields">
         <input autoComplete="off" className="input" placeholder="Pesquisar usuário" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
-        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
         <div className="room-people-section"><button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}><span className="nav-chevron">{inviteOpen ? '⌄' : '›'}</span><span>Pessoas para convidar</span></button>{inviteOpen && <div className="picker-list small">{available.length === 0 && <span className="nav-empty">Nenhuma pessoa encontrada</span>}{available.map((user) => <button key={user.id} className={`picker-item ${selected.some((item) => item.id === user.id) ? 'active' : ''}`} onClick={() => setSelected((prev) => prev.some((item) => item.id === user.id) ? prev.filter((item) => item.id !== user.id) : [...prev, user])}><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} /><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}</small></span><span className="room-person-badge invite-badge">Convidar</span></button>)}</div>}</div>
       </div>
       </div>
@@ -3337,9 +3379,9 @@ function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
   )
 }
 
-function RoomPeopleSection({ title, tone, members }: { title: string; tone: 'owner' | 'member'; members: RoomMember[] }) {
+function RoomPeopleSection({ title, tone, members, onToggleOwner, busyId }: { title: string; tone: 'owner' | 'member'; members: RoomMember[]; onToggleOwner?: (member: RoomMember) => void; busyId?: string | null }) {
   const [open, setOpen] = useState(true)
-  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span></div>)}</div>}</div>
+  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span>{onToggleOwner && <button type="button" className={`owner-action ${member.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`} onClick={() => onToggleOwner(member)} disabled={busyId !== null} title={member.role === 'OWNER' ? `Remover ${member.name || member.username} de proprietário` : `Tornar ${member.name || member.username} proprietário`}>{member.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}</button>}</div>)}</div>}</div>
 }
 
 function RemoveMembersModal({
@@ -3381,7 +3423,8 @@ function RemoveMembersModal({
   }
 
   return (
-    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose}>
+    <Modal title={`Remover membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
       <div className="picker-list small">
         {members.length === 0 && <span className="nav-empty">Nenhum membro</span>}
         {members.map((m) => (
@@ -3408,6 +3451,7 @@ function RemoveMembersModal({
             </button>
           </div>
         ))}
+      </div>
       </div>
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>
@@ -3579,14 +3623,15 @@ function RoomView({
   const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
   const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
   const readOnlyAccount = me.accountStatus === 'READ_ONLY'
-  const muted = readOnlyAccount || room.readOnly || !online
-  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
-  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
   const isRoomOwner = room.type !== 'DIRECT' && roomMembers.some((member) =>
     member.userId === me.id && member.active && member.role === 'OWNER',
   )
-  const isBugReportsRoom = room.name === 'bug-reports'
   const isAdmin = me.roles.includes('ADMIN')
+  const muted = readOnlyAccount || (room.readOnly && !isAdmin && !isRoomOwner) || !online
+  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
+  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
+  const isBugReportsRoom = room.name === 'bug-reports'
+  const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
   const canRespondToReport = isBugReportsRoom && isAdmin
   const canManageRoom = room.type !== 'DIRECT' && (isRoomOwner || isAdmin)
   const isMember = roomMembers.some((member) => member.userId === me.id)
@@ -4025,6 +4070,7 @@ function RoomView({
       notifyTyping()
     } else {
       stopTyping()
+      setComposerExpanded(false)
     }
     if (room.type === 'DIRECT') {
       setMention(null)
@@ -4040,6 +4086,14 @@ function RoomView({
     setMention({ start: cursor - match[2].length - 1, end: cursor, query: match[2] })
     setMentionIndex(0)
   }
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = codeBlock ? 420 : composerExpanded ? 280 : 140
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`
+  }, [draft, composerExpanded, codeBlock, room.id])
 
   const chooseMention = (member: RoomMember) => {
     if (!mention) return
@@ -4436,7 +4490,8 @@ function RoomView({
          </div>
        </div>
 
-       <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
+       {canWriteInRoom ? (
+        <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
          {readOnlyAccount && <div className="account-read-only-message"><strong>Modo somente leitura</strong><span>Você pode consultar esta conversa, mas não enviar mensagens.</span></div>}
          <ComposerPendingAttachments files={pendingAttachments} urls={pendingAttachmentUrls} onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
         {quotedMessage && <div className="quote-preview"><div><strong>Respondendo a {quotedMessage.username || 'usuário'}</strong><span>{quotedMessage.content || 'Anexo'}</span></div><button type="button" onClick={() => setQuotedMessage(null)} aria-label="Desvincular citação">×</button></div>}
@@ -4470,7 +4525,7 @@ function RoomView({
           />
            <textarea
              ref={inputRef}
-             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''}`}
+             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''}`}
             value={draft}
             onChange={(e) => updateDraft(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
@@ -4574,7 +4629,8 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-          {room.type === 'PRIVATE_GROUP' && !readOnlyAccount && !room.readOnly && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
+            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
+          {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
@@ -4588,6 +4644,14 @@ function RoomView({
           {editingMessage && <button type="button" className="composer-action" onClick={cancelEditing} disabled={muted} title="Cancelar edição">Cancelar edição</button>}
         </div>
       </div>
+      ) : (
+        <div className="composer account-read-only" data-composer>
+          <div className="account-read-only-message">
+            <strong>Canal de comunicação</strong>
+            <span>Este canal é somente leitura. Apenas usuários com permissão podem enviar mensagens.</span>
+          </div>
+        </div>
+      )}
 
       {filesOpen && <RoomFilesPanel files={visibleFiles} loading={filesLoading} error={filesError} query={filesQuery} type={filesType} onQueryChange={setFilesQuery} onTypeChange={setFilesType} onClose={() => setFilesOpen(false)} onRetry={() => void loadRoomFiles()} />}
 
@@ -4788,8 +4852,9 @@ function MessageRow({
       <div className="message-body">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
-          {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>}
-          <span className="message-time">{formatTime(msg.createdAt)}</span>
+          {isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {deleted ? <span className="message-author">Mensagem excluída</span> : <span className={`message-author-wrap ${msg.forwardedFromUsername ? 'forwarded-author' : ''}`}>{isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}<button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>{!isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}</span>}
+          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
           {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
           {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
           {isMine && readReceiptsEnabled && !deleted && (
@@ -4804,7 +4869,7 @@ function MessageRow({
             onPin={onPinAction}
             onQuote={onQuote}
             onForward={onForward}
-            onEdit={isMine && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEdit={isMine && !msg.forwardedFromUsername && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
             onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }}
             onRespond={onRespond}
             canPin={canPin}
@@ -4877,7 +4942,17 @@ function MessageActionBar({
     const update = () => {
       if (!btnRef.current) return
       const r = btnRef.current.getBoundingClientRect()
-      setPos({ left: r.right + 8, top: r.top })
+      const pickerH = 420
+      const pickerW = 352
+      let top = r.top
+      if (top + pickerH > window.innerHeight) {
+        top = Math.max(8, r.bottom - pickerH)
+      }
+      let left = r.right + 8
+      if (left + pickerW > window.innerWidth) {
+        left = Math.max(8, r.left - pickerW)
+      }
+      setPos({ left, top })
     }
     update()
     const onScroll = () => update()
@@ -4907,9 +4982,9 @@ function MessageActionBar({
           📌
         </button>
       )}
-      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>💬</button>}
+      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>🗪</button>}
       {onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}
-      <button type="button" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>↩</button>
+      <button type="button" className="message-action-quote" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>❝</button>
       <button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button>
     </div>
   )
@@ -5007,7 +5082,7 @@ function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, po
         <div className="profile-info-table">
           <div className="profile-info-row"><span>Username</span><strong>@{profile.username}</strong></div>
           <div className="profile-info-row"><span>Email</span><strong>{profile.email || 'E-mail não informado'}</strong></div>
-          <div className="profile-info-row"><span>Status</span><strong>{presenceLabel(profile.presenceStatus)}</strong></div>
+          <div className="profile-info-row"><span>Status</span><strong className={`profile-status presence-${profile.presenceStatus}`}>{presenceLabel(profile.presenceStatus)}</strong></div>
         </div>
         <section className="profile-common-rooms" aria-label="Grupos e canais em comum">
           <strong>Grupos e canais em comum</strong>
@@ -5079,7 +5154,7 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
       .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(normalizedQuery))
       .map((user) => ({ type: 'user' as const, id: user.id, name: user.name || user.username, subtitle: `@${user.username}`, user })),
     ...rooms
-      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP')
+      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP')
       .filter((room) => `${roomDisplayName(room)} ${room.name}`.toLowerCase().includes(normalizedQuery))
       .map((room) => ({ type: 'room' as const, id: room.id, name: roomDisplayName(room), subtitle: room.type === 'CHANNEL' ? 'Canal' : 'Grupo', room })),
   ].slice(0, 20)
@@ -5099,13 +5174,27 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
 function RespondToReportModal({ message, onClose, onResponded, notify }: { message: Message; onClose: () => void; onResponded: () => void; notify: (text: string) => void }) {
   useEscapeClose(onClose)
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const submit = async () => {
-    if (!content.trim() || busy) return
+    if (busy || (!content.trim() && files.length === 0)) return
     setBusy(true)
     try {
-      await api.respondToReport(message.id, content.trim())
+      await api.respondToReport(message.id, content.trim(), files.length > 0 ? files : undefined)
       notify('Resposta enviada por mensagem direta ao usuário')
       onResponded()
       onClose()
@@ -5139,10 +5228,46 @@ function RespondToReportModal({ message, onClose, onResponded, notify }: { messa
               maxLength={2000}
             />
           </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
-          <button className="btn-primary" disabled={busy || !content.trim()} onClick={submit}>
+          <button className="btn-primary" disabled={busy || (!content.trim() && files.length === 0)} onClick={submit}>
             {busy ? 'Enviando...' : 'Enviar resposta'}
           </button>
         </div>
@@ -5432,6 +5557,9 @@ function NotificationButton() {
     () => !isTauri && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator,
   )
   const [subscribed, setSubscribed] = useState(false)
+  const [nativeOn, setNativeOn] = useState(() => {
+    try { return localStorage.getItem('konnix-system-notifications') === 'true' } catch { return false }
+  })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -5449,16 +5577,18 @@ function NotificationButton() {
     }
   }, [supported])
 
-  if (!supported) return null
-
   const enable = async () => {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
+      if (!supported) {
+        setError('Seu navegador não suporta notificações do sistema.')
+        return
+      }
       const perm = await Notification.requestPermission()
       if (perm !== 'granted') {
-        setError('Permissão negada no navegador')
+        setError('Permissão de notificação negada no navegador. Desbloqueie as notificações do site nas configurações do navegador para ativar esta opção.')
         return
       }
       const reg = await navigator.serviceWorker.ready
@@ -5472,7 +5602,9 @@ function NotificationButton() {
         p256dh: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('p256dh') ?? new ArrayBuffer(0))),
         auth: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('auth') ?? new ArrayBuffer(0))),
       })
+      try { localStorage.setItem('konnix-system-notifications', 'true') } catch { /* preferência opcional */ }
       setSubscribed(true)
+      setNativeOn(true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
     } finally {
@@ -5480,27 +5612,57 @@ function NotificationButton() {
     }
   }
 
-  if (subscribed) {
-    return (
-      <div className="user-menu-item user-menu-action message-notifications-toggle">
-        <IconBell size={16} />
-        <span>Push no navegador</span>
-        <span className="chip-ok">Ativo</span>
-      </div>
-    )
+  const disable = async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        try {
+          await api.pushUnsubscribe(sub.endpoint)
+        } catch {
+          /* best-effort */
+        }
+        await sub.unsubscribe().catch(() => undefined)
+      }
+      try { localStorage.setItem('konnix-system-notifications', 'false') } catch { /* preferência opcional */ }
+      setSubscribed(false)
+      setNativeOn(false)
+    } finally {
+      setBusy(false)
+    }
   }
 
+  const toggleNative = async () => {
+    if (busy) return
+    const next = !nativeOn
+    setBusy(true)
+    setError(null)
+    try {
+      try { localStorage.setItem('konnix-system-notifications', String(next)) } catch { /* preferência opcional */ }
+      setNativeOn(next)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const on = isTauri ? nativeOn : subscribed
+
   return (
-    <button
-      type="button"
-      className="user-menu-item user-menu-action message-notifications-toggle"
-      onClick={enable}
-      disabled={busy}
-    >
-      <IconBell size={16} />
-      <span>{busy ? 'Ativando push…' : 'Ativar push'}</span>
-      {error ? <small className="notif-error">{error}</small> : <small>Desativado</small>}
-    </button>
+    <div className="user-menu-item notification-row">
+      <IconBell />
+      <span className="notification-label">Notificações</span>
+      {busy ? (
+        <button className="user-menu-item-btn" disabled>Processando…</button>
+      ) : on ? (
+        <button className="user-menu-item-btn notification-disable-btn" onClick={isTauri ? toggleNative : disable}>Desativar</button>
+      ) : (
+        <button className="user-menu-item-btn notification-enable-btn" onClick={isTauri ? toggleNative : enable}>Ativar</button>
+      )}
+      {error && <span className="notif-error">{error}</span>}
+    </div>
   )
 }
 
@@ -5549,13 +5711,27 @@ function ReportIssueModal({
 }) {
   useEscapeClose(onClose)
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const submit = async () => {
     if (!content.trim() || busy) return
     setBusy(true)
     try {
-      await api.reportIssue(content.trim())
+      await api.reportIssue(content.trim(), files.length > 0 ? files : undefined)
       notify('Relato enviado com sucesso aos administradores!')
       onClose()
     } catch (error) {
@@ -5584,6 +5760,42 @@ function ReportIssueModal({
               maxLength={2000}
             />
           </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
@@ -5595,4 +5807,3 @@ function ReportIssueModal({
     </div>
   )
 }
-

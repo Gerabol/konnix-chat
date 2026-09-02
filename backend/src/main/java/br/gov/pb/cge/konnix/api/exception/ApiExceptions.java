@@ -59,10 +59,6 @@ public final class ApiExceptions {
         return new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_READ_ONLY", "A conta está em modo somente leitura");
     }
 
-    public static ApiException pollOnlyGroup() {
-        return new ApiException(HttpStatus.FORBIDDEN, "POLL_ONLY_GROUP", "Enquetes só podem ser criadas em grupos");
-    }
-
     public static ApiException pollInvalid() {
         return new ApiException(HttpStatus.BAD_REQUEST, "POLL_INVALID", "A enquete precisa de uma pergunta e pelo menos duas opções diferentes");
     }

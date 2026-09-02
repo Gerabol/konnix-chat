@@ -142,6 +142,35 @@ class ChatCoreIntegrationTest {
     }
 
     @Test
+    void adicionarMembroComoOwner() throws Exception {
+        String roomId = createRoom(adminToken, "grupo-add-owner", "PRIVATE_GROUP");
+        String targetId = createUser("membro-novo-owner");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/members", roomId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + targetId + "\",\"role\":\"OWNER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(targetId))
+                .andExpect(jsonPath("$.data.role").value("OWNER"));
+    }
+
+    @Test
+    void alterarPapelMembroParaOwner() throws Exception {
+        String roomId = createRoom(adminToken, "grupo-promover-owner", "PRIVATE_GROUP");
+        String targetId = createUser("membro-para-promover");
+        addMember(adminToken, roomId, targetId);
+
+        mockMvc.perform(patch("/api/v1/rooms/{roomId}/members/{userId}", roomId, targetId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"OWNER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(targetId))
+                .andExpect(jsonPath("$.data.role").value("OWNER"));
+    }
+
+    @Test
     void removerMembro() throws Exception {
         String roomId = createRoom(adminToken, "canal-removido", "CHANNEL");
         String targetId = createUser("membro-sai");

@@ -26,7 +26,7 @@ export type Room = {
   id: string
   name: string
   displayName: string
-  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'DIRECT'
+  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'PUBLIC_GROUP' | 'DIRECT'
   createdBy: string | null
   readOnly: boolean
   createdAt: string
@@ -90,6 +90,7 @@ export type Message = {
   reactions: MessageReaction[]
   forwardedFromUsername: string | null
   poll: Poll | null
+  roles: string[]
 }
 
 export type Poll = {
@@ -339,14 +340,27 @@ export const api = {
       method: 'PATCH', body: JSON.stringify({ name, email }),
     })
   },
-  reportIssue(content: string) {
+  reportIssue(content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
     return request<{ message: string }>('/api/v1/support/report', {
-      method: 'POST', body: JSON.stringify({ content }),
+      method: 'POST',
+      body: form,
     })
   },
-  respondToReport(messageId: string, content: string) {
+  respondToReport(messageId: string, content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('messageId', messageId)
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
     return request<Message>('/api/v1/support/respond', {
-      method: 'POST', body: JSON.stringify({ messageId, content }),
+      method: 'POST',
+      body: form,
     })
   },
   uploadUserAvatar(userId: string, file: File) {
@@ -437,10 +451,16 @@ export const api = {
     const url = q && q.trim() ? `/api/v1/users/directory?q=${encodeURIComponent(q.trim())}` : '/api/v1/users/directory'
     return request<DirectoryUser[]>(url)
   },
-  addMember(roomId: string, userId: string) {
+  addMember(roomId: string, userId: string, role?: string) {
     return request<RoomMember>(`/api/v1/rooms/${roomId}/members`, {
       method: 'POST',
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId, role }),
+    })
+  },
+  updateMemberRole(roomId: string, userId: string, role: string) {
+    return request<RoomMember>(`/api/v1/rooms/${roomId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId, role }),
     })
   },
   room(id: string) {

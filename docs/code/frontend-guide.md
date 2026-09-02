@@ -93,9 +93,13 @@ export interface PlatformBridge {
 
 ## 5. Design System e Sistema de 13 Temas Visuais
 
-- **13 Temas**: `default`, `dark`, `black-gray`, `pink`, `green`, `red`, `green-black`, `pink-black`, `red-black`, `default-strong`, `green-strong`, `pink-strong` e `red-strong`.
-- **Prevenção de FOUC**: O arquivo `index.html` executa um script síncrono antes do carregamento do bundle React, lendo o cookie `konnix_theme` e aplicando o atributo `data-theme` na tag `<html>`.
-- **Sincronização**: Ao selecionar um novo tema, a alteração é aplicada instantaneamente no DOM, persistida no cookie e salva no backend via `PATCH /api/v1/auth/preferences`.
+### 4.1. Badges de papel nas mensagens
+Cada mensagem do chat pode exibir tags visuais ao lado do nome do autor, com base no campo `roles` da resposta (`"OWNER"` e/ou `"ADMIN"`):
+- **Proprietário** (`RoleBadge type="owner"`): fundo vermelho (`#d9534f`), exibido quando o autor é dono do grupo/canal na sala.
+- **Admin** (`RoleBadge type="admin"`): fundo azul (`#0275d8`), exibido quando o autor possui o papel global `ADMIN`.
+- O componente `RoleBadge` (`frontend/src/RoleBadge.tsx`) é renderizado em `App.tsx` no bloco do autor a partir de `msg.roles` e estilizado pelas classes `.role-badge`, `.role-badge.owner` e `.role-badge.admin` em `frontend/src/index.css`.
+
+Consulte o [Guia Completo do Design System](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/design-system.md) para a lista de tokens, classes `.kx-*` e componentes de referência.
 
 ---
 
