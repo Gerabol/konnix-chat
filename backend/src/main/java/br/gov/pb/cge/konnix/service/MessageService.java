@@ -233,6 +233,9 @@ public class MessageService {
         if (!message.getUser().getId().equals(actor.id())) {
             throw ApiExceptions.cannotEditMessage();
         }
+        if (message.getForwardedFromUser() != null) {
+            throw ApiExceptions.cannotEditMessage();
+        }
         message.setContent(request.content().trim());
         message.setEditedAt(Instant.now());
         messageRepository.save(message);

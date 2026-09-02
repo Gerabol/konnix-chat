@@ -2846,23 +2846,9 @@ function RemoveMembersModal({
     }
   }
 
-  const toggleOwner = async (m: RoomMember) => {
-    if (busyId) return
-    setBusyId(m.userId)
-    try {
-      const role = m.role === 'OWNER' ? 'MEMBER' : 'OWNER'
-      const updated = await api.updateMemberRole(room.id, m.userId, role)
-      setMembers((prev) => prev.map((x) => (x.userId === updated.userId ? updated : x)))
-      notify(role === 'OWNER' ? `${m.name || m.username} agora é proprietário` : `${m.name || m.username} deixou de ser proprietário`)
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Falha ao alterar proprietário')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
   return (
-    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose}>
+    <Modal title={`Remover membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
       <div className="picker-list small">
         {members.length === 0 && <span className="nav-empty">Nenhum membro</span>}
         {members.map((m) => (
@@ -2879,15 +2865,6 @@ function RemoveMembersModal({
             </span>
             <button
               type="button"
-              className={`owner-action ${m.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`}
-              onClick={() => toggleOwner(m)}
-              disabled={busyId !== null}
-              title={m.role === 'OWNER' ? `Remover ${m.name || m.username} de proprietário` : `Tornar ${m.name || m.username} proprietário`}
-            >
-              {m.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}
-            </button>
-            <button
-              type="button"
               className="remove-member-btn"
               onClick={() => remove(m)}
               disabled={busyId !== null}
@@ -2898,6 +2875,7 @@ function RemoveMembersModal({
             </button>
           </div>
         ))}
+      </div>
       </div>
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>
@@ -3499,6 +3477,7 @@ function RoomView({
       notifyTyping()
     } else {
       stopTyping()
+      setComposerExpanded(false)
     }
     if (room.type === 'DIRECT') {
       setMention(null)
@@ -3514,6 +3493,14 @@ function RoomView({
     setMention({ start: cursor - match[2].length - 1, end: cursor, query: match[2] })
     setMentionIndex(0)
   }
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = codeBlock ? 420 : composerExpanded ? 280 : 140
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`
+  }, [draft, composerExpanded, codeBlock, room.id])
 
   const chooseMention = (member: RoomMember) => {
     if (!mention) return
@@ -3873,7 +3860,7 @@ function RoomView({
           />
            <textarea
              ref={inputRef}
-             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''}`}
+             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''}`}
             value={draft}
             onChange={(e) => updateDraft(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
@@ -3977,7 +3964,7 @@ function RoomView({
         <div className="composer account-read-only" data-composer>
           <div className="account-read-only-message">
             <strong>Canal de comunicação</strong>
-            <span>Este canal é somente leitura. Apenas administradores podem enviar mensagens.</span>
+            <span>Este canal é somente leitura. Apenas usuários com permissão podem enviar mensagens.</span>
           </div>
         </div>
       )}
@@ -4181,8 +4168,9 @@ function MessageRow({
       <div className="message-body">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
-          {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <span className="message-author-wrap">{isMine && <>{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}</>}<button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>{!isMine && <>{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}</>}</span>}
-          <span className="message-time">{formatTime(msg.createdAt)}</span>
+          {isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {deleted ? <span className="message-author">Mensagem excluída</span> : <span className={`message-author-wrap ${msg.forwardedFromUsername ? 'forwarded-author' : ''}`}>{isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}<button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>{!isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}</span>}
+          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
           {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
           {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
           {isMine && readReceiptsEnabled && !deleted && (
@@ -4197,7 +4185,7 @@ function MessageRow({
             onPin={onPinAction}
             onQuote={onQuote}
             onForward={onForward}
-            onEdit={isMine && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEdit={isMine && !msg.forwardedFromUsername && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
             onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }}
             onRespond={onRespond}
             canPin={canPin}
@@ -4270,7 +4258,17 @@ function MessageActionBar({
     const update = () => {
       if (!btnRef.current) return
       const r = btnRef.current.getBoundingClientRect()
-      setPos({ left: r.right + 8, top: r.top })
+      const pickerH = 420
+      const pickerW = 352
+      let top = r.top
+      if (top + pickerH > window.innerHeight) {
+        top = Math.max(8, r.bottom - pickerH)
+      }
+      let left = r.right + 8
+      if (left + pickerW > window.innerWidth) {
+        left = Math.max(8, r.left - pickerW)
+      }
+      setPos({ left, top })
     }
     update()
     const onScroll = () => update()
@@ -4492,13 +4490,27 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
 function RespondToReportModal({ message, onClose, onResponded, notify }: { message: Message; onClose: () => void; onResponded: () => void; notify: (text: string) => void }) {
   useEscapeClose(onClose)
   const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const submit = async () => {
-    if (!content.trim() || busy) return
+    if (busy || (!content.trim() && files.length === 0)) return
     setBusy(true)
     try {
-      await api.respondToReport(message.id, content.trim())
+      await api.respondToReport(message.id, content.trim(), files.length > 0 ? files : undefined)
       notify('Resposta enviada por mensagem direta ao usuário')
       onResponded()
       onClose()
@@ -4532,10 +4544,46 @@ function RespondToReportModal({ message, onClose, onResponded, notify }: { messa
               maxLength={2000}
             />
           </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
-          <button className="btn-primary" disabled={busy || !content.trim()} onClick={submit}>
+          <button className="btn-primary" disabled={busy || (!content.trim() && files.length === 0)} onClick={submit}>
             {busy ? 'Enviando...' : 'Enviar resposta'}
           </button>
         </div>

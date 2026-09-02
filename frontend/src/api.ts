@@ -351,9 +351,16 @@ export const api = {
       body: form,
     })
   },
-  respondToReport(messageId: string, content: string) {
+  respondToReport(messageId: string, content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('messageId', messageId)
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
     return request<Message>('/api/v1/support/respond', {
-      method: 'POST', body: JSON.stringify({ messageId, content }),
+      method: 'POST',
+      body: form,
     })
   },
   uploadUserAvatar(userId: string, file: File) {

@@ -131,7 +131,7 @@ public class SupportService {
     }
 
     @Transactional
-    public MessageResponse respondToReport(UUID messageId, String content, AuthenticatedUser actor) {
+    public MessageResponse respondToReport(UUID messageId, String content, List<MultipartFile> files, AuthenticatedUser actor) {
         User admin = userRepository.findById(actor.id())
                 .orElseThrow(() -> ApiExceptions.notFound("user/" + actor.id()));
 
@@ -157,18 +157,72 @@ public class SupportService {
 
         Room dmRoom = findOrCreateDmRoom(admin, reporter);
 
-        Message dmMessageEntity = new Message();
-        dmMessageEntity.setRoom(dmRoom);
-        dmMessageEntity.setUser(admin);
-        dmMessageEntity.setContent(content.trim());
-        dmMessageEntity.setMessageType("USER");
-        dmMessageEntity.setParentMessage(bugReport);
-        messageRepository.save(dmMessageEntity);
+        boolean hasText = content != null && !content.trim().isEmpty();
+        boolean hasFiles = files != null && !files.isEmpty();
+        if (!hasText && !hasFiles) {
+            throw ApiExceptions.conflict("EMPTY_RESPONSE", "A resposta deve conter texto ou ao menos um anexo");
+        }
 
-        MessageResponse dmMessage = messageService.responseFor(dmMessageEntity, actor.id());
-        eventPublisher.publish(dmRoom.getId(), "message.created", dmMessage);
+        if (hasText) {
+            Message dmMessageEntity = new Message();
+            dmMessageEntity.setRoom(dmRoom);
+            dmMessageEntity.setUser(admin);
+            dmMessageEntity.setContent(content.trim());
+            dmMessageEntity.setMessageType("USER");
+            dmMessageEntity.setParentMessage(bugReport);
+            messageRepository.save(dmMessageEntity);
 
-        return dmMessage;
+            MessageResponse dmMessage = messageService.responseFor(dmMessageEntity, actor.id());
+            eventPublisher.publish(dmRoom.getId(), "message.created", dmMessage);
+        }
+
+        if (hasFiles) {
+            long configuredMax = systemSettingService.maxUploadBytes(62914560L);
+            for (MultipartFile file : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                String originalName = file.getOriginalFilename();
+                if (originalName == null || originalName.isBlank()) {
+                    continue;
+                }
+                if (file.getSize() > configuredMax) {
+                    throw ApiExceptions.fileTooLarge(configuredMax);
+                }
+                try {
+                    byte[] data = file.getBytes();
+                    String mimeType = file.getContentType();
+                    FileStorageService.StoredFile stored = storageService.store(data);
+
+                    Message fileMessage = new Message();
+                    fileMessage.setRoom(dmRoom);
+                    fileMessage.setUser(admin);
+                    fileMessage.setContent(originalName.trim());
+                    fileMessage.setMessageType("FILE");
+                    fileMessage.setParentMessage(bugReport);
+                    messageRepository.save(fileMessage);
+
+                    Attachment attachment = new Attachment();
+                    attachment.setMessage(fileMessage);
+                    attachment.setUser(admin);
+                    attachment.setOriginalName(originalName.trim());
+                    attachment.setStoredName(stored.storedName());
+                    attachment.setMimeType(mimeType);
+                    attachment.setSize(stored.size());
+                    attachment.setStoragePath(stored.storagePath());
+                    attachment.setSha256(stored.sha256());
+                    attachmentRepository.save(attachment);
+
+                    MessageResponse fileResponse = messageService.responseFor(fileMessage, actor.id());
+                    eventPublisher.publish(dmRoom.getId(), "message.created", fileResponse);
+                } catch (IOException e) {
+                    log.error("Erro ao processar anexo na resposta ao relato: {}", e.getMessage());
+                    throw ApiExceptions.storageError();
+                }
+            }
+        }
+
+        return messageService.responseFor(bugReport, actor.id());
     }
 
     private Room findOrCreateDmRoom(User admin, User reporter) {
