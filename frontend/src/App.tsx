@@ -467,16 +467,18 @@ function ComposerActionBox({
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
@@ -903,11 +905,19 @@ export default function App() {
     }
 
     const preventOverscroll = (e: TouchEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target && !target.closest('.message-list, .sidebar-nav, .modal-body, .room-files-panel, .emoji-picker-popover, .room-search-results, .mention-menu')) {
-        if (e.touches.length === 1 && !target.closest('input, textarea, button, a')) {
-          e.preventDefault()
+      let el = e.target as HTMLElement | null
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.tagName === 'A') {
+          return
         }
+        const style = window.getComputedStyle(el)
+        if (/(auto|scroll)/.test(style.overflowY + style.overflowX + style.overflow)) {
+          return
+        }
+        el = el.parentElement
+      }
+      if (e.touches.length === 1) {
+        e.preventDefault()
       }
     }
 
@@ -1000,17 +1010,22 @@ export default function App() {
   }, [])
 
   const handlePresenceChange = useCallback(async (status: PresenceStatus) => {
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || 'DEFAULT') as Theme
     const user = await api.updatePresence(status)
-    setSession((current) => current ? { ...current, user } : current)
-    return user
-  }, [])
+    const preservedTheme = (currentTheme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => current ? { ...current, user: { ...user, theme: preservedTheme } } : current)
+    cacheTheme(preservedTheme)
+    applyTheme(preservedTheme)
+    return { ...user, theme: preservedTheme }
+  }, [session?.user?.theme])
 
   const [profileRevision, setProfileRevision] = useState(0)
 
   const handleProfileUpdated = useCallback((user: User) => {
-    setSession((current) => (current ? { ...current, user } : current))
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => (current ? { ...current, user: { ...user, theme: user.theme || currentTheme } } : current))
     setProfileRevision((revision) => revision + 1)
-  }, [])
+  }, [session?.user?.theme])
 
   const handleThemeUpdated = useCallback((user: User) => {
     setSession((current) => (current ? { ...current, user } : current))
@@ -2135,7 +2150,7 @@ const Sidebar = memo(function Sidebar({
   typingByRoom: Record<string, Record<string, TypingUser>>
   onClose?: () => void
 }) {
-  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
+  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix white.png' : '/icons/icon-192.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchMode, setSearchMode] = useState(false)
@@ -3590,11 +3605,15 @@ function RoomView({
 
   useEffect(() => {
     if (!roomHeaderMenuOpen) return
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
       if (roomHeaderMenuRef.current && !roomHeaderMenuRef.current.contains(e.target as Node)) setRoomHeaderMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
   }, [roomHeaderMenuOpen])
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {

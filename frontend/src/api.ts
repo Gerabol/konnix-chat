@@ -273,322 +273,36 @@ async function fetchBlob(path: string): Promise<Blob> {
   return res.blob()
 }
 
-const MOCK_USER: User = {
-  id: 'mock-user-1',
-  username: 'admin',
-  name: 'Administrador (Preview)',
-  email: 'admin@konnix.local',
-  active: true,
-  accountStatus: 'ACTIVE',
-  userType: 'ADMIN',
-  presenceStatus: 'online',
-  theme: 'DEFAULT',
-  passwordMigrationRequired: false,
-  passwordChangeRequired: false,
-  roles: ['ADMIN'],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-}
-
-const MOCK_ROOMS: Room[] = [
-  {
-    id: 'mock-room-1',
-    name: 'geral',
-    displayName: 'Geral',
-    type: 'CHANNEL',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: true,
-    directPartner: null,
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-2',
-    name: 'avisos-comunicados',
-    displayName: 'Avisos & Comunicados',
-    type: 'CHANNEL',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 1,
-    favorite: true,
-    directPartner: null,
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-3',
-    name: 'suporte-ti',
-    displayName: 'Suporte TI',
-    type: 'PRIVATE_GROUP',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 2,
-    favorite: false,
-    directPartner: null,
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-4',
-    name: 'equipe-dev',
-    displayName: 'Equipe de Desenvolvimento',
-    type: 'PRIVATE_GROUP',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: false,
-    directPartner: null,
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-5',
-    name: 'recursos-humanos',
-    displayName: 'Recursos Humanos',
-    type: 'PRIVATE_GROUP',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: false,
-    directPartner: null,
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-6',
-    name: 'geraldo.valencia',
-    displayName: 'Geraldo Valencia',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: true,
-    directPartner: {
-      userId: 'mock-user-2',
-      username: 'geraldo.valencia',
-      name: 'Geraldo Valencia',
-      email: 'geraldo@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'online',
-    },
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-7',
-    name: 'anderson.fabiao',
-    displayName: 'Anderson Fabião',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: false,
-    directPartner: {
-      userId: 'mock-user-3',
-      username: 'anderson.fabiao',
-      name: 'Anderson Fabião',
-      email: 'anderson@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'busy',
-    },
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-8',
-    name: 'kevin.kilmer',
-    displayName: 'Kevin Kilmer',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: false,
-    directPartner: {
-      userId: 'mock-user-4',
-      username: 'kevin.kilmer',
-      name: 'Kevin Kilmer',
-      email: 'kevin@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'away',
-    },
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-9',
-    name: 'matheus.bruno',
-    displayName: 'Matheus Bruno',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 3,
-    favorite: false,
-    directPartner: {
-      userId: 'mock-user-5',
-      username: 'matheus.bruno',
-      name: 'Matheus Bruno',
-      email: 'matheus@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'online',
-    },
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-10',
-    name: 'mariana.silva',
-    displayName: 'Mariana Silva',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 1,
-    favorite: false,
-    directPartner: {
-      userId: 'mock-user-6',
-      username: 'mariana.silva',
-      name: 'Mariana Silva',
-      email: 'mariana@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'offline',
-    },
-    pinnedMessage: null,
-  },
-  {
-    id: 'mock-room-11',
-    name: 'sergio.caua',
-    displayName: 'Sérgio Cauã',
-    type: 'DIRECT',
-    createdBy: 'mock-user-1',
-    readOnly: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    unreadCount: 0,
-    favorite: false,
-    directPartner: {
-      userId: 'mock-user-7',
-      username: 'sergio.caua',
-      name: 'Sérgio Cauã',
-      email: 'sergio@konnix.local',
-      accountStatus: 'ACTIVE',
-      presenceStatus: 'online',
-    },
-    pinnedMessage: null,
-  },
-]
-
-const MOCK_MESSAGES: Message[] = [
-  {
-    id: 'mock-msg-1',
-    roomId: 'mock-room-1',
-    userId: 'mock-user-2',
-    username: 'geraldo.valencia',
-    content: 'Olá a todos! Bem-vindos ao Konnix Chat.',
-    messageType: 'TEXT',
-    parentMessageId: null,
-    attachment: null,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    editedAt: null,
-    deletedAt: null,
-    readBy: [],
-    quotedMessage: null,
-    reactions: [],
-    forwardedFromUsername: null,
-    poll: null,
-  },
-  {
-    id: 'mock-msg-2',
-    roomId: 'mock-room-1',
-    userId: 'mock-user-1',
-    username: 'admin',
-    content: 'Bom dia! Tudo funcionando perfeitamente.',
-    messageType: 'TEXT',
-    parentMessageId: null,
-    attachment: null,
-    createdAt: new Date(Date.now() - 1800000).toISOString(),
-    updatedAt: new Date(Date.now() - 1800000).toISOString(),
-    editedAt: null,
-    deletedAt: null,
-    readBy: [],
-    quotedMessage: null,
-    reactions: [],
-    forwardedFromUsername: null,
-    poll: null,
-  },
-]
-
 export const api = {
-  async login(username: string, password: string) {
-    try {
-      return await request<{ token: string; user: User }>('/api/v1/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-      })
-    } catch {
-      setAuthToken('mock-preview-token')
-      return {
-        token: 'mock-preview-token',
-        user: { ...MOCK_USER, username: username || 'admin', name: username === 'admin' ? 'Administrador' : username },
-      }
-    }
+  login(username: string, password: string) {
+    return request<{ token: string; user: User }>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    })
   },
   logout() {
-    return request<void>('/api/v1/auth/logout', { method: 'POST' }).catch(() => {})
+    return request<void>('/api/v1/auth/logout', { method: 'POST' })
   },
-  async me() {
-    try {
-      return await request<User>('/api/v1/auth/me')
-    } catch {
-      return MOCK_USER
-    }
+  me() {
+    return request<User>('/api/v1/auth/me')
   },
   userProfile(userId: string) {
-    return request<PublicProfile>(`/api/v1/profiles/users/${userId}`).catch(() => ({
-      id: userId,
-      username: 'usuario',
-      name: 'Usuário Konnix',
-      email: 'usuario@konnix.local',
-      presenceStatus: 'online' as PresenceStatus,
-    }))
+    return request<PublicProfile>(`/api/v1/profiles/users/${userId}`)
   },
   commonRooms(userId: string) {
-    return request<Room[]>(`/api/v1/profiles/users/${userId}/common-rooms`).catch(() => [])
+    return request<Room[]>(`/api/v1/profiles/users/${userId}/common-rooms`)
   },
   updatePresence(status: PresenceStatus) {
     return request<User>('/api/v1/auth/presence', {
       method: 'POST',
       body: JSON.stringify({ status }),
-    }).catch(() => ({ ...MOCK_USER, presenceStatus: status }))
+    })
   },
   updateOwnTheme(theme: Theme) {
     return request<User>('/api/v1/auth/preferences', {
       method: 'PATCH',
       body: JSON.stringify({ theme }),
-    }).catch(() => ({ ...MOCK_USER, theme }))
+    })
   },
   changeRequiredPassword(newPassword: string, confirmPassword: string) {
     return request<User>('/api/v1/auth/change-required-password', {
@@ -596,12 +310,8 @@ export const api = {
       body: JSON.stringify({ newPassword, confirmPassword }),
     })
   },
-  async rooms() {
-    try {
-      return await request<Room[]>('/api/v1/rooms')
-    } catch {
-      return MOCK_ROOMS
-    }
+  rooms() {
+    return request<Room[]>('/api/v1/rooms')
   },
   users() {
     return request<User[]>('/api/v1/users')
@@ -764,61 +474,34 @@ export const api = {
   removeMember(roomId: string, userId: string) {
     return request<void>(`/api/v1/rooms/${roomId}/members/${userId}`, { method: 'DELETE' })
   },
-  async messages(roomId: string, limit = 50, before?: string): Promise<MessageHistory> {
-    try {
-      const q = new URLSearchParams({ limit: String(limit) })
-      if (before) q.set('before', before)
-      return await request<MessageHistory>(`/api/v1/rooms/${roomId}/messages?${q}`)
-    } catch {
-      return { messages: MOCK_MESSAGES.map(m => ({ ...m, roomId })), hasMore: false, nextBefore: null }
-    }
+  messages(roomId: string, limit = 50, before?: string) {
+    const q = new URLSearchParams({ limit: String(limit) })
+    if (before) q.set('before', before)
+    return request<MessageHistory>(`/api/v1/rooms/${roomId}/messages?${q}`)
   },
   searchMessages(roomId: string, query: string) {
-    return request<Message[]>(`/api/v1/rooms/${roomId}/messages/search?q=${encodeURIComponent(query)}`).catch(() => [])
+    return request<Message[]>(`/api/v1/rooms/${roomId}/messages/search?q=${encodeURIComponent(query)}`)
   },
   roomFiles(roomId: string) {
-    return request<RoomFile[]>(`/api/v1/rooms/${roomId}/files`).catch(() => [])
+    return request<RoomFile[]>(`/api/v1/rooms/${roomId}/files`)
   },
   markRoomRead(roomId: string) {
-    return request<void>(`/api/v1/rooms/${roomId}/read`, { method: 'POST' }).catch(() => {})
+    return request<void>(`/api/v1/rooms/${roomId}/read`, { method: 'POST' })
   },
   readReceiptSetting() {
-    return request<{ enabled: boolean }>('/api/v1/settings/read-receipts').catch(() => ({ enabled: true }))
+    return request<{ enabled: boolean }>('/api/v1/settings/read-receipts')
   },
   setReadReceiptSetting(enabled: boolean) {
     return request<{ enabled: boolean }>('/api/v1/settings/read-receipts', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
-    }).catch(() => ({ enabled }))
+    })
   },
-  async sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
-    try {
-      return await request<Message>(`/api/v1/rooms/${roomId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ content, ...(parentMessageId ? { parentMessageId } : {}), ...(forwardedMessageId ? { forwardedMessageId } : {}) }),
-      })
-    } catch {
-      const newMsg: Message = {
-        id: `mock-msg-${Date.now()}`,
-        roomId,
-        userId: MOCK_USER.id,
-        username: MOCK_USER.username,
-        content,
-        messageType: 'TEXT',
-        parentMessageId: parentMessageId ?? null,
-        attachment: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        editedAt: null,
-        deletedAt: null,
-        readBy: [],
-        quotedMessage: null,
-        reactions: [],
-        forwardedFromUsername: forwardedMessageId ? 'outro.usuario' : null,
-        poll: null,
-      }
-      return newMsg
-    }
+  sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
+    return request<Message>(`/api/v1/rooms/${roomId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, ...(parentMessageId ? { parentMessageId } : {}), ...(forwardedMessageId ? { forwardedMessageId } : {}) }),
+    })
   },
   createPoll(roomId: string, input: { question: string; options: string[]; allowMultiple: boolean }) {
     return request<Message>(`/api/v1/rooms/${roomId}/polls`, { method: 'POST', body: JSON.stringify(input) })

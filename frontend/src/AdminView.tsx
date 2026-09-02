@@ -23,8 +23,8 @@ function accountStatusLabel(status: AccountStatus): string {
 }
 
 function adminLogoPath(theme: User['theme']): string {
-  const darkTheme = theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
-  const path = darkTheme ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
+  const darkTheme = theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK') || theme.endsWith('_STRONG')
+  const path = darkTheme ? '/icons/Konnix white.png' : '/icons/icon-192.png'
   return `${path}?theme=${theme}`
 }
 
