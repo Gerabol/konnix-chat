@@ -70,7 +70,11 @@ function normalizeTheme(theme: string | null | undefined): Theme {
   return THEME_OPTIONS.some((option) => option.id === normalized) ? normalized as Theme : 'DEFAULT'
 }
 
-function isDarkTheme(theme: Theme): boolean {
+export function isDarkTheme(theme: Theme): boolean {
+  return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
+}
+
+export function isWhiteSidebarLogoTheme(theme: Theme): boolean {
   return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK') || theme.endsWith('_STRONG')
 }
 
@@ -430,6 +434,109 @@ function AudioRecordButton({
   )
 }
 
+function IconX({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
+function ComposerActionBox({
+  roomType,
+  readOnlyAccount,
+  roomReadOnly,
+  muted,
+  clearDisabled,
+  editing,
+  onAttach,
+  onCode,
+  onPoll,
+  onClear,
+  onCancelEdit,
+}: {
+  roomType: Room['type']
+  readOnlyAccount: boolean
+  roomReadOnly: boolean
+  muted: boolean
+  clearDisabled: boolean
+  editing: boolean
+  onAttach: () => void
+  onCode: () => void
+  onPoll: () => void
+  onClear: () => void
+  onCancelEdit: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const showPoll = roomType === 'PRIVATE_GROUP' && !readOnlyAccount && !roomReadOnly
+
+  return (
+    <div className="composer-action-box" ref={ref}>
+      <button
+        type="button"
+        className="composer-action-trigger"
+        aria-label="Mais ações"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Mais ações"
+        disabled={muted}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <IconPlus size={22} />
+      </button>
+      {open && (
+        <div className="composer-actions-popover" role="menu" aria-label="Mais ações">
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconClip size={18} /></span>
+            <span>Anexar Arquivo</span>
+          </button>
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCode(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconCode size={18} /></span>
+            <span>Bloco de Código</span>
+          </button>
+          {showPoll && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onPoll(); setOpen(false) }}>
+              <span className="composer-action-box-icon"><span aria-hidden="true">▣</span></span>
+              <span>Criar Enquete</span>
+            </button>
+          )}
+          <button type="button" role="menuitem" className="composer-action-box-item composer-action-box-item-danger" onClick={() => { onClear(); setOpen(false) }} disabled={clearDisabled}>
+            <span className="composer-action-box-icon"><IconTrash size={18} /></span>
+            <span>Limpar Mensagem</span>
+          </button>
+          {editing && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCancelEdit(); setOpen(false) }} disabled={muted}>
+              <span className="composer-action-box-icon"><IconX size={18} /></span>
+              <span>Cancelar Edição</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function IconCode({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -493,6 +600,52 @@ function IconSend({ size = 15 }: { size?: number }) {
   )
 }
 
+function IconPlus({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function IconSearch({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function IconSettings({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function IconMessage({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function IconArrowLeft({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  )
+}
+
+
+
 function PersonIcon({ size = 19 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -549,6 +702,16 @@ function IconAlertTriangle({ size = 16 }: { size?: number }) {
       <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  )
+}
+
+function IconInfo({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </svg>
   )
 }
@@ -730,9 +893,63 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const handleViewport = () => {
+      if (window.visualViewport) {
+        const vh = window.visualViewport.height
+        document.documentElement.style.setProperty('--app-height', `${vh}px`)
+      } else {
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+      }
+    }
+
+    handleViewport()
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewport)
+      window.visualViewport.addEventListener('scroll', handleViewport)
+    } else {
+      window.addEventListener('resize', handleViewport)
+    }
+
+    const preventOverscroll = (e: TouchEvent) => {
+      let el = e.target as HTMLElement | null
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.tagName === 'A') {
+          return
+        }
+        const style = window.getComputedStyle(el)
+        if (/(auto|scroll)/.test(style.overflowY + style.overflowX + style.overflow)) {
+          return
+        }
+        el = el.parentElement
+      }
+      if (e.touches.length === 1) {
+        e.preventDefault()
+      }
+    }
+
+    const handleScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0)
+      }
+    }
+
     const onPopState = () => setPathname(window.location.pathname)
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    document.addEventListener('touchmove', preventOverscroll, { passive: false })
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('scroll', handleScroll)
+      document.removeEventListener('touchmove', preventOverscroll)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewport)
+        window.visualViewport.removeEventListener('scroll', handleViewport)
+      } else {
+        window.removeEventListener('resize', handleViewport)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -800,17 +1017,22 @@ export default function App() {
   }, [])
 
   const handlePresenceChange = useCallback(async (status: PresenceStatus) => {
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || 'DEFAULT') as Theme
     const user = await api.updatePresence(status)
-    setSession((current) => current ? { ...current, user } : current)
-    return user
-  }, [])
+    const preservedTheme = (currentTheme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => current ? { ...current, user: { ...user, theme: preservedTheme } } : current)
+    cacheTheme(preservedTheme)
+    applyTheme(preservedTheme)
+    return { ...user, theme: preservedTheme }
+  }, [session?.user?.theme])
 
   const [profileRevision, setProfileRevision] = useState(0)
 
   const handleProfileUpdated = useCallback((user: User) => {
-    setSession((current) => (current ? { ...current, user } : current))
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => (current ? { ...current, user: { ...user, theme: user.theme || currentTheme } } : current))
     setProfileRevision((revision) => revision + 1)
-  }, [])
+  }, [session?.user?.theme])
 
   const handleThemeUpdated = useCallback((user: User) => {
     setSession((current) => (current ? { ...current, user } : current))
@@ -1650,6 +1872,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
+          onClose={() => setSidebarOpen(false)}
         />
 
         <main className="main">
@@ -1872,6 +2095,113 @@ function PresenceSelector({
   )
 }
 
+function UserSettingsMenuContent({
+  me,
+  messageNotificationsEnabled,
+  onMessageNotificationsChange,
+  onTheme,
+  onEditProfile,
+  onReportIssue,
+  onAbout,
+  onLogout,
+  onClose,
+}: {
+  me: User
+  messageNotificationsEnabled: boolean
+  onMessageNotificationsChange: (enabled: boolean) => void
+  onTheme: () => void
+  onEditProfile: () => void
+  onReportIssue: () => void
+  onAbout: () => void
+  onLogout: () => void
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div className="menu-label">Configurações</div>
+      <NotificationButton />
+      <AutostartButton />
+      <button
+        type="button"
+        className="user-menu-item user-menu-action message-notifications-toggle"
+        onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}
+      >
+        <IconBell size={16} />
+        <span>Alertas de novas mensagens</span>
+        <small className={`status-pill ${messageNotificationsEnabled ? 'status-active' : 'status-inactive'}`}>
+          {messageNotificationsEnabled ? 'Ativo' : 'Desativado'}
+        </small>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onTheme()
+        }}
+      >
+        <PaletteIcon />
+        <span>Tema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onEditProfile()
+        }}
+      >
+        <PersonIcon size={16} />
+        <span>Editar meu perfil</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onReportIssue()
+        }}
+      >
+        <IconAlertTriangle size={16} />
+        <span>Relatar Problema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onAbout()
+        }}
+      >
+        <IconInfo size={16} />
+        <span>Sobre</span>
+      </button>
+      {me.roles.includes('ADMIN') && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            window.history.pushState({}, '', '/admin')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          }}
+        >
+          <IconShield size={16} />
+          <span>Administração</span>
+        </button>
+      )}
+      <button
+        type="button"
+        className="user-menu-item user-menu-action user-menu-logout"
+        onClick={() => onLogout()}
+      >
+        <IconLogout size={16} />
+        <span>Sair</span>
+      </button>
+    </>
+  )
+}
+
 const Sidebar = memo(function Sidebar({
   me,
   theme,
@@ -1897,6 +2227,7 @@ const Sidebar = memo(function Sidebar({
   onPresenceChange,
   onPresenceError,
   typingByRoom,
+  onClose,
 }: {
   me: User
   theme: Theme
@@ -1922,10 +2253,13 @@ const Sidebar = memo(function Sidebar({
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
+  onClose?: () => void
 }) {
-  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
+  const sidebarLogo = isWhiteSidebarLogoTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [footerMenuOpen, setFooterMenuOpen] = useState(false)
+  const [searchMode, setSearchMode] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
@@ -1937,57 +2271,111 @@ const Sidebar = memo(function Sidebar({
   const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
 
   useEffect(() => {
-    if (!menuOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    if (!headerMenuOpen && !footerMenuOpen) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (headerMenuOpen && headerMenuRef.current && !headerMenuRef.current.contains(target)) {
+        setHeaderMenuOpen(false)
+      }
+      if (footerMenuOpen && footerUserRef.current && !footerUserRef.current.contains(target)) {
+        setFooterMenuOpen(false)
+      }
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setHeaderMenuOpen(false)
+        setFooterMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [menuOpen])
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [headerMenuOpen, footerMenuOpen])
+
+  const handleSelectRoom = (roomId: string) => {
+    if (searchMode) {
+      setSearchMode(false)
+      onSearch('')
+    }
+    onOpenRoom(roomId)
+  }
+
+  const handleSelectUser = async (userId: string) => {
+    if (searchMode) {
+      setSearchMode(false)
+      onSearch('')
+    }
+    await onStartUserDm(userId)
+  }
+
+  const hasSearchResults = userResults.length > 0 || favoriteRooms.length > 0 || channels.length > 0 || regularConversations.length > 0
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
-        <div className="sidebar-brand-content">
-          <div className="sidebar-wordmark">
-            <strong>Konnix</strong>
-            <span>Chat</span>
+    <aside className={`sidebar ${searchMode ? 'sidebar-in-search-mode' : ''}`}>
+      {searchMode ? (
+        <div className="sidebar-search-header">
+          <button
+            type="button"
+            className="icon-btn sidebar-search-back-btn"
+            onClick={() => {
+              setSearchMode(false)
+              onSearch('')
+            }}
+            aria-label="Voltar às conversas"
+            title="Voltar às conversas"
+          >
+            <IconArrowLeft size={20} />
+          </button>
+          <div className="sidebar-search-input-wrap">
+            <input
+              ref={searchInputRef}
+              className="sidebar-search-page-input"
+              placeholder="Buscar conversas e usuários…"
+              value={search}
+              autoFocus
+              onChange={(e) => onSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchMode(false)
+                  onSearch('')
+                }
+              }}
+            />
+            {search.trim().length > 0 && (
+              <button
+                type="button"
+                className="search-clear"
+                onClick={() => {
+                  onSearch('')
+                  searchInputRef.current?.focus()
+                }}
+                aria-label="Limpar busca"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
-        <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
-      </div>
-
-      <div className="sidebar-search">
-        <span className="search-icon">⌕</span>
-        <input
-          className="search-input"
-          placeholder="Buscar…"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-        />
-        {search && (
-          <button className="search-clear" onClick={() => onSearch('')} aria-label="Limpar busca">
-            ×
-          </button>
-        )}
-      </div>
-
-      <nav className="sidebar-nav">
-        {search.trim() && <div className="nav-section search-users-section"><div className="nav-section-head"><span className="nav-section-title">Usuários</span></div><div className="nav-list">{userResults.length === 0 && <span className="nav-empty">Nenhum usuário encontrado</span>}{userResults.map((user) => <button key={user.id} className="room-item search-user-item" onClick={() => void onStartUserDm(user.id)}><span className="sidebar-avatar-wrap"><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />{user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}</span><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small></span></button>)}</div></div>}
-        {favoriteRooms.length > 0 && <div className="nav-section">
-            <div className="nav-section-head">
-              <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
-                <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span><span className="nav-section-title">Favoritos</span>
-              </button>
+      ) : (
+        <div className="sidebar-brand">
+          <button
+            type="button"
+            className="sidebar-brand-btn"
+            onClick={onClose}
+            title="Voltar para tela de descanso"
+            aria-label="Voltar para tela de descanso"
+          >
+            <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
+            <div className="sidebar-wordmark">
+              <strong>Konnix</strong>
+              <span>Chat</span>
             </div>
-            {favoritesOpen && <div className="nav-list" id="favorites-list">
-              {favoriteRooms.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
-                {room.type === 'DIRECT' ? <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span> : <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
-                <span className="room-name">{roomDisplayName(room)}</span>{!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
-              </button>)}
-            </div>}
-        </div>}
+          </button>
 
         {isAdmin && systemChannels.length > 0 && (
           <div className="nav-section">
@@ -2042,17 +2430,46 @@ const Sidebar = memo(function Sidebar({
           <div className="nav-section-head">
             <button
               type="button"
-              className="nav-section-toggle"
-              onClick={() => setChannelsOpen((open) => !open)}
-              aria-expanded={channelsOpen}
-              aria-controls="channels-list"
+              className="icon-btn sidebar-search-toggle"
+              onClick={() => {
+                setSearchMode(true)
+                requestAnimationFrame(() => searchInputRef.current?.focus())
+              }}
+              title="Pesquisar conversas"
+              aria-label="Pesquisar conversas"
             >
               <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
                <span className="nav-section-title">Canais e grupos</span>
             </button>
-             <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
-              +
+            <button
+              type="button"
+              className={`icon-btn sidebar-settings-toggle ${headerMenuOpen ? 'active' : ''}`}
+              onClick={() => {
+                setFooterMenuOpen(false)
+                setHeaderMenuOpen((open) => !open)
+              }}
+              title="Configurações"
+              aria-label="Configurações"
+              aria-expanded={headerMenuOpen}
+            >
+              <IconSettings size={18} />
             </button>
+            <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
+            {headerMenuOpen && (
+              <div className="user-menu sidebar-header-dropdown">
+                <UserSettingsMenuContent
+                  me={me}
+                  messageNotificationsEnabled={messageNotificationsEnabled}
+                  onMessageNotificationsChange={onMessageNotificationsChange}
+                  onTheme={onTheme}
+                  onEditProfile={onEditProfile}
+                  onReportIssue={onReportIssue}
+                  onAbout={onAbout}
+                  onLogout={onLogout}
+                  onClose={() => setHeaderMenuOpen(false)}
+                />
+              </div>
+            )}
           </div>
           {channelsOpen && <div className="nav-list" id="channels-list">
              {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
@@ -2060,83 +2477,111 @@ const Sidebar = memo(function Sidebar({
               const typingText = formatTypingText(typingByRoom[room.id], false)
               return (
                 <button
-                  key={room.id}
-                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                  onClick={() => onOpenRoom(room.id)}
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setChannelsOpen((open) => !open)}
+                  aria-expanded={channelsOpen}
+                  aria-controls="channels-list"
                 >
-                  <AvatarImage
-                     path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                    className="room-thumb"
-                    fallback={
-                      <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                        {getRoomIcon(room)}
-                      </span>
-                    }
-                    alt={roomDisplayName(room)}
-                  />
-                  <span className="room-name">
-                    {roomDisplayName(room)}
-                    {typingText && (
-                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                        {typingText}
-                      </span>
-                    )}
-                  </span>
-                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                  <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Grupos</span>
                 </button>
-              )
-            })}
-          </div>}
-        </div>
+                <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
+                  +
+                </button>
+              </div>
+              {channelsOpen && (
+                <div className="nav-list" id="channels-list">
+                  {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+                  {channels.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], false)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={
+                            <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                              {getRoomIcon(room)}
+                            </span>
+                          }
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-        <div className="nav-section">
-          <div className="nav-section-head">
-            <button
-              type="button"
-              className="nav-section-toggle"
-              onClick={() => setConversationsOpen((open) => !open)}
-              aria-expanded={conversationsOpen}
-              aria-controls="conversations-list"
-            >
-              <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
-              <span className="nav-section-title">Conversas</span>
-            </button>
-            <button className="nav-add" onClick={onNewDm} title="Nova conversa">
-              +
-            </button>
-          </div>
-          {conversationsOpen && <div className="nav-list" id="conversations-list">
-             {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
-             {regularConversations.map((room) => {
-              const typingText = formatTypingText(typingByRoom[room.id], true)
-              return (
+            <div className="nav-section">
+              <div className="nav-section-head">
                 <button
-                  key={room.id}
-                  className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                  onClick={() => onOpenRoom(room.id)}
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setConversationsOpen((open) => !open)}
+                  aria-expanded={conversationsOpen}
+                  aria-controls="conversations-list"
                 >
-                  <span className="room-icon direct">
-                    <span className="sidebar-avatar-wrap"><AvatarImage
-                      path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                      className="mini-avatar"
-                      fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
-                      alt={roomDisplayName(room)}
-                    />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
-                  </span>
-                  <span className="room-name">
-                    {roomDisplayName(room)}
-                    {typingText && (
-                      <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
-                        {typingText}
-                      </span>
-                    )}
-                  </span>
-                  {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                  <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Conversas</span>
                 </button>
-              )
-            })}
-          </div>}
-        </div>
+                <button className="nav-add" onClick={onNewDm} title="Nova conversa">
+                  +
+                </button>
+              </div>
+              {conversationsOpen && (
+                <div className="nav-list" id="conversations-list">
+                  {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
+                  {regularConversations.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], true)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </nav>
 
       {canInstall && (
@@ -2145,18 +2590,22 @@ const Sidebar = memo(function Sidebar({
         </button>
       )}
 
-      <div className="sidebar-footer" ref={menuRef}>
+      <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
           role="button"
           tabIndex={0}
-          aria-expanded={menuOpen}
+          aria-expanded={footerMenuOpen}
           aria-label="Abrir configurações do usuário"
-          onClick={() => setMenuOpen((o) => !o)}
+          onClick={() => {
+            setHeaderMenuOpen(false)
+            setFooterMenuOpen((o) => !o)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
-              setMenuOpen((o) => !o)
+              setHeaderMenuOpen(false)
+              setFooterMenuOpen((o) => !o)
             }
           }}
         >
@@ -2172,7 +2621,7 @@ const Sidebar = memo(function Sidebar({
           </span>
           <span className="settings-btn" aria-hidden="true">⚙</span>
         </div>
-        {menuOpen && (
+        {footerMenuOpen && (
           <div className="user-menu">
             <div className="menu-label">Configurações</div>
               <NotificationButton />
@@ -2514,12 +2963,13 @@ function useEscapeClose(onClose: () => void) {
 function EmptyState({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   return (
     <div className="empty-state">
-      <button className="empty-back btn-ghost" onClick={onOpenSidebar}>
-        ☰ Conversas
-      </button>
       <img src="/icons/icon-192.png" alt="Konnix" className="empty-logo" />
       <h2>Konnix Chat</h2>
-      <p>Selecione uma conversa ou grupo para começar.</p>
+      <p>Comunicação corporativa segura e em tempo real.</p>
+      <button type="button" className="btn-primary empty-chat-action" onClick={onOpenSidebar}>
+        <IconMessage size={18} />
+        <span>Conversar</span>
+      </button>
       <AboutDetails className="empty-about-details" />
     </div>
   )
@@ -3044,6 +3494,8 @@ function RoomView({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
+  const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
   const readOnlyAccount = me.accountStatus === 'READ_ONLY'
   const isRoomOwner = room.type !== 'DIRECT' && roomMembers.some((member) =>
     member.userId === me.id && member.active && member.role === 'OWNER',
@@ -3055,6 +3507,21 @@ function RoomView({
   const isBugReportsRoom = room.name === 'bug-reports'
   const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
   const canRespondToReport = isBugReportsRoom && isAdmin
+  const canManageRoom = room.type !== 'DIRECT' && (isRoomOwner || isAdmin)
+  const isMember = roomMembers.some((member) => member.userId === me.id)
+
+  useEffect(() => {
+    if (!roomHeaderMenuOpen) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (roomHeaderMenuRef.current && !roomHeaderMenuRef.current.contains(e.target as Node)) setRoomHeaderMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
+  }, [roomHeaderMenuOpen])
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
     setAudioMode(recording)
@@ -3585,127 +4052,199 @@ function RoomView({
 
   return (
     <div className={`room-view ${filesOpen ? 'files-open' : ''}`}>
-      <div className="room-header">
-        <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
-          ‹
-        </button>
-        {room.type === 'DIRECT' ? (
-          <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
-            <span className="room-header-avatar-wrap">
-              <AvatarImage
-                path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                className="room-header-avatar"
-                fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
-                alt={roomDisplayName(room)}
+      <div className={`room-header ${searchOpen ? 'room-header-search-mode' : ''}`}>
+        {searchOpen ? (
+          /* ── Mobile Search Mode: full-bar search ── */
+          <div className="room-header-search-bar">
+            <button type="button" className="icon-btn room-search-back" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">
+              <IconArrowLeft size={20} />
+            </button>
+            <div className="room-search-input-wrap">
+              <span className="room-search-icon"><IconSearch size={15} /></span>
+              <input
+                ref={searchInputRef}
+                className="room-search-input"
+                value={searchQuery}
+                placeholder="Pesquisar nesta conversa…"
+                aria-label="Pesquisar nesta conversa"
+                autoFocus
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
+                  if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
+                }}
               />
-              {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
-            </span>
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              {typingText ? (
-                <span className="room-type typing-active">
-                  {typingText}
-                  <TypingDots />
-                </span>
-              ) : (
-                <span className="room-type">{roomSubtitle(room)}</span>
+              {searchQuery.trim().length > 0 && (
+                <button type="button" className="search-clear room-search-clear" onClick={() => { setSearchQuery(''); searchInputRef.current?.focus() }} aria-label="Limpar busca">×</button>
               )}
             </div>
-          </button>
-        ) : (
-          <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
-            <AvatarImage
-              path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-              className="room-header-avatar"
-              fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
-              alt={roomDisplayName(room)}
-            />
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              {typingText ? (
-                <span className="room-type typing-active">
-                  {typingText}
-                  <TypingDots />
-                </span>
-              ) : (
-                <span className="room-type">{roomSubtitle(room)}</span>
-              )}
-            </div>
-          </button>
-        )}
-        {room.readOnly && <span className="chip-chip">Somente leitura</span>}
-          <div className="room-header-actions">
-            {room.type !== 'DIRECT' && (isRoomOwner || me.roles.includes('ADMIN')) && (
-            <>
-             {(isRoomOwner || me.roles.includes('ADMIN')) && <button
-              className="icon-btn header-edit"
-              onClick={() => setEditOpen(true)}
-              title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-              aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-            >
-              <IconPencil size={18} />
-            </button>}
-            <button
-              className="icon-btn header-add"
-              onClick={() => setAddOpen(true)}
-              title="Adicionar membros"
-              aria-label="Adicionar membros"
-            >
-              <PersonIcon size={20} />
-            </button>
-            <button
-              className="icon-btn header-remove"
-              onClick={() => setRemoveOpen(true)}
-              title="Remover membros"
-              aria-label="Remover membros"
-            >
-              <NoEntryIcon size={24} />
-            </button>
-            </>
-          )}
-          {room.type !== 'DIRECT' && !isRoomOwner && !me.roles.includes('ADMIN') && roomMembers.some((member) => member.userId === me.id) && (
-            <button
-              className="icon-btn header-add"
-              onClick={() => setMembersOpen(true)}
-              title="Ver membros"
-              aria-label="Ver membros"
-            >
-              <PersonIcon size={20} />
-            </button>
-          )}
-          <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
-            {room.favorite ? '★' : '☆'}
-          </button>
-          <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
-            <IconClip size={18} />
-          </button>
-          <div className="room-header-search">
-          {searchOpen ? <>
-            <input
-              ref={searchInputRef}
-              className="room-search-input"
-              value={searchQuery}
-              placeholder="Pesquisar nesta conversa"
-              aria-label="Pesquisar nesta conversa"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
-                if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
-              }}
-            />
             <button type="button" className="icon-btn room-search-submit" onClick={() => void searchConversation()} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
-            <button type="button" className="icon-btn room-search-close" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">×</button>
-          </> : <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">⌕</button>}
-          {searchOpen && searchResults.length > 0 && <div className="room-search-results">
-            {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
-              <strong>{result.username}</strong>
-              <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
-              <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
-            </button>)}
-           </div>}
-          {searchOpen && searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
+            {searchResults.length > 0 && <div className="room-search-results">
+              {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
+                <strong>{result.username}</strong>
+                <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
+                <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
+              </button>)}
+            </div>}
+            {searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
           </div>
-        </div>
+        ) : (
+          /* ── Normal Mode: ← | Title (center) | 🔍 | + ── */
+          <>
+            <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
+              ‹
+            </button>
+            {room.type === 'DIRECT' ? (
+              <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
+                <span className="room-header-avatar-wrap">
+                  <AvatarImage
+                    path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                    className="room-header-avatar"
+                    fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
+                    alt={roomDisplayName(room)}
+                  />
+                  {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
+                </span>
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            ) : (
+              <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
+                <AvatarImage
+                  path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                  className="room-header-avatar"
+                  fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
+                  alt={roomDisplayName(room)}
+                />
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            )}
+            {room.readOnly && <span className="chip-chip">Somente leitura</span>}
+            <div className="room-header-actions">
+              {/* Desktop-only: individual action buttons */}
+              <div className="room-header-desktop-actions">
+                {canManageRoom && (
+                  <>
+                    <button
+                      className="icon-btn header-edit"
+                      onClick={() => setEditOpen(true)}
+                      title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                      aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                    >
+                      <IconPencil size={18} />
+                    </button>
+                    <button
+                      className="icon-btn header-add"
+                      onClick={() => setAddOpen(true)}
+                      title="Adicionar membros"
+                      aria-label="Adicionar membros"
+                    >
+                      <PersonIcon size={20} />
+                    </button>
+                    <button
+                      className="icon-btn header-remove"
+                      onClick={() => setRemoveOpen(true)}
+                      title="Remover membros"
+                      aria-label="Remover membros"
+                    >
+                      <NoEntryIcon size={24} />
+                    </button>
+                  </>
+                )}
+                {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                  <button
+                    className="icon-btn header-add"
+                    onClick={() => setMembersOpen(true)}
+                    title="Ver membros"
+                    aria-label="Ver membros"
+                  >
+                    <PersonIcon size={20} />
+                  </button>
+                )}
+                <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
+                  {room.favorite ? '★' : '☆'}
+                </button>
+                <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
+                  <IconClip size={18} />
+                </button>
+              </div>
+
+              {/* Search trigger */}
+              <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">
+                <IconSearch size={17} />
+              </button>
+
+              {/* Mobile-only: + dropdown menu with all actions */}
+              <div className="room-header-mobile-menu" ref={roomHeaderMenuRef}>
+                <button
+                  type="button"
+                  className={`icon-btn room-header-plus-btn ${roomHeaderMenuOpen ? 'active' : ''}`}
+                  onClick={() => setRoomHeaderMenuOpen((v) => !v)}
+                  title="Mais opções"
+                  aria-label="Mais opções"
+                  aria-expanded={roomHeaderMenuOpen}
+                >
+                  <IconPlus size={18} />
+                </button>
+                {roomHeaderMenuOpen && (
+                  <div className="room-header-dropdown">
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setEditOpen(true) }}>
+                        <IconPencil size={16} />
+                        <span>Editar {room.type === 'CHANNEL' ? 'canal' : 'grupo'}</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setAddOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Adicionar membros</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setRemoveOpen(true) }}>
+                        <NoEntryIcon size={18} />
+                        <span>Remover membros</span>
+                      </button>
+                    )}
+                    {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setMembersOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Ver membros</span>
+                      </button>
+                    )}
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito')) }}>
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>{room.favorite ? '★' : '☆'}</span>
+                      <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
+                    </button>
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); toggleFiles() }}>
+                      <IconClip size={16} />
+                      <span>Arquivos da conversa</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {room.pinnedMessage && !room.pinnedMessage.deletedAt && (
@@ -3891,6 +4430,11 @@ function RoomView({
                  setComposerExpanded(true)
                }
             }}
+            onFocus={() => {
+              if (window.visualViewport) {
+                window.scrollTo(0, 0)
+              }
+            }}
             onPaste={handlePaste}
             placeholder={muted ? 'Sem conexão — envio desabilitado' : 'Escreva sua mensagem…'}
             disabled={muted}
@@ -3919,6 +4463,20 @@ function RoomView({
               ))}
             </div>
           )}
+          <ComposerActionBox
+            roomType={room.type}
+            readOnlyAccount={readOnlyAccount}
+            roomReadOnly={room.readOnly}
+            muted={muted}
+            clearDisabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+            editing={Boolean(editingMessage)}
+            onAttach={() => fileInputRef.current?.click()}
+            onCode={toggleCode}
+            onPoll={() => setPollOpen(true)}
+            onClear={clearDraft}
+            onCancelEdit={cancelEditing}
+          />
+          <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
             <span>{editingMessage ? 'Editar' : 'Enviar'}</span>
@@ -4922,7 +5480,7 @@ function NotificationButton() {
       setSubscribed(true)
       setNativeOn(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Falha ao ativar notificações')
+      setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
     } finally {
       setBusy(false)
     }
@@ -5005,8 +5563,13 @@ function AutostartButton() {
   }
 
   return (
-    <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => void toggle()} disabled={busy}>
-      <span aria-hidden="true">▣</span>
+    <button
+      type="button"
+      className="user-menu-item user-menu-action message-notifications-toggle"
+      onClick={() => void toggle()}
+      disabled={busy}
+    >
+      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
       <span>Iniciar com o Windows</span>
       <small>{enabled ? 'Ativo' : 'Desativado'}</small>
     </button>

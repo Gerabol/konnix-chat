@@ -1,6 +1,6 @@
 # Design System & UI Kit: Konnix System UI
 
-O **Konnix System UI** (`docs/tema/`) é o Design System oficial do ecossistema Konnix. Ele padroniza a linguagem visual, tokens CSS, paletas de cores, tipografia e catálogo de componentes para o Konnix Chat, painéis administrativos e qualquer nova funcionalidade da plataforma.
+O **Konnix System UI** (`docs/tema/`) é o Design System oficial do ecossistema Konnix. Ele padroniza a linguagem visual, tokens CSS, paletas de cores, tipografia e catálogo de componentes para o Konnix Chat, painéis administrativos, cliente desktop e qualquer nova funcionalidade da plataforma.
 
 ---
 
@@ -44,7 +44,7 @@ A aplicação do tema é feita via atributo `data-theme` na tag raiz `<html>` (`
 
 ## 3. Tokens Semânticos CSS (`docs/tema/tema.css`)
 
-Todas as novas telas, componentes e estilos devem consumir exclusivamente as seguintes variáveis CSS:
+Todas as novas telas, componentes e estilos devem consumir exclusivamente as variáveis CSS do sistema:
 
 ```css
 :root {
@@ -60,6 +60,7 @@ Todas as novas telas, componentes e estilos devem consumir exclusivamente as seg
   --konnix-border: #e3e6f0;         /* Cor de bordas e divisores */
   --konnix-danger: #e5484d;         /* Cor semântica de erro/destruição */
   --konnix-ok: #30a46c;             /* Cor semântica de sucesso */
+  --konnix-warn: #f5a623;           /* Cor semântica de alerta */
   --konnix-sidebar: var(--konnix-surface); /* Fundo da barra lateral */
   --konnix-shadow: 0 10px 30px rgba(32,34,48,.12);
   --sidebar-w: 284px;
@@ -78,59 +79,53 @@ Todas as novas telas, componentes e estilos devem consumir exclusivamente as seg
 - `.kx-brand`: Área de logo (`.kx-logo`) e nome (`.kx-wordmark`).
 - `.kx-sidebar-search`: Campo de busca rápida da barra lateral.
 - `.kx-nav`: Navegação principal com seções (`.kx-nav-section`) e links ativos (`.kx-nav a.active`).
-- `.kx-sidebar-user`: Rodapé da barra lateral com avatar e informações do usuário autenticado.
+- `.kx-sidebar-user`: Rodapé da barra lateral com avatar, status de presença e perfil.
 - `.kx-main`: Container principal com compensação de margem esquerda (`margin-left: var(--sidebar-w)`).
-- `.kx-topbar`: Barra superior fixa com breadcrumb (`.kx-breadcrumb`) e ações rápidas (`.kx-top-actions`).
+- `.kx-topbar`: Barra superior fixa com título da sala, breadcrumb e botões de ação rápida.
 - `.kx-page`: Área de conteúdo (`max-width: 1500px`, padding `24px`).
 - `.kx-page-heading`: Cabeçalho da página com título (`h1`), subtítulo e kicker (`.kx-kicker`).
 
-### 4.2. Botões e Controles de Ação
+### 4.2. Componentes de Chat & Mensageria
+- `.kx-pinned-banner`: Barra destacada de mensagem fixada no topo da timeline.
+- `.kx-typing-indicator`: Indicador discreto e animado de digitação em tempo real.
+- `.kx-poll-card`: Container de enquete interativa com barras de progresso percentual e lista de votantes.
+- `.kx-reaction-pill`: Pílula de reação com emoji, contador e destaque quando o usuário ativo reagiu.
+- `.kx-read-receipt`: Marcadores de entrega (✓) e leitura (✓✓).
+- `.kx-audio-player`: Player customizado de áudio com seletor de velocidade e barra de reprodução.
+
+### 4.3. Status de Presença e Tonalidades
+- `online`: Indicador verde (`--konnix-ok`).
+- `away`: Indicador amarelo/laranja (`--konnix-warn`).
+- `busy`: Indicador vermelho (`--konnix-danger`).
+- `mission`: Indicador azul (`--konnix-accent`).
+- `vacation`: Indicador roxo (`--konnix-primary`).
+- `offline`: Indicador cinza translúcido.
+
+### 4.4. Botões e Controles de Ação
 - `.kx-button`: Botão padrão (altura mínima `38px`, raio `9px`, tipografia bold).
 - `.kx-button-primary`: Ação principal com fundo `--konnix-button`.
 - `.kx-button-secondary`: Ação secundária com borda `--konnix-border` e fundo `--konnix-surface`.
 - `.kx-button-danger`: Ações destrutivas com fundo `--konnix-danger`.
-- `.kx-icon-btn`: Botão quadrado (36x36px) para ícones de cabeçalho e fechamento de modal.
+- `.kx-icon-btn`: Botão quadrado (36x36px) para ícones de cabeçalho e fechamento de modais.
 
-### 4.3. Cards e Métricas
+### 4.5. Cards, Métricas e Tabelas
 - `.kx-card`: Container de superfície com sombra e raio de 16px.
-- `.kx-card-head`: Cabeçalho de card com divisor de borda.
-- `.kx-card-body`: Conteúdo interno com padding de 16px.
-- `.kx-stat`: Card de métrica/KPI com efeito circular sutil em marca d'água.
+- `.kx-card-head` / `.kx-card-body`: Estrutura interna com espaçamento uniforme.
+- `.kx-stat`: Card de métrica/KPI com efeito circular de marca d'água.
+- `.kx-table-wrap` / `.kx-table`: Tabela responsiva com rolagem horizontal e hover suave.
+- `.kx-user-cell` / `.kx-mini-avatar`: Célula para exibição de usuário com foto e nome.
 
-### 4.4. Badges e Status
-- `.kx-badge`: Pílula com raio `999px` e texto de 10px.
-- `.kx-badge-ok`: Fundo verde translúcido + texto `--konnix-ok`.
-- `.kx-badge-warn`: Fundo amarelo translúcido + texto amarelo escuro.
-- `.kx-badge-danger`: Fundo vermelho translúcido + texto `--konnix-danger`.
-- `.kx-badge-info`: Fundo primário translúcido + texto `--konnix-primary-deep`.
-
-### 4.5. Tabelas e Listas
-- `.kx-table-wrap`: Container com rolagem horizontal automática.
-- `.kx-table`: Tabela estilizada com cabeçalhos em caixa alta e hover suave nas linhas.
-- `.kx-user-cell` / `.kx-mini-avatar`: Célula com avatar circular e identificação do usuário.
-
-### 4.6. Formulários e Inputs
-- `.kx-form`: Grid de formulário com espaçamento padronizado de 14px.
-- `.kx-input`: Campo de texto com foco estilizado (`outline: none`, `box-shadow` primário).
-- `.kx-form-hint`: Texto de auxílio abaixo do campo em `--konnix-ink-soft`.
-- `.kx-check`: Checkbox/Radio alinhado com label.
-
-### 4.7. Alertas Contextuais
-- `.kx-alert`: Bloco de feedback com borda, ícone e tipografia semântica.
-- `.kx-alert-info`: Informativo (azul).
-- `.kx-alert-ok`: Sucesso (verde).
-- `.kx-alert-danger`: Erro ou perigo (vermelho).
-
-### 4.8. Modais e Seleção de Tema
-- `.kx-theme-backdrop`: Fundo escuro fixo com `place-items: center`.
-- `.kx-theme-modal`: Caixa de diálogo com rolagem interna e sombra profunda.
-- `.kx-theme-options` / `.kx-theme-option`: Grid de cartões de temas com amostras de cor (`.kx-theme-swatches`).
+### 4.6. Formulários, Inputs e Alertas
+- `.kx-form`: Grid de formulário com espaçamento de 14px.
+- `.kx-input`: Campo de texto com foco estilizado primário.
+- `.kx-form-hint`: Texto de apoio em `--konnix-ink-soft`.
+- `.kx-alert-info`, `.kx-alert-ok`, `.kx-alert-danger`: Blocos de feedback visual semântico.
 
 ---
 
-## 5. Regras Obrigatórias para Novas Funcionalidades
+## 5. Regras Obrigatórias para Novas Telas e Componentes
 
 1. **Zero Cores Hardcoded**: Todo novo componente React ou folha de estilo deve referenciar exclusivamente as variáveis `--konnix-*`.
-2. **Reuso de Componentes `.kx-*`**: Ao implementar painéis administrativos, relatórios, modais ou novas abas, utilize as classes e padrões do `Konnix System UI`.
-3. **Persistência de Tema**: Toda tela deve responder instantaneamente à mudança de tema e respeitar a preferência salva no cookie `konnix_theme` / `konnix_doc_theme` e no perfil do backend.
-4. **Responsividade Mobile-First**: Respeitar os breakpoints em `950px` (ajuste de grids) e `680px` (sidebar recolhida e layout fluído).
+2. **Reuso de Componentes `.kx-*`**: Ao implementar painéis administrativos, relatórios, modais ou abas, utilize as classes e proporções do `Konnix System UI`.
+3. **Persistência de Tema**: Toda tela deve responder instantaneamente à mudança de tema e respeitar a preferência salva no cookie `konnix_theme` e no perfil do backend.
+4. **Responsividade Mobile-First**: Respeitar os breakpoints em `950px` (ajuste de grids) e `680px` (sidebar recolhida e layout fluído com toque mínimo de 44x44px).

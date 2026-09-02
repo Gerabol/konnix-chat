@@ -1,12 +1,12 @@
-# Referência da API REST: Konnix Chat
+# Referência da API REST & WebSocket: Konnix Chat
 
-A API REST do **Konnix Chat** segue o padrão RESTful com autenticação baseada em tokens de sessão opacos transmitidos via cabeçalho `Authorization: Bearer <token>`.
+A API REST do **Konnix Chat** adota arquitetura RESTful com autenticação baseada em tokens de sessão opacos transmitidos via cabeçalho `Authorization: Bearer <token_opaco>`.
 
 ---
 
-## 1. Padrão de Envelope JSON
+## 1. Padrão Uniforme de Envelope JSON
 
-Todas as respostas da API utilizam um envelope uniforme para facilitar o consumo previsível pelos clientes.
+Todas as respostas REST da plataforma seguem rigorosamente a estrutura de envelope:
 
 ### 1.1. Resposta de Sucesso
 ```json
@@ -38,16 +38,16 @@ Todas as respostas da API utilizam um envelope uniforme para facilitar o consumo
 | Código de Erro | Status HTTP | Significado |
 |---|---|---|
 | `INVALID_CREDENTIALS` | 401 Unauthorized | Usuário ou senha incorretos. |
-| `UNAUTHORIZED` | 401 Unauthorized | Token de sessão ausente, expirado ou revogado. |
+| `UNAUTHORIZED` | 401 Unauthorized | Token de sessão ausente, inválido ou expirado. |
 | `PASSWORD_CHANGE_REQUIRED` | 403 Forbidden | A conta exige troca imediata de senha antes de acessar outros recursos. |
 | `FORBIDDEN` | 403 Forbidden | Usuário autenticado não possui permissão para o recurso solicitado. |
 | `ACCOUNT_READ_ONLY` | 403 Forbidden | Conta em modo somente-leitura (ações de escrita bloqueadas). |
-| `ROOM_READ_ONLY` | 403 Forbidden | Canal ou grupo configurado como somente-leitura para membros normais. |
-| `LAST_ADMIN` | 400 Bad Request | Operação rejeitada para proteger o último administrador do sistema. |
-| `NOT_FOUND` | 404 Not Found | Recurso (usuário, sala, mensagem, arquivo) não encontrado. |
-| `TOO_MANY_ATTEMPTS` | 429 Too Many Requests | Bloqueio temporário por excesso de tentativas de login incorretas. |
-| `FILE_TOO_LARGE` | 413 Payload Too Large | Arquivo enviado excede o limite máximo permitido (20 MB). |
-| `VALIDATION_ERROR` | 400 Bad Request | Dados de entrada violam as anotações de validação do DTO. |
+| `ROOM_READ_ONLY` | 403 Forbidden | Canal configurado como somente-leitura para usuários não administradores. |
+| `LAST_ADMIN` | 400 Bad Request | Operação rejeitada para proteger o último administrador ativo do sistema. |
+| `NOT_FOUND` | 404 Not Found | Recurso (usuário, sala, mensagem, arquivo, enquete) não encontrado. |
+| `TOO_MANY_ATTEMPTS` | 429 Too Many Requests | Bloqueio temporário por excesso de tentativas de login (máx 5 em 15min). |
+| `FILE_TOO_LARGE` | 413 Payload Too Large | Arquivo enviado excede o limite máximo permitido pela instância. |
+| `VALIDATION_ERROR` | 400 Bad Request | Dados de entrada violam as anotações Jakarta Bean Validation do DTO. |
 
 ---
 
