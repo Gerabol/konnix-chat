@@ -35,9 +35,14 @@ function ServerSwitcher({ servers, activeId, onChange, onServersChange, onAbout 
     onChange(server)
     window.location.reload()
   }
-  return <aside className="desktop-server-rail" aria-label="Servidores Konnix">
+    const isDark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme')
+      ? ['dark', 'black-gray', 'green-black', 'pink-black', 'red-black'].includes(document.documentElement.getAttribute('data-theme') || '')
+      : false
+    const serverLogo = isDark ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
+
+    return <aside className="desktop-server-rail" aria-label="Servidores Konnix">
     {servers.map((server) => <div className="desktop-server-entry" key={server.id}>
-      <button className={`desktop-server-button ${server.id === activeId ? 'active' : ''}`} title={`${server.name} - ${server.url}`} onClick={() => onChange(server)}><img src="/icons/Konnix white.png" alt={server.name} /></button>
+      <button className={`desktop-server-button ${server.id === activeId ? 'active' : ''}`} title={`${server.name} - ${server.url}`} onClick={() => onChange(server)}><img src={serverLogo} alt={server.name} /></button>
       <button type="button" className="desktop-server-menu" aria-label={`Opções de ${server.name}`} onPointerDown={(event) => event.stopPropagation()} onClick={() => setMenu(menu === server.id ? null : server.id)}>⋮</button>
       {menu === server.id && <div className="desktop-server-context" onPointerDown={(event) => event.stopPropagation()}><strong>{server.name}</strong><button type="button" onClick={() => reload(server)}>↻<span>Recarregamento Forçado</span></button><button type="button" className="destructive" onClick={() => { setRemoveTarget(server); setMenu(null) }}>▣<span>Remover Servidor</span></button><button type="button" onClick={() => { setMenu(null); onAbout() }}>ⓘ<span>Sobre</span></button></div>}
     </div>)}

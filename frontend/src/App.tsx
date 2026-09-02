@@ -68,8 +68,8 @@ function normalizeTheme(theme: string | null | undefined): Theme {
   return THEME_OPTIONS.some((option) => option.id === normalized) ? normalized as Theme : 'DEFAULT'
 }
 
-function isDarkTheme(theme: Theme): boolean {
-  return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK') || theme.endsWith('_STRONG')
+export function isDarkTheme(theme: Theme): boolean {
+  return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
 }
 
 function readThemeCookie(): Theme | null {
@@ -1097,13 +1097,16 @@ function LoginView({ onLogin }: { onLogin: (session: Session) => void }) {
     }
   }
 
+  const currentTheme = readThemeCookie() ?? 'DEFAULT'
+  const brandLogo = isDarkTheme(currentTheme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
+
   return (
     <div className="login-screen">
       <div className="login-card-wrap">
         <div className="login-card">
           <div className="brand">
             <div className="brand-signature">
-              <img className="brand-logo" src="/icons/Konnix white.png" alt="Konnix" />
+              <img className="brand-logo" src={brandLogo} alt="Konnix" />
               <div className="brand-wordmark">
                 <strong>Konnix</strong>
                 <span>Chat</span>
@@ -1160,6 +1163,8 @@ function RequiredPasswordChangeView({ onLogout, onCompleted }: {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const currentTheme = readThemeCookie() ?? 'DEFAULT'
+  const brandLogo = isDarkTheme(currentTheme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -1182,7 +1187,7 @@ function RequiredPasswordChangeView({ onLogout, onCompleted }: {
       <div className="login-card required-password-card">
         <div className="brand">
           <div className="brand-signature">
-            <img className="brand-logo" src="/icons/Konnix white.png" alt="Konnix" />
+            <img className="brand-logo" src={brandLogo} alt="Konnix" />
             <div className="brand-wordmark"><strong>Konnix</strong><span>Chat</span></div>
           </div>
           <h1>Defina uma nova senha</h1>
