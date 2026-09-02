@@ -213,7 +213,7 @@ public class SupportService {
         Room room = new Room();
         room.setName(BUG_REPORTS_ROOM);
         room.setDisplayName("Relatos de Bugs");
-        room.setType("PRIVATE_GROUP");
+        room.setType(RoomService.TYPE_CHANNEL);
         room.setReadOnly(true);
 
         return roomRepository.save(room);

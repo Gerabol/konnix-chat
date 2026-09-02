@@ -68,6 +68,12 @@ O ecossistema utiliza o **Konnix System UI** (`docs/tema/` e `docs/code/design-s
 - **Persistência**: Alterações de tema chamam a rota `PATCH /api/v1/auth/preferences` para persistir a escolha no perfil do usuário no banco de dados.
 - **Catálogo de Componentes `.kx-*`**: Formulários, tabelas, cards, estatísticas, badges, modais e alertas devem seguir as classes e proporções do `docs/tema/tema.css`.
 
+### 4.1. Badges de papel nas mensagens
+Cada mensagem do chat pode exibir tags visuais ao lado do nome do autor, com base no campo `roles` da resposta (`"OWNER"` e/ou `"ADMIN"`):
+- **Proprietário** (`RoleBadge type="owner"`): fundo vermelho (`#d9534f`), exibido quando o autor é dono do grupo/canal na sala.
+- **Admin** (`RoleBadge type="admin"`): fundo azul (`#0275d8`), exibido quando o autor possui o papel global `ADMIN`.
+- O componente `RoleBadge` (`frontend/src/RoleBadge.tsx`) é renderizado em `App.tsx` no bloco do autor a partir de `msg.roles` e estilizado pelas classes `.role-badge`, `.role-badge.owner` e `.role-badge.admin` em `frontend/src/index.css`.
+
 Consulte o [Guia Completo do Design System](file:///Users/sergioo/Documents/GitHub/konnix-chat/docs/code/design-system.md) para a lista de tokens, classes `.kx-*` e componentes de referência.
 
 ---

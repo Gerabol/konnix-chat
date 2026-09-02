@@ -74,6 +74,7 @@ services:
 
     volumes:
       - ./frontend:/app
+      - /app/node_modules
 
     command: ["sh", "-c", "npm ci --legacy-peer-deps && npm run dev -- --host 0.0.0.0"]
 

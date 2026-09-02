@@ -75,6 +75,12 @@ Todas as respostas da API utilizam um envelope uniforme para facilitar o consumo
 - `DELETE /{id}`: Exclusão lógica (*soft delete*) de mensagem própria.
 - `POST /{id}/reactions`: Adiciona ou remove reação de emoji (`{ emoji: "👍" }`).
 
+#### Formato da resposta `Message` (campos relevantes)
+As respostas de mensagem (`GET /{id}/messages`, `POST /{id}/messages`, eventos WebSocket) incluem os seguintes campos além dos dados básicos:
+- `attachment`: metadados do anexo (`id`, `originalName`, `mimeType`, `size`) — `null` quando não há.
+- `reactions`: lista de reações (`emoji`, `userId`, `username`).
+- `roles`: lista de tags do autor, podendo conter `"OWNER"` (proprietário do grupo/canal na sala) e `"ADMIN"` (papel global de administrador). Pode ser uma lista vazia `[]`.
+
 ### 3.4. Administração (`/api/v1/admin`) — Requer papel `ADMIN`
 - `GET|POST|PUT /users`: Gestão completa de usuários, papéis e status.
 - `GET /audit`: Consulta de logs de auditoria com filtros avançados.

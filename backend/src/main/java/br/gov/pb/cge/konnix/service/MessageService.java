@@ -68,6 +68,7 @@ public class MessageService {
     private final PollRepository pollRepository;
     private final PollOptionRepository pollOptionRepository;
     private final PollVoteRepository pollVoteRepository;
+    private final RoomAccessService roomAccessService;
 
     public MessageService(MessageRepository messageRepository,
                           RoomRepository roomRepository,
@@ -82,7 +83,8 @@ public class MessageService {
                           MessageReactionRepository reactionRepository,
                           PollRepository pollRepository,
                           PollOptionRepository pollOptionRepository,
-                          PollVoteRepository pollVoteRepository) {
+                          PollVoteRepository pollVoteRepository,
+                          RoomAccessService roomAccessService) {
         this.messageRepository = messageRepository;
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
@@ -97,6 +99,7 @@ public class MessageService {
         this.pollRepository = pollRepository;
         this.pollOptionRepository = pollOptionRepository;
         this.pollVoteRepository = pollVoteRepository;
+        this.roomAccessService = roomAccessService;
     }
 
     @Transactional
@@ -104,7 +107,7 @@ public class MessageService {
         requireWritable(actor);
         Room room = roomOrThrow(roomId);
         requireMember(room, actor);
-        if (room.isReadOnly() && !actor.hasRole("ADMIN")) {
+        if (!roomAccessService.canWriteToRoom(room, actor.id(), actor.hasRole("ADMIN"))) {
             throw ApiExceptions.roomReadOnly();
         }
 

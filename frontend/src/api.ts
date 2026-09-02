@@ -26,7 +26,7 @@ export type Room = {
   id: string
   name: string
   displayName: string
-  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'DIRECT'
+  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'PUBLIC_GROUP' | 'DIRECT'
   createdBy: string | null
   readOnly: boolean
   createdAt: string
@@ -444,10 +444,16 @@ export const api = {
     const url = q && q.trim() ? `/api/v1/users/directory?q=${encodeURIComponent(q.trim())}` : '/api/v1/users/directory'
     return request<DirectoryUser[]>(url)
   },
-  addMember(roomId: string, userId: string) {
+  addMember(roomId: string, userId: string, role?: string) {
     return request<RoomMember>(`/api/v1/rooms/${roomId}/members`, {
       method: 'POST',
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId, role }),
+    })
+  },
+  updateMemberRole(roomId: string, userId: string, role: string) {
+    return request<RoomMember>(`/api/v1/rooms/${roomId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId, role }),
     })
   },
   room(id: string) {

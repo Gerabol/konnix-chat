@@ -24,6 +24,7 @@ import { activateDesktopServer } from './desktop/servers/serverManager'
 import { getActiveServerId, getDesktopServers } from './desktop/servers/serverStore'
 import { setActiveServer } from './api'
 import { validatePassword } from './passwordValidation'
+import { RoleBadge } from './RoleBadge'
 
 type EmojiSelection = { native?: string }
 
@@ -36,7 +37,8 @@ if (isTauri) setActiveServer(initialDesktopServer?.url ?? null, initialDesktopSe
 
 const ROOM_ICON: Record<string, string> = {
   CHANNEL: '#',
-  PRIVATE_GROUP: '\u{1F512}',
+  PRIVATE_GROUP: '🔒',
+  PUBLIC_GROUP: '🔒',
   DIRECT: '@',
 }
 
@@ -635,7 +637,8 @@ function roomSubtitle(room: Room): string {
   if (room.type === 'DIRECT') {
     return room.directPartner ? `@${room.directPartner.username} | ${room.directPartner.email || 'sem e-mail'}` : 'Conversa'
   }
-  return room.type === 'CHANNEL' ? 'Grupo' : 'Grupo privado'
+  if (room.type === 'CHANNEL') return 'Canal'
+  return 'Grupo'
 }
 
 function roomActivityTime(room: Room): number {
@@ -1507,7 +1510,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     const roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY' || activeRoom?.readOnly) return false
+    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY') return false
     setComposing(true)
     try {
       const createdMessages = attachments.length === 0
@@ -1924,9 +1927,14 @@ const Sidebar = memo(function Sidebar({
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [menuOpen, setMenuOpen] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
+  const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
+  const isAdmin = me.roles.includes('ADMIN')
+  const SYSTEM_CHANNEL_NAMES = ['bug-reports']
+  const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
+  const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
 
   useEffect(() => {
     if (!menuOpen) return
@@ -1981,6 +1989,55 @@ const Sidebar = memo(function Sidebar({
             </div>}
         </div>}
 
+        {isAdmin && systemChannels.length > 0 && (
+          <div className="nav-section">
+            <div className="nav-section-head">
+              <button
+                type="button"
+                className="nav-section-toggle admin-section-toggle"
+                onClick={() => setAdminOpen((open) => !open)}
+                aria-expanded={adminOpen}
+                aria-controls="admin-channels-list"
+              >
+                <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                <span className="nav-section-title">Administração</span>
+              </button>
+            </div>
+            {adminOpen && <div className="nav-list" id="admin-channels-list">
+              {systemChannels.map((room) => {
+                const typingText = formatTypingText(typingByRoom[room.id], false)
+                return (
+                  <button
+                    key={room.id}
+                    className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                    onClick={() => onOpenRoom(room.id)}
+                  >
+                    <AvatarImage
+                      path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                      className="room-thumb"
+                      fallback={
+                        <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                          {getRoomIcon(room)}
+                        </span>
+                      }
+                      alt={roomDisplayName(room)}
+                    />
+                    <span className="room-name">
+                      {roomDisplayName(room)}
+                      {typingText && (
+                        <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                          {typingText}
+                        </span>
+                      )}
+                    </span>
+                    {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                  </button>
+                )
+              })}
+            </div>}
+          </div>
+        )}
+
         <div className="nav-section">
           <div className="nav-section-head">
             <button
@@ -1991,15 +2048,15 @@ const Sidebar = memo(function Sidebar({
               aria-controls="channels-list"
             >
               <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-               <span className="nav-section-title">Grupos</span>
+               <span className="nav-section-title">Canais e grupos</span>
             </button>
              <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
               +
             </button>
           </div>
           {channelsOpen && <div className="nav-list" id="channels-list">
-             {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-            {channels.map((room) => {
+             {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+            {regularChannels.map((room) => {
               const typingText = formatTypingText(typingByRoom[room.id], false)
               return (
                 <button
@@ -2152,7 +2209,6 @@ function NewRoomModal({
   const [type, setType] = useState<'PRIVATE_GROUP' | 'CHANNEL'>('PRIVATE_GROUP')
   const [members, setMembers] = useState<DirectoryUser[]>([])
   const [busy, setBusy] = useState(false)
-  const isAdmin = me.roles.includes('ADMIN')
 
   const create = async () => {
     if (!name.trim() || busy) return
@@ -2168,15 +2224,23 @@ function NewRoomModal({
       }
       onCreated(room.id)
     } catch (err) {
-       showToast(err instanceof ApiError ? err.message : 'Falha ao criar grupo')
+       showToast(err instanceof ApiError ? err.message : 'Falha ao criar sala')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Modal title="Criar grupo" onClose={onClose}>
+    <Modal title={type === 'CHANNEL' ? 'Criar canal' : 'Criar grupo'} onClose={onClose}>
       <div className="modal-fields">
+        <label className="field-label">
+          Tipo
+          <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
+            <option value="PRIVATE_GROUP">🔒 Grupo</option>
+            <option value="CHANNEL"># Canal</option>
+          </select>
+          <small className="field-hint">{type === 'CHANNEL' ? 'Somente você (proprietário) e administradores podem escrever. Demais membros leem.' : 'Todos os membros podem escrever.'}</small>
+        </label>
         <label className="field-label">
           Nome
           <input
@@ -2197,18 +2261,6 @@ function NewRoomModal({
             placeholder="ex.: Financeiro"
           />
         </label>
-        {isAdmin && (
-          <label className="field-label">
-            Tipo
-            <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
-              <option value="PRIVATE_GROUP">Grupo privado</option>
-               <option value="CHANNEL">Grupo público</option>
-            </select>
-          </label>
-        )}
-        {!isAdmin && (
-          <p className="modal-hint">Você pode criar grupos privados. Canais públicos são criados pelo administrador.</p>
-        )}
         <label className="field-label">
           Adicionar membros (opcional)
           <MemberPicker selected={members} onChange={setMembers} excludeId={me.id} />
@@ -2641,6 +2693,7 @@ function AddMembersModal({
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyOwnerId, setBusyOwnerId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(true)
 
   useEffect(() => {
@@ -2686,13 +2739,28 @@ function AddMembersModal({
     onClose()
   }
 
+  const toggleOwner = async (member: RoomMember) => {
+    if (busyOwnerId) return
+    setBusyOwnerId(member.userId)
+    try {
+      const role = member.role === 'OWNER' ? 'MEMBER' : 'OWNER'
+      const updated = await api.updateMemberRole(room.id, member.userId, role)
+      setCurrentMembers((prev) => prev.map((x) => (x.userId === updated.userId ? updated : x)))
+      notify(role === 'OWNER' ? `${member.name || member.username} agora é proprietário` : `${member.name || member.username} deixou de ser proprietário`)
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Falha ao alterar proprietário')
+    } finally {
+      setBusyOwnerId(null)
+    }
+  }
+
   return (
     <Modal title={`Adicionar membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
       <div className="members-modal-body">
       <div className="modal-fields">
         <input autoComplete="off" className="input" placeholder="Pesquisar usuário" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
-        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
         <div className="room-people-section"><button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}><span className="nav-chevron">{inviteOpen ? '⌄' : '›'}</span><span>Pessoas para convidar</span></button>{inviteOpen && <div className="picker-list small">{available.length === 0 && <span className="nav-empty">Nenhuma pessoa encontrada</span>}{available.map((user) => <button key={user.id} className={`picker-item ${selected.some((item) => item.id === user.id) ? 'active' : ''}`} onClick={() => setSelected((prev) => prev.some((item) => item.id === user.id) ? prev.filter((item) => item.id !== user.id) : [...prev, user])}><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} /><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}</small></span><span className="room-person-badge invite-badge">Convidar</span></button>)}</div>}</div>
       </div>
       </div>
@@ -2735,9 +2803,9 @@ function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
   )
 }
 
-function RoomPeopleSection({ title, tone, members }: { title: string; tone: 'owner' | 'member'; members: RoomMember[] }) {
+function RoomPeopleSection({ title, tone, members, onToggleOwner, busyId }: { title: string; tone: 'owner' | 'member'; members: RoomMember[]; onToggleOwner?: (member: RoomMember) => void; busyId?: string | null }) {
   const [open, setOpen] = useState(true)
-  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span></div>)}</div>}</div>
+  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span>{onToggleOwner && <button type="button" className={`owner-action ${member.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`} onClick={() => onToggleOwner(member)} disabled={busyId !== null} title={member.role === 'OWNER' ? `Remover ${member.name || member.username} de proprietário` : `Tornar ${member.name || member.username} proprietário`}>{member.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}</button>}</div>)}</div>}</div>
 }
 
 function RemoveMembersModal({
@@ -2778,6 +2846,21 @@ function RemoveMembersModal({
     }
   }
 
+  const toggleOwner = async (m: RoomMember) => {
+    if (busyId) return
+    setBusyId(m.userId)
+    try {
+      const role = m.role === 'OWNER' ? 'MEMBER' : 'OWNER'
+      const updated = await api.updateMemberRole(room.id, m.userId, role)
+      setMembers((prev) => prev.map((x) => (x.userId === updated.userId ? updated : x)))
+      notify(role === 'OWNER' ? `${m.name || m.username} agora é proprietário` : `${m.name || m.username} deixou de ser proprietário`)
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Falha ao alterar proprietário')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose}>
       <div className="picker-list small">
@@ -2794,6 +2877,15 @@ function RemoveMembersModal({
               <strong>{m.name || m.username}</strong>
               <small>@{m.username}</small>
             </span>
+            <button
+              type="button"
+              className={`owner-action ${m.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`}
+              onClick={() => toggleOwner(m)}
+              disabled={busyId !== null}
+              title={m.role === 'OWNER' ? `Remover ${m.name || m.username} de proprietário` : `Tornar ${m.name || m.username} proprietário`}
+            >
+              {m.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}
+            </button>
             <button
               type="button"
               className="remove-member-btn"
@@ -2975,14 +3067,15 @@ function RoomView({
   const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const readOnlyAccount = me.accountStatus === 'READ_ONLY'
-  const muted = readOnlyAccount || room.readOnly || !online
-  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
-  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
   const isRoomOwner = room.type !== 'DIRECT' && roomMembers.some((member) =>
     member.userId === me.id && member.active && member.role === 'OWNER',
   )
-  const isBugReportsRoom = room.name === 'bug-reports'
   const isAdmin = me.roles.includes('ADMIN')
+  const muted = readOnlyAccount || (room.readOnly && !isAdmin && !isRoomOwner) || !online
+  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
+  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
+  const isBugReportsRoom = room.name === 'bug-reports'
+  const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
   const canRespondToReport = isBugReportsRoom && isAdmin
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
@@ -3745,7 +3838,8 @@ function RoomView({
          </div>
        </div>
 
-       <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
+       {canWriteInRoom ? (
+        <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
          {readOnlyAccount && <div className="account-read-only-message"><strong>Modo somente leitura</strong><span>Você pode consultar esta conversa, mas não enviar mensagens.</span></div>}
          <ComposerPendingAttachments files={pendingAttachments} urls={pendingAttachmentUrls} onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
         {quotedMessage && <div className="quote-preview"><div><strong>Respondendo a {quotedMessage.username || 'usuário'}</strong><span>{quotedMessage.content || 'Anexo'}</span></div><button type="button" onClick={() => setQuotedMessage(null)} aria-label="Desvincular citação">×</button></div>}
@@ -3865,7 +3959,7 @@ function RoomView({
             <span>Anexar</span>
           </button>
             <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
-          {room.type === 'PRIVATE_GROUP' && !readOnlyAccount && !room.readOnly && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
+          {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
@@ -3879,6 +3973,14 @@ function RoomView({
           {editingMessage && <button type="button" className="composer-action" onClick={cancelEditing} disabled={muted} title="Cancelar edição">Cancelar edição</button>}
         </div>
       </div>
+      ) : (
+        <div className="composer account-read-only" data-composer>
+          <div className="account-read-only-message">
+            <strong>Canal de comunicação</strong>
+            <span>Este canal é somente leitura. Apenas administradores podem enviar mensagens.</span>
+          </div>
+        </div>
+      )}
 
       {filesOpen && <RoomFilesPanel files={visibleFiles} loading={filesLoading} error={filesError} query={filesQuery} type={filesType} onQueryChange={setFilesQuery} onTypeChange={setFilesType} onClose={() => setFilesOpen(false)} onRetry={() => void loadRoomFiles()} />}
 
@@ -4079,7 +4181,7 @@ function MessageRow({
       <div className="message-body">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
-          {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>}
+          {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <span className="message-author-wrap">{isMine && <>{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}</>}<button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>{!isMine && <>{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}</>}</span>}
           <span className="message-time">{formatTime(msg.createdAt)}</span>
           {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
           {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
@@ -4198,9 +4300,9 @@ function MessageActionBar({
           📌
         </button>
       )}
-      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>💬</button>}
+      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>🗪</button>}
       {onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}
-      <button type="button" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>↩</button>
+      <button type="button" className="message-action-quote" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>❝</button>
       <button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button>
     </div>
   )
@@ -4370,7 +4472,7 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
       .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(normalizedQuery))
       .map((user) => ({ type: 'user' as const, id: user.id, name: user.name || user.username, subtitle: `@${user.username}`, user })),
     ...rooms
-      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP')
+      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP')
       .filter((room) => `${roomDisplayName(room)} ${room.name}`.toLowerCase().includes(normalizedQuery))
       .map((room) => ({ type: 'room' as const, id: room.id, name: roomDisplayName(room), subtitle: room.type === 'CHANNEL' ? 'Canal' : 'Grupo', room })),
   ].slice(0, 20)

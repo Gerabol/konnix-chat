@@ -147,9 +147,6 @@ public class RoomService {
     @Transactional
     public RoomResponse create(CreateRoomRequest request, AuthenticatedUser actor, String ipAddress) {
         String type = request.type();
-        if (TYPE_CHANNEL.equals(type) && !actor.hasRole("ADMIN")) {
-            throw ApiExceptions.forbidden("Apenas ADMIN pode criar canais");
-        }
         if (!TYPE_CHANNEL.equals(type) && !TYPE_PRIVATE_GROUP.equals(type)) {
             throw ApiExceptions.conflict("ROOM_TYPE_INVALID", "Tipo de sala inválido");
         }
@@ -164,7 +161,7 @@ public class RoomService {
         room.setDisplayName(request.displayName() != null && !request.displayName().isBlank()
                 ? request.displayName().trim() : null);
         room.setType(type);
-        room.setReadOnly(false);
+        room.setReadOnly(TYPE_CHANNEL.equals(type));
         room.setCreatedBy(creator);
         roomRepository.save(room);
 
@@ -402,14 +399,42 @@ public class RoomService {
         }
 
         String role = request.role() != null && !request.role().isBlank()
-                ? request.role().trim() : ROLE_MEMBER;
+                ? request.role().trim().toUpperCase() : ROLE_MEMBER;
         RoomMember member = addMembership(room, target, role);
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
         chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
-        auditService.record("ROOM_MEMBER_ADDED", actorUser(actor.id()), "member",
-                roomId + ":" + target.getId(), ipAddress);
+        User actorObj = actorUser(actor.id());
+        if (actorObj != null) {
+            auditService.record("ROOM_MEMBER_ADDED", actorObj, "member",
+                    roomId + ":" + target.getId(), ipAddress);
+        }
         messageService.createSystem(roomId,
-                addedText(room, displayName(actorUser(actor.id())), displayName(target)), actorUser(actor.id()));
+                addedText(room, displayName(actorObj), displayName(target)), actorObj);
+        return RoomMemberResponse.from(member);
+    }
+
+    @Transactional
+    public RoomMemberResponse updateMemberRole(UUID roomId, UUID targetUserId, String newRole, AuthenticatedUser actor, String ipAddress) {
+        Room room = roomOrThrow(roomId);
+        requireCanManage(room, actor);
+
+        if (newRole == null || newRole.isBlank()) {
+            throw ApiExceptions.conflict("MEMBER_ROLE_INVALID", "Role do membro inválida");
+        }
+
+        RoomMember member = roomMemberRepository.findByRoomIdAndUserId(roomId, targetUserId)
+                .orElseThrow(() -> ApiExceptions.notFound("member/" + targetUserId + " na sala " + roomId));
+
+        member.setRole(newRole.trim().toUpperCase());
+        roomMemberRepository.save(member);
+
+        chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
+        User actorObj = actorUser(actor.id());
+        if (actorObj != null) {
+            auditService.record("ROOM_MEMBER_ROLE_CHANGED", actorObj, "member",
+                    roomId + ":" + targetUserId, ipAddress);
+        }
+
         return RoomMemberResponse.from(member);
     }
 
@@ -424,10 +449,13 @@ public class RoomService {
         roomMemberRepository.delete(member);
         chatEventPublisher.publishRoomRemoved(targetUserId, roomId);
         chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
-        auditService.record("ROOM_MEMBER_REMOVED", actorUser(actor.id()), "member",
-                roomId + ":" + targetUserId, ipAddress);
+        User actorObj = actorUser(actor.id());
+        if (actorObj != null) {
+            auditService.record("ROOM_MEMBER_REMOVED", actorObj, "member",
+                    roomId + ":" + targetUserId, ipAddress);
+        }
         messageService.createSystem(roomId,
-                removedText(room, displayName(actorUser(actor.id())), displayName(target)), actorUser(actor.id()));
+                removedText(room, displayName(actorObj), displayName(target)), actorObj);
     }
 
     private String addedText(Room room, String actorName, String targetName) {
@@ -483,13 +511,13 @@ public class RoomService {
             throw ApiExceptions.directRoomManualMembership();
         }
         if (TYPE_CHANNEL.equals(room.getType())) {
-            if (!actor.hasRole("ADMIN")) {
-                throw ApiExceptions.forbidden("Apenas ADMIN gerencia membros de canais");
+            if (!actor.hasRole("ADMIN") && !isOwner(room, actor)) {
+                throw ApiExceptions.forbidden("Apenas o proprietário ou ADMIN gerencia membros de canais");
             }
             return;
         }
-        if (TYPE_PRIVATE_GROUP.equals(room.getType()) && !isOwner(room, actor)) {
-            throw ApiExceptions.forbidden("Apenas o criador/owner gerencia membros do grupo privado");
+        if (TYPE_PRIVATE_GROUP.equals(room.getType()) && !actor.hasRole("ADMIN") && !isOwner(room, actor)) {
+            throw ApiExceptions.forbidden("Apenas o criador/owner gerencia membros do grupo");
         }
     }
 
