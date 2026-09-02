@@ -72,6 +72,10 @@ export function isDarkTheme(theme: Theme): boolean {
   return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
 }
 
+export function isWhiteSidebarLogoTheme(theme: Theme): boolean {
+  return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK') || theme.endsWith('_STRONG')
+}
+
 function readThemeCookie(): Theme | null {
   const value = document.cookie.split('; ').find((entry) => entry.startsWith(`${THEME_COOKIE_KEY}=`))?.split('=').slice(1).join('=')
   if (!value) return null
@@ -1097,16 +1101,13 @@ function LoginView({ onLogin }: { onLogin: (session: Session) => void }) {
     }
   }
 
-  const currentTheme = readThemeCookie() ?? 'DEFAULT'
-  const brandLogo = isDarkTheme(currentTheme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
-
   return (
     <div className="login-screen">
       <div className="login-card-wrap">
         <div className="login-card">
           <div className="brand">
             <div className="brand-signature">
-              <img className="brand-logo" src={brandLogo} alt="Konnix" />
+              <img className="brand-logo" src="/icons/Konnix white.png" alt="Konnix" />
               <div className="brand-wordmark">
                 <strong>Konnix</strong>
                 <span>Chat</span>
@@ -1163,8 +1164,6 @@ function RequiredPasswordChangeView({ onLogout, onCompleted }: {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
-  const currentTheme = readThemeCookie() ?? 'DEFAULT'
-  const brandLogo = isDarkTheme(currentTheme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -1187,7 +1186,7 @@ function RequiredPasswordChangeView({ onLogout, onCompleted }: {
       <div className="login-card required-password-card">
         <div className="brand">
           <div className="brand-signature">
-            <img className="brand-logo" src={brandLogo} alt="Konnix" />
+            <img className="brand-logo" src="/icons/Konnix white.png" alt="Konnix" />
             <div className="brand-wordmark"><strong>Konnix</strong><span>Chat</span></div>
           </div>
           <h1>Defina uma nova senha</h1>
@@ -2262,7 +2261,7 @@ const Sidebar = memo(function Sidebar({
   typingByRoom: Record<string, Record<string, TypingUser>>
   onClose?: () => void
 }) {
-  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
+  const sidebarLogo = isWhiteSidebarLogoTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)

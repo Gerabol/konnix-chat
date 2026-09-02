@@ -35,10 +35,7 @@ function ServerSwitcher({ servers, activeId, onChange, onServersChange, onAbout 
     onChange(server)
     window.location.reload()
   }
-    const isDark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme')
-      ? ['dark', 'black-gray', 'green-black', 'pink-black', 'red-black'].includes(document.documentElement.getAttribute('data-theme') || '')
-      : false
-    const serverLogo = isDark ? '/icons/Konnix white.png' : '/icons/Konnix dark.png'
+    const serverLogo = '/icons/Konnix white.png'
 
     return <aside className="desktop-server-rail" aria-label="Servidores Konnix">
     {servers.map((server) => <div className="desktop-server-entry" key={server.id}>
