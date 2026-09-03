@@ -150,6 +150,9 @@ public class RoomService {
         if (!TYPE_CHANNEL.equals(type) && !TYPE_PRIVATE_GROUP.equals(type)) {
             throw ApiExceptions.conflict("ROOM_TYPE_INVALID", "Tipo de sala inválido");
         }
+        if (TYPE_CHANNEL.equals(type) && !actor.hasRole("ADMIN")) {
+            throw ApiExceptions.forbidden("Apenas administradores podem criar canais");
+        }
         String name = request.name().trim();
         if (roomRepository.existsByName(name)) {
             throw ApiExceptions.roomNameTaken();
@@ -161,7 +164,7 @@ public class RoomService {
         room.setDisplayName(request.displayName() != null && !request.displayName().isBlank()
                 ? request.displayName().trim() : null);
         room.setType(type);
-        room.setReadOnly(TYPE_CHANNEL.equals(type));
+        room.setReadOnly(false);
         room.setCreatedBy(creator);
         roomRepository.save(room);
 
@@ -517,7 +520,7 @@ public class RoomService {
             return;
         }
         if (TYPE_PRIVATE_GROUP.equals(room.getType()) && !actor.hasRole("ADMIN") && !isOwner(room, actor)) {
-            throw ApiExceptions.forbidden("Apenas o criador/owner gerencia membros do grupo");
+            throw ApiExceptions.forbidden("Apenas o criador/owner gerencia membros do grupo privado");
         }
     }
 
