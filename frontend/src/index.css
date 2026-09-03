@@ -1730,17 +1730,28 @@ button:disabled {
   flex: none;
   color: var(--konnix-ink-soft);
 }
-.notification-row .user-menu-item-btn {
+.message-notification-toggle {
   flex: none;
-  width: auto;
   margin-left: auto;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
-.notification-enable-btn {
-  color: var(--konnix-primary);
+.message-notification-toggle:hover {
+  filter: brightness(1.05);
+}
+.message-notification-toggle:active {
+  filter: brightness(0.95);
+}
+.notification-toggle-on {
+  background: rgba(48, 164, 108, 0.14);
+  color: var(--konnix-ok);
   font-weight: 600;
 }
-.notification-disable-btn {
+.notification-toggle-off {
+  background: rgba(229, 72, 77, 0.12);
   color: var(--konnix-danger);
+  font-weight: 600;
 }
 
 .menu-label {

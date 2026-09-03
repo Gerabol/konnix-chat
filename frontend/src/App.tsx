@@ -5655,11 +5655,17 @@ function NotificationButton() {
       <IconBell />
       <span className="notification-label">Notificações</span>
       {busy ? (
-        <button className="user-menu-item-btn" disabled>Processando…</button>
-      ) : on ? (
-        <button className="user-menu-item-btn notification-disable-btn" onClick={isTauri ? toggleNative : disable}>Desativar</button>
+        <span className="status-pill">Processando…</span>
       ) : (
-        <button className="user-menu-item-btn notification-enable-btn" onClick={isTauri ? toggleNative : enable}>Ativar</button>
+        <button
+          type="button"
+          className={`status-pill message-notification-toggle ${on ? 'notification-toggle-off' : 'notification-toggle-on'}`}
+          onClick={isTauri ? toggleNative : on ? disable : enable}
+          aria-pressed={on}
+          title={on ? 'Desativar notificações' : 'Ativar notificações'}
+        >
+          {on ? 'Desativar' : 'Ativar'}
+        </button>
       )}
       {error && <span className="notif-error">{error}</span>}
     </div>
