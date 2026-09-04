@@ -735,8 +735,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0.75rem 0.85rem;
-  padding-top: calc(0.75rem + var(--safe-top));
+  padding: 0.55rem 0.85rem;
+  padding-top: calc(0.55rem + var(--safe-top));
 }
 
 .sidebar-brand-btn {
@@ -746,11 +746,15 @@ button:disabled {
   padding: 0.25rem 0.35rem;
   border: 0;
   background: transparent;
-  cursor: default;
-  pointer-events: none;
   color: var(--konnix-ink);
   border-radius: 8px;
   text-align: left;
+}
+
+@media (min-width: 769px) {
+  .sidebar-brand-btn {
+    pointer-events: none;
+  }
 }
 
 .sidebar-search-toggle,
@@ -835,6 +839,24 @@ button:disabled {
   position: relative;
   display: flex;
   align-items: center;
+}
+
+.sidebar-persistent-search {
+  padding: 0.25rem 0.8rem 0.5rem;
+  border-bottom: 1px solid var(--konnix-border);
+  background: var(--konnix-surface);
+}
+
+.sidebar-persistent-search .sidebar-search-input-wrap > svg {
+  position: absolute;
+  left: 0.65rem;
+  z-index: 1;
+  color: var(--konnix-ink-soft);
+  pointer-events: none;
+}
+
+.sidebar-persistent-search .sidebar-search-page-input {
+  padding-left: 2rem;
 }
 
 .sidebar-search-page-input {
@@ -3890,19 +3912,9 @@ img.room-header-avatar {
     padding: 0.2rem 0.35rem;
     border: 0;
     background: transparent;
-    cursor: pointer;
-    pointer-events: auto;
     color: var(--konnix-ink);
     border-radius: 8px;
     margin: 0;
-  }
-
-  .sidebar-brand-btn:hover {
-    background: var(--konnix-bg);
-  }
-
-  .sidebar-brand-btn:active {
-    transform: scale(0.96);
   }
 
   .sidebar-logo {
