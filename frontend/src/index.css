@@ -1859,7 +1859,7 @@ button:disabled {
 }
 
 .empty-chat-action {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
@@ -4277,9 +4277,8 @@ img.room-header-avatar {
 
   .room-search-input { width: min(220px, calc(100vw - 150px)); }
 
-  .empty-back {
+  .empty-chat-action {
     display: inline-flex;
-    margin-bottom: 0.75rem;
   }
 
   .message-body {
