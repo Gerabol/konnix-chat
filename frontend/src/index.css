@@ -746,19 +746,11 @@ button:disabled {
   padding: 0.25rem 0.35rem;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
+  pointer-events: none;
   color: var(--konnix-ink);
   border-radius: 8px;
   text-align: left;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-
-.sidebar-brand-btn:hover {
-  background: var(--konnix-bg);
-}
-
-.sidebar-brand-btn:active {
-  transform: scale(0.98);
 }
 
 .sidebar-search-toggle,
@@ -1809,7 +1801,7 @@ button:disabled {
 }
 
 .empty-chat-action {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
@@ -3899,6 +3891,7 @@ img.room-header-avatar {
     border: 0;
     background: transparent;
     cursor: pointer;
+    pointer-events: auto;
     color: var(--konnix-ink);
     border-radius: 8px;
     margin: 0;
@@ -4234,9 +4227,8 @@ img.room-header-avatar {
 
   .room-search-input { width: min(220px, calc(100vw - 150px)); }
 
-  .empty-back {
+  .empty-chat-action {
     display: inline-flex;
-    margin-bottom: 0.75rem;
   }
 
   .message-body {
