@@ -406,11 +406,11 @@ function AudioRecordButton({
         if (startedAt !== null) onRecordingChange(true, Math.floor((Date.now() - startedAt) / 1000))
       }, 250)
     } catch (err) {
-      const name = err instanceof DOMException ? err.name : ''
+      const name = (err && typeof err === 'object' && 'name' in err) ? String((err as { name?: unknown }).name) : ''
       onError(
-        name === 'NotAllowedError'
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
           ? 'Permita o acesso ao microfone nas configurações do navegador'
-          : name === 'NotFoundError'
+          : name === 'NotFoundError' || name === 'DevicesNotFoundError'
             ? 'Nenhum microfone foi encontrado'
             : 'Não foi possível acessar o microfone',
       )
