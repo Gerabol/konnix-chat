@@ -844,7 +844,7 @@ button:disabled {
 .sidebar-persistent-search {
   padding: 0.25rem 0.8rem 0.5rem;
   border-bottom: 1px solid var(--konnix-border);
-  background: var(--konnix-surface);
+  background: transparent;
 }
 
 .sidebar-persistent-search .sidebar-search-input-wrap > svg {
@@ -1174,6 +1174,42 @@ button:disabled {
 
 [data-theme$="-strong"] .sidebar .sidebar-search .search-input::placeholder {
   color: var(--konnix-sidebar-soft);
+}
+
+[data-theme$="-strong"] .sidebar-persistent-search {
+  padding: 0.25rem 0.8rem 0.5rem;
+  background: transparent;
+  border-bottom: 1px solid var(--konnix-sidebar-border);
+}
+
+[data-theme$="-strong"] .sidebar-persistent-search .sidebar-search-page-input {
+  background: var(--konnix-sidebar-hover, rgba(255, 255, 255, 0.14));
+  border: 1px solid var(--konnix-sidebar-border);
+  border-radius: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--konnix-sidebar-ink);
+}
+
+[data-theme$="-strong"] .sidebar-persistent-search .sidebar-search-page-input::placeholder {
+  color: var(--konnix-sidebar-soft);
+}
+
+[data-theme$="-strong"] .sidebar-persistent-search .sidebar-search-input-wrap > svg,
+[data-theme$="-strong"] .sidebar-persistent-search .search-clear {
+  color: var(--konnix-sidebar-soft);
+}
+
+[data-theme$="-strong"] .sidebar-persistent-search .sidebar-search-page-input:focus {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22);
+  outline: none;
+}
+
+[data-theme="pink"] .sidebar-persistent-search .sidebar-search-page-input,
+[data-theme="green"] .sidebar-persistent-search .sidebar-search-page-input,
+[data-theme="red"] .sidebar-persistent-search .sidebar-search-page-input {
+  background: color-mix(in srgb, var(--konnix-primary) 8%, var(--konnix-bg));
+  border-color: color-mix(in srgb, var(--konnix-primary) 28%, var(--konnix-border));
 }
 
 [data-theme$="-strong"] .sidebar .room-item:hover,
@@ -4078,9 +4114,11 @@ img.room-header-avatar {
   }
 
   [data-theme$="-strong"] .sidebar-search-page-input {
-    background: rgba(255, 255, 255, 0.16) !important;
+    background: var(--konnix-sidebar-hover, rgba(255, 255, 255, 0.14)) !important;
     color: #ffffff !important;
     border: 1px solid var(--konnix-sidebar-border) !important;
+    border-radius: 9px !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
   [data-theme$="-strong"] .sidebar-search-page-input::placeholder {
