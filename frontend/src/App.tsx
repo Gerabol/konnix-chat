@@ -25,6 +25,7 @@ import { getActiveServerId, getDesktopServers } from './desktop/servers/serverSt
 import { setActiveServer } from './api'
 import { validatePassword } from './passwordValidation'
 import { RoleBadge } from './RoleBadge'
+import { CodeBlock, detectLanguage, formatHtml, formatJson } from './CodeBlock'
 
 type EmojiSelection = { native?: string }
 
@@ -721,16 +722,27 @@ type InlineMatch = {
   end: number
   kind: 'block' | 'code' | 'strike' | 'bold' | 'italic'
   inner: string
+  lang?: string
 }
 
 function renderInline(text: string, out: ReactNode[], key: number): void {
   const candidates: InlineMatch[] = []
-  const block = text.match(/```[^\n`]*\r?\n([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
+  const block = text.match(/```([a-zA-Z0-9_#-]+)?\r?\n([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
   const code = text.match(/`([^`]+)`/)
   const strike = text.match(/~~([^~]+)~~/)
   const bold = text.match(/\*\*([^*]+)\*\*/) ?? text.match(/\*([^*]+)\*/)
   const italic = text.match(/_([^_]+)_/)
-  if (block) candidates.push({ start: block.index!, end: block.index! + block[0].length, kind: 'block', inner: block[1].replace(/^\r?\n/, '').replace(/\r?\n$/, '') })
+  if (block) {
+    const rawLang = block[2] !== undefined ? block[1] : undefined
+    const innerContent = block[2] !== undefined ? block[2] : (block[1] ?? '')
+    candidates.push({
+      start: block.index!,
+      end: block.index! + block[0].length,
+      kind: 'block',
+      inner: innerContent.replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
+      lang: rawLang,
+    })
+  }
   if (code) candidates.push({ start: code.index!, end: code.index! + code[0].length, kind: 'code', inner: code[1] })
   if (strike) candidates.push({ start: strike.index!, end: strike.index! + strike[0].length, kind: 'strike', inner: strike[1] })
   if (bold) candidates.push({ start: bold.index!, end: bold.index! + bold[0].length, kind: 'bold', inner: bold[1] })
@@ -744,7 +756,7 @@ function renderInline(text: string, out: ReactNode[], key: number): void {
   const m = candidates[0]
   if (m.start > 0) out.push(text.slice(0, m.start))
   if (m.kind === 'block') {
-    out.push(<pre key={key}><code>{m.inner}</code></pre>)
+    out.push(<CodeBlock key={key} code={m.inner} language={m.lang} />)
   } else if (m.kind === 'code') {
     out.push(<code key={key}>{m.inner}</code>)
   } else {
@@ -4098,14 +4110,31 @@ function RoomView({
     const start = el?.selectionStart ?? draft.length
     const sel = el?.selectionEnd ?? start
     const selected = draft.slice(start, sel)
-    const block = '```\n' + (selected || ' ') + '\n```'
+
+    let content = selected
+    let langTag = ''
+
+    if (selected.trim().length > 0) {
+      const detected = detectLanguage(selected)
+      if (detected.lang === 'markup') {
+        content = formatHtml(selected)
+        langTag = 'html'
+      } else if (detected.lang === 'json') {
+        content = formatJson(selected)
+        langTag = 'json'
+      } else if (detected.lang !== 'plaintext') {
+        langTag = detected.lang === 'javascript' ? 'js' : (detected.lang === 'typescript' ? 'ts' : detected.lang)
+      }
+    }
+
+    const block = '```' + (langTag ? langTag + '\n' : '\n') + (content || ' ') + '\n```'
     const next = draft.slice(0, start) + block + draft.slice(sel)
     setDraft(next)
     setCodeBlock({ start, end: start + block.length, text: block })
     requestAnimationFrame(() => {
       el?.focus()
-      const pos = start + 4
-      el?.setSelectionRange(pos, pos + selected.length)
+      const pos = start + 3 + (langTag ? langTag.length + 1 : 1)
+      el?.setSelectionRange(pos, pos + (content || ' ').length)
     })
   }
 
@@ -4515,12 +4544,88 @@ function RoomView({
                 setMention(null)
                 return
               }
-               if (e.key === 'Enter' && !e.shiftKey) {
-                 e.preventDefault()
-                 submit()
-               } else if (e.key === 'Enter' && e.shiftKey) {
-                 setComposerExpanded(true)
-               }
+              if (e.key === 'Tab') {
+                e.preventDefault()
+                const el = inputRef.current
+                if (!el) return
+                const start = el.selectionStart
+                const end = el.selectionEnd
+                const val = draft
+
+                if (start !== end && val.slice(start, end).includes('\n')) {
+                  const lineStart = val.lastIndexOf('\n', start - 1) + 1
+                  const lineEnd = val.indexOf('\n', end) === -1 ? val.length : val.indexOf('\n', end)
+                  const selectedText = val.slice(lineStart, lineEnd)
+                  const lines = selectedText.split('\n')
+
+                  if (e.shiftKey) {
+                    const newLines = lines.map((l) => (l.startsWith('  ') ? l.slice(2) : l.startsWith(' ') ? l.slice(1) : l))
+                    const newBlock = newLines.join('\n')
+                    const next = val.slice(0, lineStart) + newBlock + val.slice(lineEnd)
+                    updateDraft(next, start)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(lineStart, lineStart + newBlock.length)
+                    })
+                  } else {
+                    const newLines = lines.map((l) => '  ' + l)
+                    const newBlock = newLines.join('\n')
+                    const next = val.slice(0, lineStart) + newBlock + val.slice(lineEnd)
+                    updateDraft(next, start + 2)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(lineStart, lineStart + newBlock.length)
+                    })
+                  }
+                } else {
+                  if (e.shiftKey) {
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1
+                    const beforeInLine = val.slice(lineStart, start)
+                    if (beforeInLine.endsWith('  ')) {
+                      const next = val.slice(0, start - 2) + val.slice(start)
+                      updateDraft(next, start - 2)
+                      requestAnimationFrame(() => {
+                        el.setSelectionRange(start - 2, start - 2)
+                      })
+                    } else if (beforeInLine.endsWith(' ')) {
+                      const next = val.slice(0, start - 1) + val.slice(start)
+                      updateDraft(next, start - 1)
+                      requestAnimationFrame(() => {
+                        el.setSelectionRange(start - 1, start - 1)
+                      })
+                    }
+                  } else {
+                    const indent = '  '
+                    const next = val.slice(0, start) + indent + val.slice(end)
+                    updateDraft(next, start + indent.length)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(start + indent.length, start + indent.length)
+                    })
+                  }
+                }
+                return
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit()
+              } else if (e.key === 'Enter' && e.shiftKey) {
+                setComposerExpanded(true)
+                const el = inputRef.current
+                if (el) {
+                  const start = el.selectionStart
+                  const end = el.selectionEnd
+                  const lineStart = draft.lastIndexOf('\n', start - 1) + 1
+                  const currentLine = draft.slice(lineStart, start)
+                  const indentMatch = currentLine.match(/^[ \t]+/)
+                  if (indentMatch && indentMatch[0].length > 0) {
+                    e.preventDefault()
+                    const indent = indentMatch[0]
+                    const next = draft.slice(0, start) + '\n' + indent + draft.slice(end)
+                    updateDraft(next, start + 1 + indent.length)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(start + 1 + indent.length, start + 1 + indent.length)
+                    })
+                  }
+                }
+              }
             }}
             onFocus={() => {
               if (window.visualViewport) {
@@ -4595,7 +4700,6 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
           {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
