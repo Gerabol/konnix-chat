@@ -2310,7 +2310,6 @@ const Sidebar = memo(function Sidebar({
           type="button"
           className="sidebar-brand-btn"
           onClick={onClose}
-          title="Voltar para tela de descanso"
           aria-label="Voltar para tela de descanso"
         >
           <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
