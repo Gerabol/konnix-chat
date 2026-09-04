@@ -845,6 +845,24 @@ button:disabled {
   align-items: center;
 }
 
+.sidebar-persistent-search {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--konnix-border);
+  background: var(--konnix-surface);
+}
+
+.sidebar-persistent-search .sidebar-search-input-wrap > svg {
+  position: absolute;
+  left: 0.65rem;
+  z-index: 1;
+  color: var(--konnix-ink-soft);
+  pointer-events: none;
+}
+
+.sidebar-persistent-search .sidebar-search-page-input {
+  padding-left: 2rem;
+}
+
 .sidebar-search-page-input {
   width: 100%;
   min-height: 36px;

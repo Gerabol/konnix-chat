@@ -2244,7 +2244,6 @@ const Sidebar = memo(function Sidebar({
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
-  const [searchMode, setSearchMode] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
@@ -2256,6 +2255,16 @@ const Sidebar = memo(function Sidebar({
   const SYSTEM_CHANNEL_NAMES = ['bug-reports']
   const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
   const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
+  const query = search.trim().toLowerCase()
+  const showResults = query.length > 0
+  const matchesQuery = (room: Room) => {
+    if (!query) return true
+    return (room.displayName || room.name || '').toLowerCase().includes(query)
+  }
+  const filteredFavorites = favoriteRooms.filter(matchesQuery)
+  const filteredRegularChannels = regularChannels.filter(matchesQuery)
+  const filteredConversations = regularConversations.filter(matchesQuery)
+  const hasSearchResults = userResults.length > 0 || filteredFavorites.length > 0 || filteredRegularChannels.length > 0 || filteredConversations.length > 0
 
   useEffect(() => {
     if (!headerMenuOpen && !footerMenuOpen) return
@@ -2285,137 +2294,95 @@ const Sidebar = memo(function Sidebar({
   }, [headerMenuOpen, footerMenuOpen])
 
   const handleSelectRoom = (roomId: string) => {
-    if (searchMode) {
-      setSearchMode(false)
-      onSearch('')
-    }
+    onSearch('')
     onOpenRoom(roomId)
   }
 
   const handleSelectUser = async (userId: string) => {
-    if (searchMode) {
-      setSearchMode(false)
-      onSearch('')
-    }
+    onSearch('')
     await onStartUserDm(userId)
   }
 
-  const hasSearchResults = userResults.length > 0 || favoriteRooms.length > 0 || channels.length > 0 || regularConversations.length > 0
-
   return (
-    <aside className={`sidebar ${searchMode ? 'sidebar-in-search-mode' : ''}`}>
-      {searchMode ? (
-        <div className="sidebar-search-header">
-          <button
-            type="button"
-            className="icon-btn sidebar-search-back-btn"
-            onClick={() => {
-              setSearchMode(false)
-              onSearch('')
-            }}
-            aria-label="Voltar às conversas"
-            title="Voltar às conversas"
-          >
-            <IconArrowLeft size={20} />
-          </button>
-          <div className="sidebar-search-input-wrap">
-            <input
-              ref={searchInputRef}
-              className="sidebar-search-page-input"
-              placeholder="Buscar conversas e usuários…"
-              value={search}
-              autoFocus
-              onChange={(e) => onSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setSearchMode(false)
-                  onSearch('')
-                }
-              }}
-            />
-            {search.trim().length > 0 && (
-              <button
-                type="button"
-                className="search-clear"
-                onClick={() => {
-                  onSearch('')
-                  searchInputRef.current?.focus()
-                }}
-                aria-label="Limpar busca"
-              >
-                ×
-              </button>
-            )}
+    <aside className="sidebar">
+      <div className="sidebar-brand">
+        <button
+          type="button"
+          className="sidebar-brand-btn"
+          onClick={onClose}
+          title="Voltar para tela de descanso"
+          aria-label="Voltar para tela de descanso"
+        >
+          <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
+          <div className="sidebar-wordmark">
+            <strong>Konnix</strong>
+            <span>Chat</span>
           </div>
-        </div>
-      ) : (
-        <div className="sidebar-brand">
-          <button
-            type="button"
-            className="sidebar-brand-btn"
-            onClick={onClose}
-            title="Voltar para tela de descanso"
-            aria-label="Voltar para tela de descanso"
-          >
-            <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
-            <div className="sidebar-wordmark">
-              <strong>Konnix</strong>
-              <span>Chat</span>
-            </div>
-          </button>
+        </button>
 
-          <div className="sidebar-header-actions" ref={headerMenuRef}>
-            <button
-              type="button"
-              className="icon-btn sidebar-search-toggle"
-              onClick={() => {
-                setSearchMode(true)
-                requestAnimationFrame(() => searchInputRef.current?.focus())
-              }}
-              title="Pesquisar conversas"
-              aria-label="Pesquisar conversas"
-            >
-              <IconSearch size={18} />
-            </button>
-            <button
-              type="button"
-              className={`icon-btn sidebar-settings-toggle ${headerMenuOpen ? 'active' : ''}`}
-              onClick={() => {
-                setFooterMenuOpen(false)
-                setHeaderMenuOpen((open) => !open)
-              }}
-              title="Configurações"
-              aria-label="Configurações"
-              aria-expanded={headerMenuOpen}
-            >
-              <IconSettings size={18} />
-            </button>
-            <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
-            {headerMenuOpen && (
-              <div className="user-menu sidebar-header-dropdown">
-                <UserSettingsMenuContent
-                  me={me}
-                  onTheme={onTheme}
-                  onEditProfile={onEditProfile}
-                  onReportIssue={onReportIssue}
-                  onAbout={onAbout}
-                  onLogout={onLogout}
-                  onClose={() => setHeaderMenuOpen(false)}
-                />
-              </div>
-            )}
-          </div>
+        <div className="sidebar-header-actions" ref={headerMenuRef}>
+          <button
+            type="button"
+            className={`icon-btn sidebar-settings-toggle ${headerMenuOpen ? 'active' : ''}`}
+            onClick={() => {
+              setFooterMenuOpen(false)
+              setHeaderMenuOpen((open) => !open)
+            }}
+            title="Configurações"
+            aria-label="Configurações"
+            aria-expanded={headerMenuOpen}
+          >
+            <IconSettings size={18} />
+          </button>
+          <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
+          {headerMenuOpen && (
+            <div className="user-menu sidebar-header-dropdown">
+              <UserSettingsMenuContent
+                me={me}
+                onTheme={onTheme}
+                onEditProfile={onEditProfile}
+                onReportIssue={onReportIssue}
+                onAbout={onAbout}
+                onLogout={onLogout}
+                onClose={() => setHeaderMenuOpen(false)}
+              />
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="sidebar-persistent-search">
+        <div className="sidebar-search-input-wrap">
+          <IconSearch size={15} />
+          <input
+            ref={searchInputRef}
+            className="sidebar-search-page-input"
+            placeholder="Buscar conversas e usuários…"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onSearch('')
+            }}
+          />
+          {search.trim().length > 0 && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => {
+                onSearch('')
+                searchInputRef.current?.focus()
+              }}
+              aria-label="Limpar busca"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
 
       <nav className="sidebar-nav">
-        {searchMode ? (
-          search.trim().length === 0 ? (
-            <div className="sidebar-search-prompt">
-              <span className="search-prompt-icon"><IconSearch size={28} /></span>
-              <p>Digite para buscar conversas, canais ou contatos…</p>
-            </div>
-          ) : !hasSearchResults ? (
+        {showResults ? (
+          !hasSearchResults ? (
             <div className="sidebar-search-empty">
               <p>Nenhum resultado encontrado para &ldquo;{search}&rdquo;</p>
             </div>
@@ -2443,13 +2410,13 @@ const Sidebar = memo(function Sidebar({
                 </div>
               )}
 
-              {favoriteRooms.length > 0 && (
+              {filteredFavorites.length > 0 && (
                 <div className="nav-section">
                   <div className="nav-section-head">
-                    <span className="nav-section-title">Favoritos ({favoriteRooms.length})</span>
+                    <span className="nav-section-title">Favoritos ({filteredFavorites.length})</span>
                   </div>
                   <div className="nav-list">
-                    {favoriteRooms.map((room) => (
+                    {filteredFavorites.map((room) => (
                       <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
                         {room.type === 'DIRECT' ? (
                           <span className="room-icon direct">
@@ -2469,13 +2436,13 @@ const Sidebar = memo(function Sidebar({
                 </div>
               )}
 
-              {channels.length > 0 && (
+              {filteredRegularChannels.length > 0 && (
                 <div className="nav-section">
                   <div className="nav-section-head">
-                    <span className="nav-section-title">Grupos & Canais ({channels.length})</span>
+                    <span className="nav-section-title">Grupos & Canais ({filteredRegularChannels.length})</span>
                   </div>
                   <div className="nav-list">
-                    {channels.map((room) => (
+                    {filteredRegularChannels.map((room) => (
                       <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
                         <AvatarImage
                           path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
@@ -2491,13 +2458,13 @@ const Sidebar = memo(function Sidebar({
                 </div>
               )}
 
-              {regularConversations.length > 0 && (
+              {filteredConversations.length > 0 && (
                 <div className="nav-section">
                   <div className="nav-section-head">
-                    <span className="nav-section-title">Conversas ({regularConversations.length})</span>
+                    <span className="nav-section-title">Conversas ({filteredConversations.length})</span>
                   </div>
                   <div className="nav-list">
-                    {regularConversations.map((room) => (
+                    {filteredConversations.map((room) => (
                       <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
                         <span className="room-icon direct">
                           <span className="sidebar-avatar-wrap">
