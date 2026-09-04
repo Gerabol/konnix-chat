@@ -682,16 +682,6 @@ button:disabled {
 
 .password-toggle:hover { color: var(--konnix-primary-hover); }
 
-.audio-record-error {
-  display: block;
-  flex: 0 0 100%;
-  order: 10;
-  width: 100%;
-  margin-top: 0.1rem;
-  color: var(--konnix-danger);
-  font-size: 0.78rem;
-}
-
 .form-error {
   margin: 0;
   color: var(--konnix-danger);
@@ -5348,7 +5338,6 @@ img.room-header-avatar {
 
 .admin-error,
 .form-error,
-.audio-record-error,
 .room-files-error {
   color: var(--konnix-danger);
 }
