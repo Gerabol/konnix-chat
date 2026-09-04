@@ -1232,7 +1232,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const [toast, setToast] = useState<{ id: number; text: string; anchor: 'content' | 'modal' } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -1328,10 +1328,17 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     [rooms, activeRoomId],
   )
 
-  const showToast = useCallback((text: string) => {
-    setToast({ id: Date.now(), text })
+  const showToast = useCallback((text: string, anchor: 'content' | 'modal' = 'content') => {
+    setToast({ id: Date.now(), text, anchor })
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 5000)
+  }, [])
+
+  const modalNotify = useCallback((text: string) => showToast(text, 'modal'), [showToast])
+
+  useEffect(() => {
+    registerModalToastDismiss(() => setToast((current) => (current && current.anchor === 'modal' ? null : current)))
+    return () => registerModalToastDismiss(null)
   }, [])
 
   const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
@@ -1798,13 +1805,13 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const openNewRoom = useCallback(() => setNewRoomOpen(true), [])
   const openNewDm = useCallback(() => setNewDmOpen(true), [])
 
-  const handleDelete = async (msg: Message) => {
+  const handleDelete = async (msg: Message, notifier: (text: string) => void = showToast) => {
     if (msg.deletedAt || msg.userId !== me.id || me.accountStatus === 'READ_ONLY') return
     try {
       const deleted = await api.deleteMessage(msg.id)
       setMessages((prev) => prev.map((m) => (m.id === deleted.id ? deleted : m)))
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Falha ao excluir mensagem')
+      notifier(err instanceof ApiError ? err.message : 'Falha ao excluir mensagem')
     }
   }
 
@@ -1812,7 +1819,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     if (!pendingDelete) return
     const message = pendingDelete
     setPendingDelete(null)
-    await handleDelete(message)
+    await handleDelete(message, modalNotify)
   }
 
   const handleRoomCreated = async (roomId: string) => {
@@ -1928,11 +1935,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           me={me}
           onClose={() => setNewRoomOpen(false)}
           onCreated={handleRoomCreated}
-          showToast={showToast}
+          showToast={modalNotify}
         />
       )}
       {newDmOpen && (
-        <NewDmModal me={me} onClose={() => setNewDmOpen(false)} onCreated={handleRoomCreated} showToast={showToast} />
+        <NewDmModal me={me} onClose={() => setNewDmOpen(false)} onCreated={handleRoomCreated} showToast={modalNotify} />
       )}
 
       {profileEditOpen && (
@@ -1945,7 +1952,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             setProfileEditOpen(false)
             void loadRooms()
           }}
-          notify={showToast}
+          notify={modalNotify}
         />
       )}
       {themeOpen && (
@@ -1954,11 +1961,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onClose={() => setThemeOpen(false)}
           onPreview={setPreviewTheme}
           onSaved={(user) => { onThemeUpdated(user); setPreviewTheme(null); setThemeOpen(false) }}
-          notify={showToast}
+          notify={modalNotify}
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
-      {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={showToast} />}
+      {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}
       {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
       {!online && (
@@ -1983,7 +1990,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       )}
 
       {toast && (
-        <button className="toast" onClick={() => setToast(null)}>
+        <button className={`toast ${toast.anchor === 'modal' ? 'toast-modal' : ''}`} onClick={() => setToast(null)}>
           {toast.text}
         </button>
       )}
@@ -3006,6 +3013,14 @@ function MemberPicker({
   )
 }
 
+let modalToastDismiss: (() => void) | null = null
+function registerModalToastDismiss(fn: (() => void) | null) {
+  modalToastDismiss = fn
+}
+function dismissModalToast() {
+  if (modalToastDismiss) modalToastDismiss()
+}
+
 function Modal({
   title,
   onClose,
@@ -3029,6 +3044,7 @@ function Modal({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
   useEffect(() => { closeRef.current?.focus() }, [])
+  useEffect(() => () => dismissModalToast(), [])
 
   return (
     <div className={`modal-overlay ${overlayClassName}`} onMouseDown={onClose}>
@@ -3486,7 +3502,7 @@ function RoomView({
   onMessageUpdated: (message: Message) => void
   onReaction: (message: Message, emoji: string) => void
   onStartDm: (userId: string) => Promise<void>
-  notify: (text: string) => void
+  notify: (text: string, anchor?: 'content' | 'modal') => void
   readReceiptsEnabled: boolean
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
@@ -3494,6 +3510,7 @@ function RoomView({
   onOpenRoom: (roomId: string) => void
 }) {
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
+  const modalNotify = useCallback((text: string) => notify(text, 'modal'), [notify])
   const lastTypingSentRef = useRef(0)
   const typingTimeoutRef = useRef<number | null>(null)
   const stopTypingTimeoutRef = useRef<number | null>(null)
@@ -4724,20 +4741,20 @@ function RoomView({
       {filesOpen && <RoomFilesPanel files={visibleFiles} loading={filesLoading} error={filesError} query={filesQuery} type={filesType} onQueryChange={setFilesQuery} onTypeChange={setFilesType} onClose={() => setFilesOpen(false)} onRetry={() => void loadRoomFiles()} />}
 
       {addOpen && (
-        <AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={notify} />
+<AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={modalNotify} />
+      )}
+      {removeOpen && (
+        <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={modalNotify} />
       )}
       {membersOpen && (
         <MembersModal room={room} onClose={() => setMembersOpen(false)} />
       )}
-      {removeOpen && (
-        <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={notify} />
-      )}
-      {editOpen && (
+{editOpen && (
         <RoomEditModal
           room={room}
           onClose={() => setEditOpen(false)}
           onSaved={(updated) => { onRoomUpdated(updated); setEditOpen(false) }}
-          notify={notify}
+          notify={modalNotify}
         />
       )}
       {readMessageId && (() => {
@@ -4746,9 +4763,9 @@ function RoomView({
       })()}
       {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
-      {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={notify} />}
-      {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={notify} />}
-      {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={notify} />}
+      {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={modalNotify} />}
+      {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={modalNotify} />}
+      {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={modalNotify} />}
     </div>
   )
 }

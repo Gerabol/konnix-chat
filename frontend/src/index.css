@@ -4020,6 +4020,10 @@ img.room-header-avatar {
   .chat-shell > .toast {
     left: calc(var(--sidebar-w) + (100vw - var(--sidebar-w)) / 2);
   }
+  .chat-shell > .toast.toast-modal {
+    left: 50%;
+    z-index: 1300;
+  }
 }
 
 @media (max-width: 768px) {
