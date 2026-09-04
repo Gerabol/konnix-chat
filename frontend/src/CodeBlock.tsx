@@ -11,6 +11,14 @@ import 'prismjs/components/prism-java'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-bash'
 import 'prismjs/components/prism-markdown'
+import 'prismjs/components/prism-c'
+import 'prismjs/components/prism-cpp'
+import 'prismjs/components/prism-csharp'
+import 'prismjs/components/prism-go'
+import 'prismjs/components/prism-rust'
+import 'prismjs/components/prism-php'
+import 'prismjs/components/prism-yaml'
+import 'prismjs/components/prism-docker'
 
 export type CodeBlockProps = {
   code: string
@@ -82,9 +90,25 @@ export function detectLanguage(code: string, specifiedLang?: string): { lang: st
     java: { lang: 'java', display: 'Java' },
     py: { lang: 'python', display: 'Python' },
     python: { lang: 'python', display: 'Python' },
+    php: { lang: 'php', display: 'PHP' },
+    c: { lang: 'c', display: 'C' },
+    cpp: { lang: 'cpp', display: 'C++' },
+    'c++': { lang: 'cpp', display: 'C++' },
+    cs: { lang: 'csharp', display: 'C#' },
+    csharp: { lang: 'csharp', display: 'C#' },
+    'c#': { lang: 'csharp', display: 'C#' },
+    go: { lang: 'go', display: 'Go' },
+    golang: { lang: 'go', display: 'Go' },
+    rs: { lang: 'rust', display: 'Rust' },
+    rust: { lang: 'rust', display: 'Rust' },
     sh: { lang: 'bash', display: 'Bash' },
     bash: { lang: 'bash', display: 'Bash' },
     shell: { lang: 'bash', display: 'Bash' },
+    zsh: { lang: 'bash', display: 'Bash' },
+    yml: { lang: 'yaml', display: 'YAML' },
+    yaml: { lang: 'yaml', display: 'YAML' },
+    docker: { lang: 'docker', display: 'Dockerfile' },
+    dockerfile: { lang: 'docker', display: 'Dockerfile' },
     md: { lang: 'markdown', display: 'Markdown' },
     markdown: { lang: 'markdown', display: 'Markdown' },
   }
@@ -95,6 +119,7 @@ export function detectLanguage(code: string, specifiedLang?: string): { lang: st
 
   const trimmed = code.trim()
 
+  // 1. JSON
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
     try {
       JSON.parse(trimmed)
@@ -104,6 +129,7 @@ export function detectLanguage(code: string, specifiedLang?: string): { lang: st
     }
   }
 
+  // 2. HTML / XML / SVG
   if (
     /^\s*<!DOCTYPE\s+html/i.test(trimmed) ||
     /^\s*<html\b/i.test(trimmed) ||
@@ -112,14 +138,66 @@ export function detectLanguage(code: string, specifiedLang?: string): { lang: st
     return { lang: 'markup', display: 'HTML' }
   }
 
+  // 3. PHP
+  if (/<\?php|\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*\s*=|echo\s+['"\$]/.test(trimmed)) {
+    return { lang: 'php', display: 'PHP' }
+  }
+
+  // 4. Python
+  if (
+    /(^\s*(def\s+\w+\s*\(|class\s+\w+(\s*\([^)]*\))?\s*:|from\s+[\w.]+\s+import|import\s+[\w.]+|@\w+(\(.*\))?\s*\ndef|if\s+__name__\s*==\s*['"]__main__['"]|elif\s+.*:|print\s*\(|self\.\w+)|#.*python)/m.test(trimmed)
+  ) {
+    return { lang: 'python', display: 'Python' }
+  }
+
+  // 5. Bash / Shell
+  if (
+    /^\s*(#!\/bin\/(bash|sh|zsh)|sudo\s+|curl\s+-|apt-get\s+|docker\s+(run|build|compose|ps)|npm\s+(run|install|i|test)|git\s+(commit|checkout|clone|push|pull|status)|chmod\s+[0-9+x])/m.test(trimmed)
+  ) {
+    return { lang: 'bash', display: 'Bash' }
+  }
+
+  // 6. SQL
   if (/^\s*(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\b/i.test(trimmed)) {
     return { lang: 'sql', display: 'SQL' }
   }
 
+  // 7. Go
+  if (/\b(func\s+(\([^)]+\)\s+)?\w+\s*\(|package\s+\w+|import\s+(\([^)]+\)|"fmt"))/.test(trimmed)) {
+    return { lang: 'go', display: 'Go' }
+  }
+
+  // 8. Rust
+  if (/\b(fn\s+main\s*\(|fn\s+\w+\s*\(|let\s+mut\s+|pub\s+fn\s+|impl\s+\w+)/.test(trimmed)) {
+    return { lang: 'rust', display: 'Rust' }
+  }
+
+  // 9. C / C++
+  if (/(#include\s+<[\w.]+>|std::(cout|cin|vector|string)|printf\s*\(|cout\s*<<)/.test(trimmed)) {
+    return { lang: 'cpp', display: 'C++' }
+  }
+
+  // 10. C#
+  if (/\b(using\s+System(\.[\w.]+)?;|namespace\s+[\w.]+|Console\.(WriteLine|Write)\()/.test(trimmed)) {
+    return { lang: 'csharp', display: 'C#' }
+  }
+
+  // 11. Java
+  if (/\b(public\s+class\s+\w+|public\s+static\s+void\s+main|System\.out\.(println|print)|@Override)\b/.test(trimmed)) {
+    return { lang: 'java', display: 'Java' }
+  }
+
+  // 12. Dockerfile
+  if (/^\s*(FROM\s+[a-zA-Z0-9_.-]+|RUN\s+|EXPOSE\s+\d+|WORKDIR\s+|COPY\s+)/m.test(trimmed)) {
+    return { lang: 'docker', display: 'Dockerfile' }
+  }
+
+  // 13. CSS
   if (/^\s*([.#a-zA-Z0-9_\-\s,:]+)\s*\{[\s\S]*:[^;]+;[\s\S]*\}/.test(trimmed)) {
     return { lang: 'css', display: 'CSS' }
   }
 
+  // 14. JavaScript / TypeScript
   if (
     /\b(import\s+.*from|export\s+(default|const|let|function|class)|const\s+[a-zA-Z0-9_$]+\s*=|let\s+[a-zA-Z0-9_$]+\s*=|function\s+[a-zA-Z0-9_$]+\s*\(|console\.(log|error|warn)\()/i.test(trimmed)
   ) {
@@ -151,6 +229,9 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
   const { lang, display } = useMemo(() => detectLanguage(code, language), [code, language])
 
+  const lines = useMemo(() => code.split('\n'), [code])
+  const lineCount = lines.length
+
   const highlighted = useMemo(() => {
     try {
       const grammar = Prism.languages[lang]
@@ -160,7 +241,6 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
     } catch {
       // Fallback
     }
-    // Plain text escaping fallback
     return code
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -211,12 +291,23 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           )}
         </button>
       </div>
-      <pre className="kx-code-pre">
-        <code
-          className={`language-${lang} kx-code-content`}
-          dangerouslySetInnerHTML={{ __html: highlighted }}
-        />
-      </pre>
+      <div className="kx-code-body">
+        {lineCount > 1 && (
+          <div className="kx-code-gutter" aria-hidden="true">
+            {Array.from({ length: lineCount }, (_, i) => (
+              <span key={i + 1} className="kx-code-line-num">
+                {i + 1}
+              </span>
+            ))}
+          </div>
+        )}
+        <pre className="kx-code-pre">
+          <code
+            className={`language-${lang} kx-code-content`}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        </pre>
+      </div>
     </div>
   )
 }
