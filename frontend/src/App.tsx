@@ -3729,37 +3729,69 @@ function RoomView({
 
     const observeMediaAndLayout = () => {
       let active = true
-      const media = Array.from(container.querySelectorAll<HTMLElement>('img, video, audio'))
-      const onMediaLoad = () => {
-        if (active && wasNearBottomRef.current && container) {
-          scrollToBottom()
-        }
-      }
-      media.forEach((el) => {
-        el.addEventListener('load', onMediaLoad)
-        el.addEventListener('error', onMediaLoad)
-        el.addEventListener('loadeddata', onMediaLoad)
-      })
+      let lastScrollHeight = container.scrollHeight
+      const boundMedia = new Set<HTMLElement>()
 
-      const observer = typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => {
-            if (active && wasNearBottomRef.current && container) {
-              scrollToBottom()
-            }
+      const wasAtBottomBeforeGrowth = () => {
+        return container.scrollTop + container.clientHeight >= lastScrollHeight - 150
+      }
+
+      const adjustIfNeeded = () => {
+        if (!active || !container) return
+        const newScrollHeight = container.scrollHeight
+        if (newScrollHeight > lastScrollHeight && wasAtBottomBeforeGrowth()) {
+          container.scrollTop = newScrollHeight
+          wasNearBottomRef.current = true
+        }
+        lastScrollHeight = newScrollHeight
+      }
+
+      const onMediaLoad = () => adjustIfNeeded()
+
+      const bindMedia = (elements: HTMLElement[]) => {
+        elements.forEach((el) => {
+          if (!boundMedia.has(el)) {
+            boundMedia.add(el)
+            el.addEventListener('load', onMediaLoad)
+            el.addEventListener('error', onMediaLoad)
+            el.addEventListener('loadeddata', onMediaLoad)
+          }
+        })
+      }
+
+      const scanAndBindMedia = () => {
+        const elements = Array.from(container.querySelectorAll<HTMLElement>('img, video, audio'))
+        bindMedia(elements)
+      }
+
+      scanAndBindMedia()
+
+      const mutationObserver = typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(() => {
+            if (!active) return
+            scanAndBindMedia()
+            adjustIfNeeded()
           })
         : null
-      observer?.observe(container)
+      mutationObserver?.observe(container, { childList: true, subtree: true })
+
+      const resizeObserver = typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => adjustIfNeeded())
+        : null
+      resizeObserver?.observe(container)
       const content = container.querySelector('.message-list-content')
-      if (content) observer?.observe(content)
+      if (content) resizeObserver?.observe(content)
 
       return () => {
         active = false
-        observer?.disconnect()
-        media.forEach((el) => {
+        mutationObserver?.disconnect()
+        resizeObserver?.disconnect()
+        boundMedia.forEach((el) => {
           el.removeEventListener('load', onMediaLoad)
           el.removeEventListener('error', onMediaLoad)
           el.removeEventListener('loadeddata', onMediaLoad)
         })
+        boundMedia.clear()
       }
     }
 
