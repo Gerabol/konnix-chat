@@ -3802,13 +3802,15 @@ function RoomView({
     if (openingConversation) {
       scrollToBottomOnLoadRef.current = false
       forceScrollToBottomRef.current = false
-      const frame = requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight
+      wasNearBottomRef.current = true
+      scrollToBottom()
+      requestAnimationFrame(() => {
+        if (container) container.scrollTop = container.scrollHeight
         setConversationReady(true)
         onInitialPositioned()
       })
-      return () => cancelAnimationFrame(frame)
     }
+
     const media = Array.from(container.querySelectorAll('img, video, audio'))
     mustStayAtBottomRef.current = true
     scrollToBottom()
@@ -4418,6 +4420,10 @@ function RoomView({
 
        <div className={`message-list ${conversationReady ? '' : 'message-list-initializing'}`} data-message-list ref={messageListRef} onScroll={(event) => {
         const container = event.currentTarget
+        if (!conversationReady || scrollToBottomOnLoadRef.current) {
+          wasNearBottomRef.current = true
+          return
+        }
         const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
         wasNearBottomRef.current = nearBottom
         if (!nearBottom) mustStayAtBottomRef.current = false
