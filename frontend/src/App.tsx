@@ -3723,35 +3723,66 @@ function RoomView({
       return
     }
 
+    const scrollToBottom = () => {
+      if (container) container.scrollTop = container.scrollHeight
+    }
+
+    const observeMediaAndLayout = () => {
+      let active = true
+      const media = Array.from(container.querySelectorAll<HTMLElement>('img, video, audio'))
+      const onMediaLoad = () => {
+        if (active && wasNearBottomRef.current && container) {
+          scrollToBottom()
+        }
+      }
+      media.forEach((el) => {
+        el.addEventListener('load', onMediaLoad)
+        el.addEventListener('error', onMediaLoad)
+        el.addEventListener('loadeddata', onMediaLoad)
+      })
+
+      const observer = typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            if (active && wasNearBottomRef.current && container) {
+              scrollToBottom()
+            }
+          })
+        : null
+      observer?.observe(container)
+      const content = container.querySelector('.message-list-content')
+      if (content) observer?.observe(content)
+
+      return () => {
+        active = false
+        observer?.disconnect()
+        media.forEach((el) => {
+          el.removeEventListener('load', onMediaLoad)
+          el.removeEventListener('error', onMediaLoad)
+          el.removeEventListener('loadeddata', onMediaLoad)
+        })
+      }
+    }
+
     if (scrollToBottomOnLoadRef.current) {
       scrollToBottomOnLoadRef.current = false
       forceScrollToBottomRef.current = false
       wasNearBottomRef.current = true
-      container.scrollTop = container.scrollHeight
+      scrollToBottom()
       setConversationReady(true)
       onInitialPositioned()
-      const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
-      images.forEach((img) => {
-        if (!img.complete) {
-          img.addEventListener('load', () => {
-            if (wasNearBottomRef.current && container) {
-              container.scrollTop = container.scrollHeight
-            }
-          }, { once: true })
-        }
-      })
-      return
+      return observeMediaAndLayout()
     }
 
     if (forceScrollToBottomRef.current) {
       forceScrollToBottomRef.current = false
       wasNearBottomRef.current = true
-      container.scrollTop = container.scrollHeight
-      return
+      scrollToBottom()
+      return observeMediaAndLayout()
     }
 
     if (wasNearBottomRef.current) {
-      container.scrollTop = container.scrollHeight
+      scrollToBottom()
+      return observeMediaAndLayout()
     }
   }, [loading, messages, room.id])
 
