@@ -725,7 +725,7 @@ type InlineMatch = {
 
 function renderInline(text: string, out: ReactNode[], key: number): void {
   const candidates: InlineMatch[] = []
-  const block = text.match(/```([a-zA-Z0-9_#-]+)?\r?\n([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
+  const block = text.match(/```([a-zA-Z0-9_#-]+)?(?:\r?\n|[ \t]+)([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
   const code = text.match(/`([^`]+)`/)
   const strike = text.match(/~~([^~]+)~~/)
   const bold = text.match(/\*\*([^*]+)\*\*/) ?? text.match(/\*([^*]+)\*/)
