@@ -3596,14 +3596,10 @@ function RoomView({
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
   const messageListRef = useRef<HTMLDivElement>(null)
-  const olderScrollAnchorRef = useRef<{ id: string | null; offset: number; height: number; top: number } | null>(null)
+  const pendingOlderScrollRef = useRef<{ oldScrollHeight: number; oldScrollTop: number } | null>(null)
   const scrollToBottomOnLoadRef = useRef(true)
   const forceScrollToBottomRef = useRef(false)
-  const mustStayAtBottomRef = useRef(false)
   const wasNearBottomRef = useRef(true)
-  const forceBottomIntervalRef = useRef<number | null>(null)
-  const forceBottomTimeoutRef = useRef<number | null>(null)
-  const forcedBottomRoomRef = useRef<string | null>(null)
   const [loadingPrevious, setLoadingPrevious] = useState(false)
   const [audioResetKey, setAudioResetKey] = useState(0)
   const [audioMode, setAudioMode] = useState(false)
@@ -3689,11 +3685,10 @@ function RoomView({
   }, [mention, room.type, roomMembers, me.id])
 
   useLayoutEffect(() => {
-    olderScrollAnchorRef.current = null
     scrollToBottomOnLoadRef.current = true
     forceScrollToBottomRef.current = false
-    mustStayAtBottomRef.current = false
     wasNearBottomRef.current = true
+    pendingOlderScrollRef.current = null
     setConversationReady(false)
   }, [room.id])
 
@@ -3702,44 +3697,15 @@ function RoomView({
     return () => cancelAnimationFrame(frame)
   }, [room.id])
 
-  const forceBottomFor500ms = useCallback(() => {
-    if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-    if (forceBottomTimeoutRef.current !== null) window.clearTimeout(forceBottomTimeoutRef.current)
-    const forceBottom = () => {
-      const list = messageListRef.current
-      if (list) list.scrollTop = list.scrollHeight
-    }
-    forceBottom()
-    forceBottomIntervalRef.current = window.setInterval(forceBottom, 100)
-    forceBottomTimeoutRef.current = window.setTimeout(() => {
-      if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-      forceBottomIntervalRef.current = null
-      forceBottomTimeoutRef.current = null
-    }, 500)
-  }, [])
-
-  useEffect(() => () => {
-    if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-    if (forceBottomTimeoutRef.current !== null) window.clearTimeout(forceBottomTimeoutRef.current)
-  }, [])
-
   useEffect(() => {
-    if (loading || messages.length === 0 || forcedBottomRoomRef.current === room.id) return
-    forcedBottomRoomRef.current = room.id
-    const frame = requestAnimationFrame(forceBottomFor500ms)
-    return () => cancelAnimationFrame(frame)
-  }, [forceBottomFor500ms, loading, messages.length, room.id])
-
-  useEffect(() => {
-    if (loading || messages.length === 0 || forceScrollRequest === 0) return
-    const frame = requestAnimationFrame(forceBottomFor500ms)
-    return () => cancelAnimationFrame(frame)
-  }, [forceBottomFor500ms, forceScrollRequest, loading, messages.length])
+    if (forceScrollRequest > 0) forceScrollToBottomRef.current = true
+  }, [forceScrollRequest])
 
   useLayoutEffect(() => {
     if (loading) return
     const container = messageListRef.current
     if (!container) return
+
     if (messages.length === 0) {
       if (scrollToBottomOnLoadRef.current) {
         scrollToBottomOnLoadRef.current = false
@@ -3749,100 +3715,45 @@ function RoomView({
       return
     }
 
-    const observeLayout = (onResize: () => void) => {
-      const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
-      const observed = [container, ...Array.from(container.querySelectorAll('.message'))]
-      observed.forEach((element) => observer?.observe(element))
-      const media = Array.from(container.querySelectorAll('img, video, audio'))
-      media.forEach((element) => {
-        element.addEventListener('load', onResize)
-        element.addEventListener('error', onResize)
-        element.addEventListener('loadeddata', onResize)
-      })
-      return () => {
-        observer?.disconnect()
-        media.forEach((element) => {
-          element.removeEventListener('load', onResize)
-          element.removeEventListener('error', onResize)
-          element.removeEventListener('loadeddata', onResize)
-        })
-      }
-    }
-
-    const anchor = olderScrollAnchorRef.current
-    if (anchor) {
-      const containerRect = container.getBoundingClientRect()
-      const restore = () => {
-        const anchored = anchor.id
-          ? container.querySelector<HTMLElement>(`[data-message-id="${anchor.id}"]`)
-          : null
-        if (anchored) {
-          const anchoredRect = anchored.getBoundingClientRect()
-          container.scrollTop += anchoredRect.top - containerRect.top - anchor.offset
-        } else {
-          container.scrollTop = anchor.top + (container.scrollHeight - anchor.height)
-        }
-      }
-      restore()
-      olderScrollAnchorRef.current = null
+    if (pendingOlderScrollRef.current) {
+      const { oldScrollHeight, oldScrollTop } = pendingOlderScrollRef.current
+      pendingOlderScrollRef.current = null
+      container.scrollTop = container.scrollHeight - oldScrollHeight + oldScrollTop
       setLoadingPrevious(false)
-      return observeLayout(restore)
+      return
     }
 
-    const scrollToBottom = () => { container.scrollTop = container.scrollHeight }
-    const shouldFollow = scrollToBottomOnLoadRef.current || forceScrollToBottomRef.current || wasNearBottomRef.current
-    if (!shouldFollow) return
-    const openingConversation = scrollToBottomOnLoadRef.current
-    const initialOrForced = openingConversation || forceScrollToBottomRef.current
-    if (initialOrForced) {
-      scrollToBottomOnLoadRef.current = false
-      forceScrollToBottomRef.current = false
-    }
-    let active = true
-    if (openingConversation) {
+    if (scrollToBottomOnLoadRef.current) {
       scrollToBottomOnLoadRef.current = false
       forceScrollToBottomRef.current = false
       wasNearBottomRef.current = true
-      scrollToBottom()
-      requestAnimationFrame(() => {
-        if (container) container.scrollTop = container.scrollHeight
-        setConversationReady(true)
-        onInitialPositioned()
+      container.scrollTop = container.scrollHeight
+      setConversationReady(true)
+      onInitialPositioned()
+      const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+      images.forEach((img) => {
+        if (!img.complete) {
+          img.addEventListener('load', () => {
+            if (wasNearBottomRef.current && container) {
+              container.scrollTop = container.scrollHeight
+            }
+          }, { once: true })
+        }
       })
+      return
     }
 
-    const media = Array.from(container.querySelectorAll('img, video, audio'))
-    mustStayAtBottomRef.current = true
-    scrollToBottom()
-    const hasPendingMedia = () => media.some((element) => {
-      if (element instanceof HTMLImageElement) return !element.complete
-      if (element instanceof HTMLMediaElement) return element.readyState < 2
-      return false
-    })
-    let fontsReady = !document.fonts
-    const settle = () => {
-      if (!mustStayAtBottomRef.current) return
-      scrollToBottom()
-      if (fontsReady && !hasPendingMedia()) {
-        mustStayAtBottomRef.current = false
-      }
+    if (forceScrollToBottomRef.current) {
+      forceScrollToBottomRef.current = false
+      wasNearBottomRef.current = true
+      container.scrollTop = container.scrollHeight
+      return
     }
-    const cleanup = observeLayout(settle)
-    if (document.fonts) {
-      void document.fonts.ready.then(() => {
-        if (!active) return
-        fontsReady = true
-        settle()
-      })
+
+    if (wasNearBottomRef.current) {
+      container.scrollTop = container.scrollHeight
     }
-    settle()
-    const frame = initialOrForced ? requestAnimationFrame(() => { if (active) settle() }) : null
-    return () => {
-      active = false
-      if (frame !== null) cancelAnimationFrame(frame)
-      cleanup()
-    }
-  }, [loading, messages.length, room.id])
+  }, [loading, messages, room.id])
 
   useEffect(() => {
     setDraft('')
@@ -4001,7 +3912,7 @@ function RoomView({
     setCodeBlock(null)
     setQuotedMessage(null)
     setComposerExpanded(false)
-    if (sendingAttachments) requestAnimationFrame(forceBottomFor500ms)
+    if (sendingAttachments) forceScrollToBottomRef.current = true
   }
 
   const startEditing = (message: Message) => {
@@ -4424,9 +4335,8 @@ function RoomView({
           wasNearBottomRef.current = true
           return
         }
-        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
         wasNearBottomRef.current = nearBottom
-        if (!nearBottom) mustStayAtBottomRef.current = false
       }}>
          <div className="message-list-content">
          {loading && <div className="loading-row">Carregando…</div>}
@@ -4435,27 +4345,15 @@ function RoomView({
             if (loadingPrevious) return
             event.currentTarget.blur()
             const container = messageListRef.current
-            const containerRect = container?.getBoundingClientRect()
-            const visibleMessage = container && containerRect
-              ? Array.from(container.querySelectorAll<HTMLElement>('[data-message-id]')).find((element) => element.getBoundingClientRect().bottom > containerRect.top)
-              : null
-            const visibleRect = visibleMessage?.getBoundingClientRect()
-            olderScrollAnchorRef.current = {
-              id: visibleMessage?.dataset.messageId ?? null,
-              offset: visibleRect && containerRect ? visibleRect.top - containerRect.top : 0,
-              height: container?.scrollHeight ?? 0,
-              top: container?.scrollTop ?? 0,
+            if (container) {
+              pendingOlderScrollRef.current = {
+                oldScrollHeight: container.scrollHeight,
+                oldScrollTop: container.scrollTop,
+              }
             }
             setLoadingPrevious(true)
             await loadMore()
-            requestAnimationFrame(() => {
-              if (olderScrollAnchorRef.current && container) {
-                const anchor = olderScrollAnchorRef.current
-                container.scrollTop = container.scrollHeight - anchor.height + anchor.top
-                olderScrollAnchorRef.current = null
-              }
-              setLoadingPrevious(false)
-            })
+            setLoadingPrevious(false)
           }}>
             {loadingPrevious ? 'Carregando mensagens anteriores…' : 'Carregar mensagens anteriores'}
           </button>
