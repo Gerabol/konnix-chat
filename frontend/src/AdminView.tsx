@@ -944,15 +944,13 @@ function DailyActiveUsersChart({ activity, days, onDaysChange }: { activity: Mon
             ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
             : (index % (days > 30 ? 15 : 4) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
           const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-          const showValue = days <= 15
+          const barHeightPercent = Math.max(point.activeUsers ? 8 : 2, (point.activeUsers / maxActive) * 100)
           return (
             <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.activeUsers} usuários ativos`}>
               <div className="activity-bars">
-                <div className="activity-bar-wrap">
-                  {showValue && point.activeUsers > 0 && (
-                    <span className="activity-bar-value">{point.activeUsers}</span>
-                  )}
-                  <i className="activity-users-bar" style={{ height: `${Math.max(point.activeUsers ? 8 : 2, (point.activeUsers / maxActive) * 100)}%` }} />
+                <div className="activity-bar-wrap" style={{ height: `${barHeightPercent}%` }}>
+                  <span className="activity-bar-value">{point.activeUsers.toLocaleString('pt-BR')}</span>
+                  <i className="activity-users-bar" />
                 </div>
               </div>
               <small>{label}</small>
