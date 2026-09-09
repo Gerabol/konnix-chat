@@ -63,20 +63,26 @@ public class AdminMonitoringService {
 
     @Transactional(readOnly = true)
     public MonitoringMetricsResponse metrics() {
+        return metrics(7);
+    }
+
+    @Transactional(readOnly = true)
+    public MonitoringMetricsResponse metrics(int days) {
+        int rangeDays = Math.min(Math.max(days, 1), 90);
         Instant today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant();
         long activeUsers = userRepository.countByAccountStatus("ACTIVE");
         long readOnlyUsers = userRepository.countByAccountStatus("READ_ONLY");
         long disabledUsers = userRepository.countByAccountStatus("DISABLED");
         ZoneId zone = ZoneId.systemDefault();
-        Instant activityFrom = today.minus(6, ChronoUnit.DAYS);
+        Instant activityFrom = today.minus(rangeDays - 1L, ChronoUnit.DAYS);
         var activityByDay = messageRepository.countActivitySince(activityFrom, zone.getId()).stream()
                 .collect(java.util.stream.Collectors.toMap(
                         row -> (String) row[0],
                         row -> new MonitoringMetricsResponse.ActivityPoint((String) row[0], ((Number) row[1]).longValue(), ((Number) row[2]).longValue())));
-        List<MonitoringMetricsResponse.ActivityPoint> activity = java.util.stream.IntStream.range(0, 7)
+        List<MonitoringMetricsResponse.ActivityPoint> activity = java.util.stream.IntStream.range(0, rangeDays)
                 .mapToObj(offset -> {
-                    String day = today.plus(offset - 6L, ChronoUnit.DAYS).atZone(zone).toLocalDate().toString();
+                    String day = today.plus(offset - (rangeDays - 1L), ChronoUnit.DAYS).atZone(zone).toLocalDate().toString();
                     return activityByDay.getOrDefault(day, new MonitoringMetricsResponse.ActivityPoint(day, 0, 0));
                 }).toList();
         Number databaseSize = (Number) entityManager

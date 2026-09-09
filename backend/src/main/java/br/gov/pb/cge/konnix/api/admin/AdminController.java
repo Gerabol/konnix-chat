@@ -188,8 +188,8 @@ public class AdminController {
     }
 
     @GetMapping("/monitoring/metrics")
-    public ApiResponse<MonitoringMetricsResponse> metrics() {
-        return ApiResponse.ok(monitoringService.metrics());
+    public ApiResponse<MonitoringMetricsResponse> metrics(@RequestParam(defaultValue = "7") int days) {
+        return ApiResponse.ok(monitoringService.metrics(days));
     }
 
     @GetMapping("/settings")
