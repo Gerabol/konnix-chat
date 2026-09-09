@@ -1612,12 +1612,19 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             }
           } else if (evt.type === 'presence.updated') {
             const presence = evt.data as unknown as { userId: string; status: PresenceStatus }
+            if (presence.userId === me.id) {
+              if (presence.status === 'online') {
+                autoAwayRef.current = false
+              }
+              onProfileUpdated({ ...me, presenceStatus: presence.status })
+            }
             setRooms((prev) => prev.map((room) => room.directPartner?.userId === presence.userId
               ? { ...room, directPartner: { ...room.directPartner, presenceStatus: presence.status } }
               : room))
             setSearchUsers((prev) => prev.map((user) => user.id === presence.userId
               ? { ...user, presenceStatus: presence.status }
               : user))
+            window.dispatchEvent(new CustomEvent('konnix:presence', { detail: presence }))
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
@@ -3643,6 +3650,17 @@ function RoomView({
   const canRespondToReport = isBugReportsRoom && isAdmin
   const canManageRoom = room.type !== 'DIRECT' && (isRoomOwner || isAdmin)
   const isMember = roomMembers.some((member) => member.userId === me.id)
+
+  useEffect(() => {
+    const handlePresence = (e: Event) => {
+      const detail = (e as CustomEvent<{ userId: string; status: PresenceStatus }>).detail
+      if (detail?.userId) {
+        setProfile((current) => current && current.id === detail.userId ? { ...current, presenceStatus: detail.status } : current)
+      }
+    }
+    window.addEventListener('konnix:presence', handlePresence)
+    return () => window.removeEventListener('konnix:presence', handlePresence)
+  }, [])
 
   useEffect(() => {
     if (!roomHeaderMenuOpen) return
