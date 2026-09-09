@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from './api'
 import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
-import { AvatarImage } from './App'
+import { AvatarImage, cacheTheme, PaletteIcon, ThemeModal, applyTheme } from './App'
 import ApiDocsPanel from './ApiDocsPanel'
 import { validatePassword } from './passwordValidation'
 
@@ -126,11 +126,25 @@ function AccountStatusSelector({ status, onChange, disabled }: { status: Account
 }
 
 export default function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
+  const [currentTheme, setCurrentTheme] = useState<User['theme']>(() => me.theme)
+  const [showThemeModal, setShowThemeModal] = useState(false)
+
   useEffect(() => {
-    const attribute = adminThemeAttribute(me.theme)
+    const attribute = adminThemeAttribute(currentTheme)
     if (attribute) document.documentElement.dataset.theme = attribute
     else delete document.documentElement.dataset.theme
-  }, [me.theme])
+  }, [currentTheme])
+
+  // Keep theme in sync when changed from the chat side (and vice-versa)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<string>).detail as User['theme']
+      setCurrentTheme(next)
+      applyTheme(next)
+    }
+    window.addEventListener('konnix:theme-changed', handler)
+    return () => window.removeEventListener('konnix:theme-changed', handler)
+  }, [])
 
   const [tab, setTab] = useState<Tab>(() => {
     try {
@@ -152,11 +166,19 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
     <div className="admin-shell">
       <header className="admin-header">
         <div className="admin-brand">
-           <img key={adminLogoPath(me.theme)} src={adminLogoPath(me.theme)} alt="Konnix" />
+           <img key={adminLogoPath(currentTheme)} src={adminLogoPath(currentTheme)} alt="Konnix" />
           <div><strong>Konnix</strong><span>Administração</span></div>
         </div>
         <div className="admin-header-actions">
           <span>{me.name}</span>
+          <button
+            type="button"
+            className="btn-ghost admin-theme-btn"
+            aria-label="Selecionar tema"
+            onClick={() => setShowThemeModal(true)}
+          >
+            <PaletteIcon />
+          </button>
           <button className="btn-ghost" onClick={onBack}>Voltar ao chat</button>
         </div>
       </header>
@@ -179,6 +201,19 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
         </main>
       </div>
       {toast && <button className="toast admin-toast" onClick={() => setToast(null)}>{toast}</button>}
+      {showThemeModal && (
+        <ThemeModal
+          theme={currentTheme as any}
+          onClose={() => setShowThemeModal(false)}
+          onPreview={(t) => { setCurrentTheme(t as any); applyTheme(t) }}
+          onSaved={(user) => {
+            setCurrentTheme(user.theme)
+            cacheTheme(user.theme)
+            setShowThemeModal(false)
+          }}
+          notify={notify}
+        />
+      )}
     </div>
   )
 }
