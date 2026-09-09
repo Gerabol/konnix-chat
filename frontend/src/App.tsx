@@ -1478,6 +1478,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
       ws.onopen = () => {
+        if (presenceStatusRef.current === 'offline') {
+          onProfileUpdated({ ...me, presenceStatus: 'online' })
+        }
         void loadRooms()
       }
       ws.onmessage = (event) => {
