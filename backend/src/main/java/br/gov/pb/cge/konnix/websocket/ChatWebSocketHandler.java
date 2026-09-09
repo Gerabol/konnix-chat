@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatWebSocketHandler.class);
-    private static final long DISCONNECT_GRACE_PERIOD_SECONDS = 4;
+    public static final long DISCONNECT_GRACE_PERIOD_SECONDS = 15;
 
     private final ChatWebSocketSessionRegistry sessionRegistry;
     private final UserRepository userRepository;

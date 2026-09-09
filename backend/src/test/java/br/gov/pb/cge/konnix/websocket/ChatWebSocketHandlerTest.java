@@ -131,7 +131,7 @@ class ChatWebSocketHandlerTest {
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("authenticatedUser", user);
         when(session.getAttributes()).thenReturn(attributes);
-        doReturn(scheduledFuture).when(scheduler).schedule(any(Runnable.class), eq(4L), eq(TimeUnit.SECONDS));
+        doReturn(scheduledFuture).when(scheduler).schedule(any(Runnable.class), eq(ChatWebSocketHandler.DISCONNECT_GRACE_PERIOD_SECONDS), eq(TimeUnit.SECONDS));
 
         handler.afterConnectionClosed(session, CloseStatus.NORMAL);
 
@@ -140,7 +140,7 @@ class ChatWebSocketHandlerTest {
         verify(userRepository, never()).save(any());
         verify(eventPublisher, never()).publishPresence(any(), any(), any());
         assertThat(sessionRegistry.sessionsOf(userId)).isEmpty();
-        verify(scheduler).schedule(any(Runnable.class), eq(4L), eq(TimeUnit.SECONDS));
+        verify(scheduler).schedule(any(Runnable.class), eq(ChatWebSocketHandler.DISCONNECT_GRACE_PERIOD_SECONDS), eq(TimeUnit.SECONDS));
     }
 
     @Test
@@ -159,7 +159,7 @@ class ChatWebSocketHandlerTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
         ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
-        doReturn(scheduledFuture).when(scheduler).schedule(runnableCaptor.capture(), eq(4L), eq(TimeUnit.SECONDS));
+        doReturn(scheduledFuture).when(scheduler).schedule(runnableCaptor.capture(), eq(ChatWebSocketHandler.DISCONNECT_GRACE_PERIOD_SECONDS), eq(TimeUnit.SECONDS));
 
         handler.afterConnectionClosed(session, CloseStatus.NORMAL);
 
@@ -186,7 +186,7 @@ class ChatWebSocketHandlerTest {
         when(session.getAttributes()).thenReturn(attributes);
 
         ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
-        doReturn(scheduledFuture).when(scheduler).schedule(runnableCaptor.capture(), eq(4L), eq(TimeUnit.SECONDS));
+        doReturn(scheduledFuture).when(scheduler).schedule(runnableCaptor.capture(), eq(ChatWebSocketHandler.DISCONNECT_GRACE_PERIOD_SECONDS), eq(TimeUnit.SECONDS));
 
         // 1. Fecha sessão antiga (refresh da página iniciado)
         handler.afterConnectionClosed(session, CloseStatus.NORMAL);

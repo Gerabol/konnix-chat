@@ -1039,11 +1039,15 @@ export default function App() {
 
   const [profileRevision, setProfileRevision] = useState(0)
 
-  const handleProfileUpdated = useCallback((user: User) => {
-    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || user.theme || 'DEFAULT') as Theme
-    setSession((current) => (current ? { ...current, user: { ...user, theme: user.theme || currentTheme } } : current))
+  const handleProfileUpdated = useCallback((userOrUpdater: User | ((prev: User) => User)) => {
+    setSession((current) => {
+      if (!current?.user) return current
+      const nextUser = typeof userOrUpdater === 'function' ? userOrUpdater(current.user) : userOrUpdater
+      const currentTheme = (readThemeCookie() || cachedTheme() || current.user.theme || nextUser.theme || 'DEFAULT') as Theme
+      return { ...current, user: { ...nextUser, theme: nextUser.theme || currentTheme } }
+    })
     setProfileRevision((revision) => revision + 1)
-  }, [session?.user?.theme])
+  }, [])
 
   const handleThemeUpdated = useCallback((user: User) => {
     setSession((current) => (current ? { ...current, user } : current))
@@ -1234,7 +1238,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   avatarRevision: number
   onLogout: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
-  onProfileUpdated: (user: User) => void
+  onProfileUpdated: (userOrUpdater: User | ((prev: User) => User)) => void
   onThemeUpdated: (user: User) => void
 }) {
   const online = useOnline()
@@ -1479,7 +1483,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       wsRef.current = ws
       ws.onopen = () => {
         if (presenceStatusRef.current === 'offline') {
-          onProfileUpdated({ ...me, presenceStatus: 'online' })
+          onProfileUpdated((prev) => ({ ...prev, presenceStatus: 'online' }))
         }
         void loadRooms()
       }
@@ -1619,7 +1623,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               if (presence.status === 'online') {
                 autoAwayRef.current = false
               }
-              onProfileUpdated({ ...me, presenceStatus: presence.status })
+              onProfileUpdated((prev) => ({ ...prev, presenceStatus: presence.status }))
             }
             setRooms((prev) => prev.map((room) => room.directPartner?.userId === presence.userId
               ? { ...room, directPartner: { ...room.directPartner, presenceStatus: presence.status } }
@@ -1675,15 +1679,29 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws.onclose = () => {
         if (wsRef.current === ws) wsRef.current = null
         if (!closedByUser) {
-          retry = setTimeout(connect, 3000)
+          retry = setTimeout(connect, 1000)
         }
       }
       ws.onerror = () => ws?.close()
     }
 
     connect()
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        const currentWs = wsRef.current
+        if (!currentWs || currentWs.readyState === WebSocket.CLOSED) {
+          connect()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityOrFocus)
+    window.addEventListener('focus', onVisibilityOrFocus)
+
     return () => {
       closedByUser = true
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus)
+      window.removeEventListener('focus', onVisibilityOrFocus)
       if (retry) clearTimeout(retry)
       ws?.close()
     }
@@ -2043,9 +2061,11 @@ function PresenceSelector({
   onError: (message: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
-  const currentIndex = Math.max(0, PRESENCE_OPTIONS.findIndex((option) => option.id === status))
+  const effectiveStatus: PresenceStatus = status || 'online'
+  const currentIndex = Math.max(0, PRESENCE_OPTIONS.findIndex((option) => option.id === effectiveStatus))
   const current = PRESENCE_OPTIONS[currentIndex]
 
   useEffect(() => {
@@ -2065,15 +2085,18 @@ function PresenceSelector({
   }, [open])
 
   const select = async (next: PresenceStatus) => {
-    if (next === status) {
+    if (next === effectiveStatus || busy) {
       setOpen(false)
       return
     }
+    setBusy(true)
     try {
       await onChange(next)
       setOpen(false)
     } catch {
       onError('Não foi possível atualizar seu status')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -2085,9 +2108,10 @@ function PresenceSelector({
     <div className="presence-selector" ref={menuRef}>
       <button
         type="button"
-        className={`presence-pill presence-${status}`}
+        className={`presence-pill presence-${effectiveStatus}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={busy}
         onClick={() => {
           setHighlightedIndex(currentIndex)
           setOpen((value) => !value)
@@ -2119,11 +2143,11 @@ function PresenceSelector({
               type="button"
               role="menuitem"
               key={option.id}
-              className={`presence-option presence-${option.id} ${option.id === status ? 'selected' : ''} ${PRESENCE_OPTIONS.indexOf(option) === highlightedIndex ? 'highlighted' : ''}`}
+              className={`presence-option presence-${option.id} ${option.id === effectiveStatus ? 'selected' : ''} ${PRESENCE_OPTIONS.indexOf(option) === highlightedIndex ? 'highlighted' : ''}`}
               onMouseEnter={() => setHighlightedIndex(PRESENCE_OPTIONS.indexOf(option))}
               onClick={() => void select(option.id)}
             >
-              <span className="presence-check">{option.id === status ? '✓' : ''}</span>
+              <span className="presence-check">{option.id === effectiveStatus ? '✓' : ''}</span>
               <span className="presence-dot" aria-hidden="true" />
               <span>{option.label}</span>
             </button>

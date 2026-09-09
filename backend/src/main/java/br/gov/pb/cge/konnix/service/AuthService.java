@@ -93,10 +93,15 @@ public class AuthService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public UserResponse me(AuthenticatedUser principal) {
         User user = userRepository.findById(principal.id())
                 .orElseThrow(() -> ApiExceptions.unauthorized("Sessão inválida"));
+        if ("offline".equals(user.getPresenceStatus()) || user.getPresenceStatus() == null) {
+            user.setPresenceStatus("online");
+            userRepository.save(user);
+            eventPublisher.publishPresence(user.getId(), user.getUsername(), "online");
+        }
         return UserResponse.from(user);
     }
 

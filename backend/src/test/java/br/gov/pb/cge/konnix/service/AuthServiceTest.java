@@ -87,4 +87,50 @@ class AuthServiceTest {
         verify(eventPublisher).publishPresence(userId, "joao", "online");
         verify(loginAttemptService).clear("joao");
     }
+
+    @Test
+    void meComUsuarioOfflineAlteraPresencaParaOnlineEPublicaEvento() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("maria");
+        user.setName("Maria Silva");
+        user.setPresenceStatus("offline");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        br.gov.pb.cge.konnix.security.AuthenticatedUser principal =
+                new br.gov.pb.cge.konnix.security.AuthenticatedUser(userId, "maria", "Maria Silva", java.util.Set.of("USER"));
+
+        var response = authService.me(principal);
+
+        assertThat(response).isNotNull();
+        assertThat(response.presenceStatus()).isEqualTo("online");
+        assertThat(user.getPresenceStatus()).isEqualTo("online");
+        verify(userRepository).save(user);
+        verify(eventPublisher).publishPresence(userId, "maria", "online");
+    }
+
+    @Test
+    void meComUsuarioOcupadoMantemStatusOcupado() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("maria");
+        user.setName("Maria Silva");
+        user.setPresenceStatus("busy");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        br.gov.pb.cge.konnix.security.AuthenticatedUser principal =
+                new br.gov.pb.cge.konnix.security.AuthenticatedUser(userId, "maria", "Maria Silva", java.util.Set.of("USER"));
+
+        var response = authService.me(principal);
+
+        assertThat(response).isNotNull();
+        assertThat(response.presenceStatus()).isEqualTo("busy");
+        assertThat(user.getPresenceStatus()).isEqualTo("busy");
+        verify(userRepository, never()).save(user);
+        verify(eventPublisher, never()).publishPresence(any(), any(), any());
+    }
 }
