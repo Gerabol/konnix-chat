@@ -83,13 +83,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         sessionRegistry.register(user.getId(), session);
         userRepository.findById(user.getId()).ifPresent(current -> {
-            boolean wasNotOnline = !"online".equals(current.getPresenceStatus());
-            if (wasNotOnline) {
+            String currentStatus = current.getPresenceStatus();
+            if ("offline".equals(currentStatus)) {
                 current.setPresenceStatus("online");
                 userRepository.save(current);
                 eventPublisher.publishPresence(current.getId(), current.getUsername(), "online");
             } else if (sessionRegistry.sessionsOf(user.getId()).size() == 1) {
-                eventPublisher.publishPresence(current.getId(), current.getUsername(), "online");
+                eventPublisher.publishPresence(current.getId(), current.getUsername(), currentStatus);
             }
         });
         log.debug("WebSocket conectado: usuário {} sessão {}", user.getUsername(), session.getId());
