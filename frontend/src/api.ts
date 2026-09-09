@@ -162,6 +162,26 @@ export type MonitoringMetrics = {
   activity: { day: string; messages: number; activeUsers: number }[]
 }
 
+export type MessageTimeSeriesPeriod = 'DAYS_7' | 'DAYS_30' | 'DAYS_90' | 'MONTHS_12' | 'YEARS'
+
+export type MessageTimeSeriesPoint = {
+  dateKey: string
+  label: string
+  messages: number
+  activeUsers: number
+}
+
+export type MessageTimeSeriesResponse = {
+  granularity: 'day' | 'month' | 'year'
+  period: MessageTimeSeriesPeriod
+  totalMessages: number
+  totalActiveUsers: number
+  averageMessages: number
+  peakMessages: number
+  peakPeriodLabel: string
+  points: MessageTimeSeriesPoint[]
+}
+
 export type AppSettings = { name: string; maxUploadBytes: number }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
 
@@ -440,6 +460,9 @@ export const api = {
   },
   adminMonitoringMetrics(days: number = 7) {
     return request<MonitoringMetrics>(`/api/v1/admin/monitoring/metrics?days=${days}`)
+  },
+  adminMessageTimeSeries(period: MessageTimeSeriesPeriod = 'DAYS_7') {
+    return request<MessageTimeSeriesResponse>(`/api/v1/admin/monitoring/messages-timeseries?period=${period}`)
   },
   adminSettings() {
     return request<AppSettings>('/api/v1/admin/settings')

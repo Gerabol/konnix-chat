@@ -192,6 +192,13 @@ public class AdminController {
         return ApiResponse.ok(monitoringService.metrics(days));
     }
 
+    @GetMapping("/monitoring/messages-timeseries")
+    public ApiResponse<MessageTimeSeriesResponse> messageTimeSeries(
+            @RequestParam(defaultValue = "DAYS_7") String period) {
+        MessageTimeSeriesPeriod selectedPeriod = MessageTimeSeriesPeriod.fromString(period);
+        return ApiResponse.ok(monitoringService.messageTimeSeries(selectedPeriod));
+    }
+
     @GetMapping("/settings")
     public ApiResponse<AppSettingsResponse> settings() { return ApiResponse.ok(settingService.appSettings(defaultMaxUpload, defaultAppName)); }
 

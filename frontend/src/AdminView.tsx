@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from './api'
-import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MonitoringMetrics, Room, RoomMember, User } from './api'
+import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
 import { AvatarImage } from './App'
 import ApiDocsPanel from './ApiDocsPanel'
 import { validatePassword } from './passwordValidation'
@@ -402,29 +402,34 @@ function AuditPanel() {
   </section>
 }
 
-const ACTIVITY_PERIOD_OPTIONS = [
+const DAILY_ACTIVE_DAYS_OPTIONS = [
   { value: 7, label: '7 dias' },
   { value: 15, label: '15 dias' },
   { value: 30, label: '30 dias' },
   { value: 90, label: '90 dias' },
 ]
 
+const MESSAGE_TIME_SERIES_OPTIONS: { value: MessageTimeSeriesPeriod; label: string }[] = [
+  { value: 'DAYS_7', label: '7 dias' },
+  { value: 'DAYS_30', label: '30 dias' },
+  { value: 'DAYS_90', label: '90 dias' },
+  { value: 'MONTHS_12', label: '12 meses' },
+  { value: 'YEARS', label: 'Anual' },
+]
+
 function MonitoringPanel() {
   const [metrics, setMetrics] = useState<MonitoringMetrics | null>(null)
-  const [days, setDays] = useState<number>(7)
+  const [activeUsersDays, setActiveUsersDays] = useState<number>(7)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    setLoading(true)
-    api.adminMonitoringMetrics(days)
+    api.adminMonitoringMetrics(activeUsersDays)
       .then((data) => {
         setMetrics(data)
         setError(null)
       })
       .catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
-      .finally(() => setLoading(false))
-  }, [days])
+  }, [activeUsersDays])
 
   const megabytes = metrics ? (metrics.databaseSizeBytes / (1024 * 1024)).toFixed(1) : '0.0'
   const fileGigabytes = metrics ? (metrics.totalFileBytes / (1024 * 1024 * 1024)).toFixed(2) : '0.00'
@@ -434,10 +439,10 @@ function MonitoringPanel() {
     {error && <div className="admin-error">{error}</div>}
     {!error && !metrics && <div className="admin-loading">Carregando métricas...</div>}
     {metrics && <>
-      <MessagesTimeSeriesChart activity={metrics.activity} days={days} onDaysChange={setDays} loading={loading} />
+      <MessagesTimeSeriesChart />
       <div className="monitoring-charts-grid">
         <UserStatusPieChart active={metrics.activeUsers} readOnly={metrics.readOnlyUsers} disabled={metrics.disabledUsers} />
-        <DailyActiveUsersChart activity={metrics.activity} days={days} />
+        <DailyActiveUsersChart activity={metrics.activity} days={activeUsersDays} onDaysChange={setActiveUsersDays} />
       </div>
       <div className="monitoring-grid">
         <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
@@ -453,64 +458,393 @@ function MonitoringPanel() {
   </section>
 }
 
-function MessagesTimeSeriesChart({ activity, days, onDaysChange, loading }: { activity: MonitoringMetrics['activity']; days: number; onDaysChange: (days: number) => void; loading?: boolean }) {
-  const maximum = Math.max(1, ...activity.map((point) => point.messages))
-  const totalMessagesInPeriod = activity.reduce((sum, p) => sum + p.messages, 0)
+function MessagesTimeSeriesChart() {
+  const [period, setPeriod] = useState<MessageTimeSeriesPeriod>('DAYS_7')
+  const [data, setData] = useState<MessageTimeSeriesResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
 
-  return <article className="activity-card activity-card-main">
-    <div className="activity-card-head">
-      <div>
-        <h2>Volume de Mensagens</h2>
-        <p>Mensagens enviadas por dia nos últimos {days} dias (Total no período: <strong>{totalMessagesInPeriod.toLocaleString('pt-BR')}</strong>).</p>
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    api.adminMessageTimeSeries(period)
+      .then((res) => {
+        if (active) {
+          setData(res)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : 'Falha ao carregar série temporal de mensagens')
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [period])
+
+  const points = data?.points ?? []
+  const maximum = Math.max(1, ...points.map((point) => point.messages))
+  const intervalUnit = data?.granularity === 'month' ? 'mês' : data?.granularity === 'year' ? 'ano' : 'dia'
+  const periodOptionLabel = MESSAGE_TIME_SERIES_OPTIONS.find((opt) => opt.value === period)?.label ?? period
+
+  // SVG coordinate configuration
+  const svgWidth = 800
+  const svgHeight = 220
+  const padLeft = 45
+  const padRight = 25
+  const padTop = 20
+  const padBottom = 35
+  const chartW = svgWidth - padLeft - padRight
+  const chartH = svgHeight - padTop - padBottom
+
+  const coords = useMemo(() => {
+    return points.map((pt, i) => {
+      const x = padLeft + (points.length <= 1 ? chartW / 2 : (i / (points.length - 1)) * chartW)
+      const y = padTop + chartH - (pt.messages / maximum) * chartH
+      return { x, y, pt, i }
+    })
+  }, [points, maximum, chartW, chartH, padLeft, padTop])
+
+  // Smooth non-negative monotone spline path (prevents negative overshoot and keeps zero-days flat)
+  const linePath = useMemo(() => {
+    if (coords.length === 0) return ''
+    if (coords.length === 1) return `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
+
+    const bottomY = padTop + chartH
+    const n = coords.length
+
+    // 1. Calculate secant slopes between adjacent points
+    const deltas: number[] = []
+    for (let i = 0; i < n - 1; i++) {
+      const dx = coords[i + 1].x - coords[i].x
+      const dy = coords[i + 1].y - coords[i].y
+      deltas.push(dx === 0 ? 0 : dy / dx)
+    }
+
+    // 2. Calculate initial tangent slopes (Hermite / Fritsch-Carlson)
+    const slopes: number[] = new Array(n).fill(0)
+    slopes[0] = deltas[0]
+    slopes[n - 1] = deltas[n - 2]
+
+    for (let i = 1; i < n - 1; i++) {
+      const dPrev = deltas[i - 1]
+      const dNext = deltas[i]
+      if (dPrev * dNext <= 0) {
+        // Local extremum (peak or valley) or plateau
+        slopes[i] = 0
+      } else {
+        slopes[i] = (dPrev + dNext) / 2
+      }
+    }
+
+    // Zero-floor constraint: any point at 0 messages must have a flat tangent (slope = 0)
+    for (let i = 0; i < n; i++) {
+      if (coords[i].pt.messages === 0) {
+        slopes[i] = 0
+      }
+    }
+
+    // 3. Fritsch-Carlson monotonicity adjustment to prevent overshoots
+    for (let i = 0; i < n - 1; i++) {
+      const delta = deltas[i]
+      if (delta === 0) {
+        slopes[i] = 0
+        slopes[i + 1] = 0
+      } else {
+        const alpha = slopes[i] / delta
+        const beta = slopes[i + 1] / delta
+        if (alpha < 0) slopes[i] = 0
+        if (beta < 0) slopes[i + 1] = 0
+        const dist = alpha * alpha + beta * beta
+        if (dist > 9) {
+          const tau = 3 / Math.sqrt(dist)
+          slopes[i] = tau * alpha * delta
+          slopes[i + 1] = tau * beta * delta
+        }
+      }
+    }
+
+    // 4. Generate SVG path
+    let d = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
+    for (let i = 0; i < n - 1; i++) {
+      const p1 = coords[i]
+      const p2 = coords[i + 1]
+
+      // If both points have 0 messages, draw a flat straight line directly on the floor
+      if (p1.pt.messages === 0 && p2.pt.messages === 0) {
+        d += ` L ${p2.x.toFixed(1)} ${bottomY.toFixed(1)}`
+        continue
+      }
+
+      const dx = p2.x - p1.x
+      const cp1x = p1.x + dx / 3
+      let cp1y = p1.y + slopes[i] * (dx / 3)
+      const cp2x = p2.x - dx / 3
+      let cp2y = p2.y - slopes[i + 1] * (dx / 3)
+
+      // Strict non-negative clamp: control points can NEVER exceed the bottom baseline (bottomY)
+      // and cannot exceed the top padding
+      cp1y = Math.min(bottomY, Math.max(padTop, cp1y))
+      cp2y = Math.min(bottomY, Math.max(padTop, cp2y))
+
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
+    }
+
+    return d
+  }, [coords, padTop, chartH])
+
+  const areaPath = useMemo(() => {
+    if (coords.length < 2 || !linePath) return ''
+    const firstX = coords[0].x.toFixed(1)
+    const lastX = coords[coords.length - 1].x.toFixed(1)
+    const bottomY = (padTop + chartH).toFixed(1)
+    return `${linePath} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`
+  }, [coords, linePath, padTop, chartH])
+
+  const hoveredPoint = hoveredIndex !== null && coords[hoveredIndex] ? coords[hoveredIndex] : null
+
+  // Y-axis grid ticks (3 ticks: 0, 50%, 100%)
+  const yTicks = [
+    { value: maximum, y: padTop },
+    { value: Math.round(maximum / 2), y: padTop + chartH / 2 },
+    { value: 0, y: padTop + chartH },
+  ]
+
+  const shouldShowLabel = (index: number, total: number) => {
+    if (total <= 12) return true
+    if (total <= 30) return index % 4 === 0 || index === total - 1
+    if (total <= 60) return index % 8 === 0 || index === total - 1
+    return index % 15 === 0 || index === total - 1
+  }
+
+  return (
+    <article className="activity-card activity-card-main">
+      <div className="activity-card-head">
+        <div>
+          <h2>Série Temporal de Mensagens</h2>
+          <p>Evolução do envio de mensagens ao longo do tempo ({periodOptionLabel}).</p>
+        </div>
+        <div className="activity-period-wrap">
+          <select
+            className="activity-period-select"
+            value={period}
+            disabled={loading}
+            onChange={(event) => setPeriod(event.target.value as MessageTimeSeriesPeriod)}
+            aria-label="Intervalo de exibição da série temporal"
+          >
+            {MESSAGE_TIME_SERIES_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="activity-period-wrap">
-        <select
-          className="activity-period-select"
-          value={days}
-          disabled={loading}
-          onChange={(event) => onDaysChange(Number(event.target.value))}
-          aria-label="Intervalo de exibição"
+
+      {data && (
+        <div className="timeseries-summary-grid">
+          <div className="timeseries-stat-chip">
+            <span>Total no período</span>
+            <strong>{data.totalMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Média por {intervalUnit}</span>
+            <strong>{data.averageMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Pico ({data.peakPeriodLabel || '—'})</span>
+            <strong>{data.peakMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Intervalos avaliados</span>
+            <strong>{data.points.length.toLocaleString('pt-BR')}</strong>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="admin-error">{error}</div>}
+
+      <div className={`timeseries-svg-container ${loading ? 'activity-chart-loading' : ''}`}>
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="timeseries-svg"
+          onMouseLeave={() => setHoveredIndex(null)}
         >
-          {ACTIVITY_PERIOD_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          <defs>
+            <linearGradient id="timeseries-area-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--konnix-primary)" stopOpacity="0.4" />
+              <stop offset="85%" stopColor="var(--konnix-primary)" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="var(--konnix-primary)" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines & Y-axis labels */}
+          {yTicks.map((tick) => (
+            <g key={tick.y}>
+              <line
+                x1={padLeft}
+                y1={tick.y}
+                x2={padLeft + chartW}
+                y2={tick.y}
+                stroke="var(--konnix-border)"
+                strokeDasharray={tick.value === 0 ? 'none' : '3 3'}
+                strokeWidth="1"
+                opacity="0.65"
+              />
+              <text
+                x={padLeft - 8}
+                y={tick.y + 4}
+                textAnchor="end"
+                className="timeseries-axis-label"
+              >
+                {tick.value.toLocaleString('pt-BR')}
+              </text>
+            </g>
           ))}
-        </select>
+
+          {/* Area fill */}
+          {areaPath && (
+            <path
+              d={areaPath}
+              fill="url(#timeseries-area-gradient)"
+              className="timeseries-area"
+            />
+          )}
+
+          {/* Spline line */}
+          {linePath && (
+            <path
+              d={linePath}
+              fill="none"
+              stroke="var(--konnix-primary)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="timeseries-line"
+            />
+          )}
+
+          {/* Dots */}
+          {coords.map(({ x, y, pt, i }) => {
+            const isHovered = hoveredIndex === i
+            const baseR = coords.length <= 15 ? 4.5 : coords.length <= 35 ? 3.5 : 2.5
+            return (
+              <g key={pt.dateKey}>
+                {isHovered && (
+                  <circle cx={x} cy={y} r={baseR + 5} fill="var(--konnix-primary)" opacity="0.25" />
+                )}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={isHovered ? baseR + 2 : baseR}
+                  fill="var(--konnix-surface)"
+                  stroke="var(--konnix-primary)"
+                  strokeWidth={isHovered ? 2.5 : 2}
+                  className="timeseries-dot"
+                />
+              </g>
+            )
+          })}
+
+          {/* X-axis labels */}
+          {coords.map(({ x, pt, i }) => {
+            if (!shouldShowLabel(i, coords.length)) return null
+            return (
+              <text
+                key={pt.dateKey}
+                x={x}
+                y={padTop + chartH + 18}
+                textAnchor="middle"
+                className="timeseries-axis-label"
+              >
+                {pt.label}
+              </text>
+            )
+          })}
+
+          {/* Vertical cursor guide & tooltip */}
+          {hoveredPoint && (
+            <>
+              <line
+                x1={hoveredPoint.x}
+                y1={padTop}
+                x2={hoveredPoint.x}
+                y2={padTop + chartH}
+                stroke="var(--konnix-primary)"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                opacity="0.7"
+              />
+              <g
+                transform={`translate(${Math.min(Math.max(hoveredPoint.x, padLeft + 52), padLeft + chartW - 52)}, ${Math.max(hoveredPoint.y - 42, padTop + 6)})`}
+                pointerEvents="none"
+              >
+                <rect
+                  x="-52"
+                  y="0"
+                  width="104"
+                  height="34"
+                  rx="6"
+                  className="timeseries-tooltip-box"
+                />
+                <text
+                  x="0"
+                  y="13"
+                  textAnchor="middle"
+                  className="timeseries-tooltip-title"
+                >
+                  {hoveredPoint.pt.label}
+                </text>
+                <text
+                  x="0"
+                  y="26"
+                  textAnchor="middle"
+                  className="timeseries-tooltip-val"
+                >
+                  {hoveredPoint.pt.messages.toLocaleString('pt-BR')} msgs
+                </text>
+              </g>
+            </>
+          )}
+
+          {/* Invisible hover hitbox slices across the chart */}
+          {coords.map(({ pt, i }) => {
+            const sliceW = chartW / Math.max(1, coords.length)
+            const sliceX = padLeft + i * sliceW
+            return (
+              <rect
+                key={pt.dateKey}
+                x={sliceX}
+                y={padTop}
+                width={sliceW}
+                height={chartH}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHoveredIndex(i)}
+              />
+            )
+          })}
+        </svg>
+
+        {points.length === 0 && !loading && (
+          <div className="admin-empty" style={{ padding: '2rem 0', textAlign: 'center' }}>
+            Nenhum dado registrado para o período.
+          </div>
+        )}
       </div>
-    </div>
-    <div className="activity-chart-wrap">
-      <div className="activity-chart" aria-label={`Mensagens enviadas por dia nos últimos ${days} dias`}>
-        {activity.map((point, index) => {
-          const dateObj = new Date(`${point.day}T12:00:00`)
-          const label = days <= 15
-            ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
-            : (index % (days > 30 ? 5 : 2) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
-          const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-          const showValue = days <= 30
-          return (
-            <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.messages} mensagens`}>
-              <div className="activity-bars">
-                <div className="activity-bar-wrap">
-                  {showValue && point.messages > 0 && (
-                    <span className="activity-bar-value">{point.messages.toLocaleString('pt-BR')}</span>
-                  )}
-                  <i className="activity-messages-bar" style={{ height: `${Math.max(point.messages ? 8 : 2, (point.messages / maximum) * 100)}%` }} />
-                </div>
-              </div>
-              <small>{label}</small>
-            </div>
-          )
-        })}
+
+      <div className="activity-legend">
+        <span><i />Mensagens enviadas</span>
       </div>
-    </div>
-    <div className="activity-legend">
-      <span><i />Mensagens por dia</span>
-    </div>
-  </article>
+    </article>
+  )
 }
 
 function UserStatusPieChart({ active, readOnly, disabled }: { active: number; readOnly: number; disabled: number }) {
   const total = active + readOnly + disabled
-  const r = 38
+  const r = 34
   const c = 2 * Math.PI * r
 
   const items = [
@@ -536,25 +870,25 @@ function UserStatusPieChart({ active, readOnly, disabled }: { active: number; re
     </div>
     <div className="pie-chart-body">
       <div className="pie-chart-svg-wrap">
-        <svg viewBox="0 0 100 100" className="pie-chart-svg">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="var(--konnix-border)" strokeWidth="12" />
+        <svg viewBox="0 0 90 90" className="pie-chart-svg">
+          <circle cx="45" cy="45" r={r} fill="none" stroke="var(--konnix-border)" strokeWidth="10" />
           {total > 0 && slices.map((slice) => (
             <circle
               key={slice.label}
-              cx="50"
-              cy="50"
+              cx="45"
+              cy="45"
               r={r}
               fill="none"
               stroke={slice.color}
-              strokeWidth="14"
+              strokeWidth="12"
               strokeDasharray={`${slice.strokeLength} ${c - slice.strokeLength}`}
               strokeDashoffset={slice.offset}
-              transform="rotate(-90 50 50)"
+              transform="rotate(-90 45 45)"
               className="pie-segment"
             />
           ))}
-          <text x="50" y="47" textAnchor="middle" className="pie-center-total">{total}</text>
-          <text x="50" y="61" textAnchor="middle" className="pie-center-label">Usuários</text>
+          <text x="45" y="42" textAnchor="middle" className="pie-center-total">{total}</text>
+          <text x="45" y="55" textAnchor="middle" className="pie-center-label">Usuários</text>
         </svg>
       </div>
       <div className="pie-chart-legend">
@@ -575,7 +909,7 @@ function UserStatusPieChart({ active, readOnly, disabled }: { active: number; re
   </article>
 }
 
-function DailyActiveUsersChart({ activity, days }: { activity: MonitoringMetrics['activity']; days: number }) {
+function DailyActiveUsersChart({ activity, days, onDaysChange }: { activity: MonitoringMetrics['activity']; days: number; onDaysChange?: (days: number) => void }) {
   const maxActive = Math.max(1, ...activity.map((point) => point.activeUsers))
 
   return <article className="activity-card">
@@ -584,16 +918,33 @@ function DailyActiveUsersChart({ activity, days }: { activity: MonitoringMetrics
         <h2>Usuários Ativos por Dia</h2>
         <p>Frequência diária nos últimos {days} dias.</p>
       </div>
+      {onDaysChange && (
+        <div className="activity-period-wrap">
+          <select
+            className="activity-period-select"
+            value={days}
+            onChange={(event) => onDaysChange(Number(event.target.value))}
+            aria-label="Intervalo de usuários ativos"
+          >
+            {DAILY_ACTIVE_DAYS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
     <div className="activity-chart-wrap">
-      <div className="activity-chart" aria-label={`Usuários ativos por dia nos últimos ${days} dias`}>
+      <div
+        className={`activity-chart ${days > 30 ? 'activity-chart-compact' : ''}`}
+        aria-label={`Usuários ativos por dia nos últimos ${days} dias`}
+      >
         {activity.map((point, index) => {
           const dateObj = new Date(`${point.day}T12:00:00`)
           const label = days <= 15
             ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
-            : (index % (days > 30 ? 5 : 2) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
+            : (index % (days > 30 ? 15 : 4) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
           const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-          const showValue = days <= 30
+          const showValue = days <= 15
           return (
             <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.activeUsers} usuários ativos`}>
               <div className="activity-bars">
