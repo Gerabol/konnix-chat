@@ -4895,7 +4895,8 @@ img.room-header-avatar {
 /* ---- Administracao ---- */
 .admin-shell {
   zoom: 0.9;
-  min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
   background: var(--konnix-bg);
   color: var(--konnix-ink);
 }
@@ -4951,9 +4952,8 @@ img.room-header-avatar {
 .admin-body {
   display: flex;
   width: min(1280px, 100%);
-  height: calc(100vh / 0.9 - 60px);
+  min-height: calc(100vh / 0.9 - 60px);
   margin: 0 auto;
-  overflow: hidden;
 }
 
 .admin-tabs {
@@ -4990,7 +4990,6 @@ img.room-header-avatar {
   min-width: 0;
   border-left: 1px solid var(--konnix-border);
   padding: clamp(0.9rem, 2vw, 1.5rem);
-  overflow-y: auto;
 }
 
 .admin-panel-title {
