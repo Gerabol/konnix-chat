@@ -2782,7 +2782,7 @@ function NewRoomModal({
       }
       onCreated(room.id)
     } catch (err) {
-       showToast(err instanceof ApiError ? err.message : 'Falha ao criar sala')
+      showToast(err instanceof ApiError ? err.message : 'Falha ao criar sala')
     } finally {
       setBusy(false)
     }
@@ -3454,6 +3454,8 @@ function RemoveMembersModal({
   )
 }
 
+const SEARCH_DEBOUNCE_MS = 400
+
 function RoomView({
   room,
   rooms,
@@ -3589,6 +3591,11 @@ function RoomView({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Message[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchedQuery, setSearchedQuery] = useState<string | null>(null)
+  const searchTimeoutRef = useRef<number | null>(null)
+  const searchRequestIdRef = useRef(0)
+  const isSearchLoadingRef = useRef(false)
+  const inFlightSearchQueryRef = useRef<string | null>(null)
   const [filesOpen, setFilesOpen] = useState(false)
   const [roomFiles, setRoomFiles] = useState<RoomFile[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
@@ -3828,6 +3835,14 @@ function RoomView({
     setSearchOpen(false)
     setSearchQuery('')
     setSearchResults([])
+    setSearchedQuery(null)
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+      searchTimeoutRef.current = null
+    }
+    searchRequestIdRef.current++
+    isSearchLoadingRef.current = false
+    inFlightSearchQueryRef.current = null
     setFilesOpen(false)
     setRoomFiles([])
     setFilesError(null)
@@ -3872,24 +3887,97 @@ function RoomView({
     window.setTimeout(() => setHighlightedMessageId(null), 2200)
   }
 
-  const searchConversation = async () => {
-    const query = searchQuery.trim()
-    if (!query || searchLoading) return
+  const executeSearch = useCallback(async (rawQuery: string) => {
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+      searchTimeoutRef.current = null
+    }
+    const query = rawQuery.trim()
+    if (!query) {
+      setSearchResults([])
+      setSearchedQuery(null)
+      isSearchLoadingRef.current = false
+      setSearchLoading(false)
+      inFlightSearchQueryRef.current = null
+      return
+    }
+    if (isSearchLoadingRef.current && inFlightSearchQueryRef.current === query) {
+      return
+    }
+    const requestId = ++searchRequestIdRef.current
+    inFlightSearchQueryRef.current = query
+    isSearchLoadingRef.current = true
     setSearchLoading(true)
     try {
-      setSearchResults(await api.searchMessages(room.id, query))
+      const results = await api.searchMessages(room.id, query)
+      if (searchRequestIdRef.current === requestId) {
+        setSearchResults(results)
+        setSearchedQuery(query)
+      }
     } catch {
-      notify('Não foi possível pesquisar nesta conversa')
-      setSearchResults([])
+      if (searchRequestIdRef.current === requestId) {
+        notify('Não foi possível pesquisar nesta conversa')
+        setSearchResults([])
+        setSearchedQuery(query)
+      }
     } finally {
-      setSearchLoading(false)
+      if (searchRequestIdRef.current === requestId) {
+        inFlightSearchQueryRef.current = null
+        isSearchLoadingRef.current = false
+        setSearchLoading(false)
+      }
     }
-  }
+  }, [room.id, notify])
+
+  useEffect(() => {
+    if (!searchOpen) {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+      return
+    }
+
+    const query = searchQuery.trim()
+    if (!query) {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+      setSearchResults([])
+      setSearchedQuery(null)
+      isSearchLoadingRef.current = false
+      setSearchLoading(false)
+      inFlightSearchQueryRef.current = null
+      return
+    }
+
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+    }
+
+    searchTimeoutRef.current = window.setTimeout(() => {
+      searchTimeoutRef.current = null
+      void executeSearch(query)
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+    }
+  }, [searchQuery, searchOpen, executeSearch])
+
+  const searchConversation = useCallback(() => {
+    void executeSearch(searchQuery)
+  }, [executeSearch, searchQuery])
 
   const openSearchResult = (result: Message) => {
     onSearchResult(result)
     setSearchOpen(false)
     setSearchResults([])
+    setSearchedQuery(null)
     requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessage(result.id)))
   }
 
@@ -4168,7 +4256,7 @@ function RoomView({
         {searchOpen ? (
           /* ── Mobile Search Mode: full-bar search ── */
           <div className="room-header-search-bar">
-            <button type="button" className="icon-btn room-search-back" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">
+            <button type="button" className="icon-btn room-search-back" onClick={() => { setSearchOpen(false); setSearchResults([]); setSearchedQuery(null) }} aria-label="Fechar pesquisa">
               <IconArrowLeft size={20} />
             </button>
             <div className="room-search-input-wrap">
@@ -4182,15 +4270,15 @@ function RoomView({
                 autoFocus
                 onChange={(event) => setSearchQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
-                  if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
+                  if (event.key === 'Enter') { event.preventDefault(); searchConversation() }
+                  if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]); setSearchedQuery(null) }
                 }}
               />
               {searchQuery.trim().length > 0 && (
-                <button type="button" className="search-clear room-search-clear" onClick={() => { setSearchQuery(''); searchInputRef.current?.focus() }} aria-label="Limpar busca">×</button>
+                <button type="button" className="search-clear room-search-clear" onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchedQuery(null); searchInputRef.current?.focus() }} aria-label="Limpar busca">×</button>
               )}
             </div>
-            <button type="button" className="icon-btn room-search-submit" onClick={() => void searchConversation()} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
+            <button type="button" className="icon-btn room-search-submit" onClick={searchConversation} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
             {searchResults.length > 0 && <div className="room-search-results">
               {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
                 <strong>{result.username}</strong>
@@ -4198,7 +4286,7 @@ function RoomView({
                 <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
               </button>)}
             </div>}
-            {searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
+            {searchQuery.trim() && !searchLoading && searchedQuery === searchQuery.trim() && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
           </div>
         ) : (
           /* ── Normal Mode: ← | Title (center) | 🔍 | + ── */
