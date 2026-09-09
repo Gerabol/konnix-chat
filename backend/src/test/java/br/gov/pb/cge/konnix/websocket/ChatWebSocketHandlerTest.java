@@ -96,6 +96,28 @@ class ChatWebSocketHandlerTest {
     }
 
     @Test
+    void conectarComStatusOcupadoPreservaOStatusEPublica() throws Exception {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("ocupado");
+        user.setPresenceStatus("busy");
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("authenticatedUser", user);
+        when(session.getAttributes()).thenReturn(attributes);
+        when(session.getId()).thenReturn("session-1");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        handler.afterConnectionEstablished(session);
+
+        assertThat(user.getPresenceStatus()).isEqualTo("busy");
+        verify(userRepository, never()).save(user);
+        verify(eventPublisher).publishPresence(userId, "ocupado", "busy");
+        assertThat(sessionRegistry.sessionsOf(userId)).contains(session);
+    }
+
+    @Test
     void conectarSegundaSessaoDeUsuarioJaOnlineNaoDuplicaPublicacao() throws Exception {
         UUID userId = UUID.randomUUID();
         User user = new User();
