@@ -1,5 +1,6 @@
 package br.gov.pb.cge.konnix;
 
+import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +50,9 @@ class AuthSecurityIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private UserRepository userRepository;
+
     private String adminToken;
 
     @BeforeEach
@@ -66,7 +70,29 @@ class AuthSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.token").isNotEmpty())
                 .andExpect(jsonPath("$.data.user.username").value("admin"))
                 .andExpect(jsonPath("$.data.user.passwordHash").doesNotExist())
-                .andExpect(jsonPath("$.data.user.roles", org.hamcrest.Matchers.hasItem("ADMIN")));
+                .andExpect(jsonPath("$.data.user.roles", org.hamcrest.Matchers.hasItem("ADMIN")))
+                .andExpect(jsonPath("$.data.user.presenceStatus").value("online"));
+    }
+
+    @Test
+    void loginAtualizaStatusPresencaParaOnline() throws Exception {
+        createUser("usuario-status", "Usuário Status", "status@test.local", "senha-status-123");
+        completarPrimeiroAcesso("usuario-status", "senha-status-123", "senha-status-nova");
+
+        // Simula usuário offline no banco antes do login
+        userRepository.findByUsername("usuario-status").ifPresent(u -> {
+            u.setPresenceStatus("offline");
+            userRepository.save(u);
+        });
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"usuario-status\",\"password\":\"senha-status-nova\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.presenceStatus").value("online"));
+
+        assertThat(userRepository.findByUsername("usuario-status").orElseThrow().getPresenceStatus())
+                .isEqualTo("online");
     }
 
     @Test
