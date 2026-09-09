@@ -13,6 +13,7 @@ import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
 import br.gov.pb.cge.konnix.security.LoginAttemptService;
 import br.gov.pb.cge.konnix.security.TokenService;
+import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,19 +27,22 @@ public class AuthService {
     private final AuditService auditService;
     private final LoginAttemptService loginAttemptService;
     private final UserService userService;
+    private final ChatEventPublisher eventPublisher;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
                        AuditService auditService,
                        LoginAttemptService loginAttemptService,
-                       UserService userService) {
+                       UserService userService,
+                       ChatEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.auditService = auditService;
         this.loginAttemptService = loginAttemptService;
         this.userService = userService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -72,6 +76,7 @@ public class AuthService {
         loginAttemptService.clear(username);
         user.setPresenceStatus("online");
         userRepository.save(user);
+        eventPublisher.publishPresence(user.getId(), user.getUsername(), "online");
         TokenService.IssuedToken issued = tokenService.issue(user);
         auditService.record("LOGIN_SUCCESS", user, "auth", user.getUsername(), ipAddress);
         return new LoginResponse(issued.rawToken(), UserResponse.from(user));

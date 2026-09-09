@@ -50,9 +50,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
         sessionRegistry.register(user.getId(), session);
         userRepository.findById(user.getId()).ifPresent(current -> {
-            if (!"online".equals(current.getPresenceStatus())) {
+            boolean wasNotOnline = !"online".equals(current.getPresenceStatus());
+            if (wasNotOnline) {
                 current.setPresenceStatus("online");
                 userRepository.save(current);
+                eventPublisher.publishPresence(current.getId(), current.getUsername(), "online");
+            } else if (sessionRegistry.sessionsOf(user.getId()).size() == 1) {
                 eventPublisher.publishPresence(current.getId(), current.getUsername(), "online");
             }
         });
