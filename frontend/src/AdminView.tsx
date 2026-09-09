@@ -402,42 +402,217 @@ function AuditPanel() {
   </section>
 }
 
+const ACTIVITY_PERIOD_OPTIONS = [
+  { value: 7, label: '7 dias' },
+  { value: 15, label: '15 dias' },
+  { value: 30, label: '30 dias' },
+  { value: 90, label: '90 dias' },
+]
+
 function MonitoringPanel() {
   const [metrics, setMetrics] = useState<MonitoringMetrics | null>(null)
+  const [days, setDays] = useState<number>(7)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
   useEffect(() => {
-    api.adminMonitoringMetrics().then(setMetrics).catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
-  }, [])
+    setLoading(true)
+    api.adminMonitoringMetrics(days)
+      .then((data) => {
+        setMetrics(data)
+        setError(null)
+      })
+      .catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
+      .finally(() => setLoading(false))
+  }, [days])
+
   const megabytes = metrics ? (metrics.databaseSizeBytes / (1024 * 1024)).toFixed(1) : '0.0'
   const fileGigabytes = metrics ? (metrics.totalFileBytes / (1024 * 1024 * 1024)).toFixed(2) : '0.00'
+
   return <section className="admin-panel">
     <div className="admin-panel-title"><div><h1>Visão geral</h1><p>Indicadores operacionais do Konnix Chat.</p></div></div>
     {error && <div className="admin-error">{error}</div>}
     {!error && !metrics && <div className="admin-loading">Carregando métricas...</div>}
     {metrics && <>
-      <ActivityChart activity={metrics.activity} />
+      <MessagesTimeSeriesChart activity={metrics.activity} days={days} onDaysChange={setDays} loading={loading} />
+      <div className="monitoring-charts-grid">
+        <UserStatusPieChart active={metrics.activeUsers} readOnly={metrics.readOnlyUsers} disabled={metrics.disabledUsers} />
+        <DailyActiveUsersChart activity={metrics.activity} days={days} />
+      </div>
       <div className="monitoring-grid">
-      <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
-      <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
-      <MetricCard label="Mensagens" value={metrics.totalMessages.toLocaleString('pt-BR')} detail="Mensagens registradas" />
-      <MetricCard label="Usuários" value={metrics.totalUsers.toLocaleString('pt-BR')} detail={`${metrics.activeUsers} ativos · ${metrics.readOnlyUsers} leitura · ${metrics.disabledUsers} desativados`} />
-      <MetricCard label="Grupos" value={metrics.totalGroups.toLocaleString('pt-BR')} detail={`${metrics.totalChannels} canais`} />
-      <MetricCard label="Logins hoje" value={metrics.dailyLogins.toLocaleString('pt-BR')} detail="Entradas bem-sucedidas desde meia-noite" />
-      <MetricCard label="Sessões ativas" value={metrics.activeSessions.toLocaleString('pt-BR')} detail="Sessões válidas no momento" />
-      <MetricCard label="Eventos auditados" value={metrics.totalAuditEvents.toLocaleString('pt-BR')} detail="Registros de auditoria" />
+        <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
+        <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
+        <MetricCard label="Mensagens" value={metrics.totalMessages.toLocaleString('pt-BR')} detail="Mensagens registradas" />
+        <MetricCard label="Usuários" value={metrics.totalUsers.toLocaleString('pt-BR')} detail={`${metrics.activeUsers} ativos · ${metrics.readOnlyUsers} leitura · ${metrics.disabledUsers} desativados`} />
+        <MetricCard label="Grupos" value={metrics.totalGroups.toLocaleString('pt-BR')} detail={`${metrics.totalChannels} canais`} />
+        <MetricCard label="Logins hoje" value={metrics.dailyLogins.toLocaleString('pt-BR')} detail="Entradas bem-sucedidas desde meia-noite" />
+        <MetricCard label="Sessões ativas" value={metrics.activeSessions.toLocaleString('pt-BR')} detail="Sessões válidas no momento" />
+        <MetricCard label="Eventos auditados" value={metrics.totalAuditEvents.toLocaleString('pt-BR')} detail="Registros de auditoria" />
       </div>
     </>}
   </section>
 }
 
-function ActivityChart({ activity }: { activity: MonitoringMetrics['activity'] }) {
+function MessagesTimeSeriesChart({ activity, days, onDaysChange, loading }: { activity: MonitoringMetrics['activity']; days: number; onDaysChange: (days: number) => void; loading?: boolean }) {
   const maximum = Math.max(1, ...activity.map((point) => point.messages))
-  return <article className="activity-card">
-    <div className="activity-card-head"><div><h2>Atividade</h2><p>Mensagens nos últimos sete dias.</p></div><span className="activity-period">7 dias ▾</span></div>
-    <div className="activity-chart" aria-label="Mensagens e usuários ativos nos últimos sete dias">
-      {activity.map((point) => <div className="activity-column" key={point.day} title={`${point.messages} mensagens, ${point.activeUsers} usuários ativos`}><div className="activity-bars"><i style={{ height: `${Math.max(point.messages ? 8 : 2, point.messages / maximum * 100)}%` }} /><i className="activity-users-bar" style={{ height: `${Math.max(point.activeUsers ? 8 : 2, point.activeUsers / Math.max(1, ...activity.map((item) => item.activeUsers)) * 100)}%` }} /></div><small>{new Date(`${point.day}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</small></div>)}
+  const totalMessagesInPeriod = activity.reduce((sum, p) => sum + p.messages, 0)
+
+  return <article className="activity-card activity-card-main">
+    <div className="activity-card-head">
+      <div>
+        <h2>Volume de Mensagens</h2>
+        <p>Mensagens enviadas por dia nos últimos {days} dias (Total no período: <strong>{totalMessagesInPeriod.toLocaleString('pt-BR')}</strong>).</p>
+      </div>
+      <div className="activity-period-wrap">
+        <select
+          className="activity-period-select"
+          value={days}
+          disabled={loading}
+          onChange={(event) => onDaysChange(Number(event.target.value))}
+          aria-label="Intervalo de exibição"
+        >
+          {ACTIVITY_PERIOD_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
     </div>
-    <div className="activity-legend"><span><i />Mensagens</span><span><i className="activity-users-dot" />Usuários ativos</span></div>
+    <div className="activity-chart-wrap">
+      <div className="activity-chart" aria-label={`Mensagens enviadas por dia nos últimos ${days} dias`}>
+        {activity.map((point, index) => {
+          const dateObj = new Date(`${point.day}T12:00:00`)
+          const label = days <= 15
+            ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+            : (index % (days > 30 ? 5 : 2) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
+          const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          const showValue = days <= 30
+          return (
+            <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.messages} mensagens`}>
+              <div className="activity-bars">
+                <div className="activity-bar-wrap">
+                  {showValue && point.messages > 0 && (
+                    <span className="activity-bar-value">{point.messages.toLocaleString('pt-BR')}</span>
+                  )}
+                  <i className="activity-messages-bar" style={{ height: `${Math.max(point.messages ? 8 : 2, (point.messages / maximum) * 100)}%` }} />
+                </div>
+              </div>
+              <small>{label}</small>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+    <div className="activity-legend">
+      <span><i />Mensagens por dia</span>
+    </div>
+  </article>
+}
+
+function UserStatusPieChart({ active, readOnly, disabled }: { active: number; readOnly: number; disabled: number }) {
+  const total = active + readOnly + disabled
+  const r = 38
+  const c = 2 * Math.PI * r
+
+  const items = [
+    { label: 'Ativos', count: active, color: 'var(--konnix-ok, #30a46c)' },
+    { label: 'Leitura', count: readOnly, color: 'var(--konnix-accent, #22c7d6)' },
+    { label: 'Desativados', count: disabled, color: 'var(--konnix-danger, #e5484d)' },
+  ].filter((item) => item.count > 0)
+
+  let accumulated = 0
+  const slices = items.map((item) => {
+    const strokeLength = total > 0 ? (item.count / total) * c : 0
+    const offset = -accumulated
+    accumulated += strokeLength
+    return { ...item, strokeLength, offset }
+  })
+
+  return <article className="activity-card pie-chart-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Perfis de Usuário</h2>
+        <p>Distribuição de contas por status ({total.toLocaleString('pt-BR')} usuários).</p>
+      </div>
+    </div>
+    <div className="pie-chart-body">
+      <div className="pie-chart-svg-wrap">
+        <svg viewBox="0 0 100 100" className="pie-chart-svg">
+          <circle cx="50" cy="50" r={r} fill="none" stroke="var(--konnix-border)" strokeWidth="12" />
+          {total > 0 && slices.map((slice) => (
+            <circle
+              key={slice.label}
+              cx="50"
+              cy="50"
+              r={r}
+              fill="none"
+              stroke={slice.color}
+              strokeWidth="14"
+              strokeDasharray={`${slice.strokeLength} ${c - slice.strokeLength}`}
+              strokeDashoffset={slice.offset}
+              transform="rotate(-90 50 50)"
+              className="pie-segment"
+            />
+          ))}
+          <text x="50" y="47" textAnchor="middle" className="pie-center-total">{total}</text>
+          <text x="50" y="61" textAnchor="middle" className="pie-center-label">Usuários</text>
+        </svg>
+      </div>
+      <div className="pie-chart-legend">
+        {items.map((item) => {
+          const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
+          return (
+            <div key={item.label} className="pie-legend-item">
+              <span className="pie-legend-dot" style={{ backgroundColor: item.color }} />
+              <div className="pie-legend-info">
+                <strong>{item.label}</strong>
+                <small>{item.count.toLocaleString('pt-BR')} <em>({percent}%)</em></small>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  </article>
+}
+
+function DailyActiveUsersChart({ activity, days }: { activity: MonitoringMetrics['activity']; days: number }) {
+  const maxActive = Math.max(1, ...activity.map((point) => point.activeUsers))
+
+  return <article className="activity-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Usuários Ativos por Dia</h2>
+        <p>Frequência diária nos últimos {days} dias.</p>
+      </div>
+    </div>
+    <div className="activity-chart-wrap">
+      <div className="activity-chart" aria-label={`Usuários ativos por dia nos últimos ${days} dias`}>
+        {activity.map((point, index) => {
+          const dateObj = new Date(`${point.day}T12:00:00`)
+          const label = days <= 15
+            ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+            : (index % (days > 30 ? 5 : 2) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
+          const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          const showValue = days <= 30
+          return (
+            <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.activeUsers} usuários ativos`}>
+              <div className="activity-bars">
+                <div className="activity-bar-wrap">
+                  {showValue && point.activeUsers > 0 && (
+                    <span className="activity-bar-value">{point.activeUsers}</span>
+                  )}
+                  <i className="activity-users-bar" style={{ height: `${Math.max(point.activeUsers ? 8 : 2, (point.activeUsers / maxActive) * 100)}%` }} />
+                </div>
+              </div>
+              <small>{label}</small>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+    <div className="activity-legend">
+      <span><i className="activity-users-dot" />Usuários ativos por dia</span>
+    </div>
   </article>
 }
 

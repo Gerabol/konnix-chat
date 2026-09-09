@@ -438,8 +438,8 @@ export const api = {
   adminAuditOptions() {
     return request<AuditOptions>('/api/v1/admin/audit/options')
   },
-  adminMonitoringMetrics() {
-    return request<MonitoringMetrics>('/api/v1/admin/monitoring/metrics')
+  adminMonitoringMetrics(days: number = 7) {
+    return request<MonitoringMetrics>(`/api/v1/admin/monitoring/metrics?days=${days}`)
   },
   adminSettings() {
     return request<AppSettings>('/api/v1/admin/settings')
