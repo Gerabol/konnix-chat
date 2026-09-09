@@ -41,28 +41,28 @@ const ROOM_ICON: Record<string, string> = {
   PRIVATE_GROUP: '🔒',
   PUBLIC_GROUP: '🔒',
   DIRECT: '@',
-}
+};
 
 function getRoomIcon(room: Room): string {
-  if (room.name === 'bug-reports') return '🐛'
-  return ROOM_ICON[room.type] ?? '#'
+  if (room.name === 'bug-reports') return '🐛';
+  return ROOM_ICON[room.type] ?? '';
 }
 
-const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
+export const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
   { id: 'DEFAULT', label: 'Padrão', colors: ['#f7f8fc', '#ffffff', '#5b4cf0', '#22c7d6'] },
-  { id: 'DARK', label: 'Dark clássico', colors: ['#121212', '#18181B', '#7C5CFF', '#23232A'] },
-  { id: 'BLACK_GRAY', label: 'Cinza e preto', colors: ['#0F1115', '#161A20', '#4F7CFF', '#1E232B'] },
   { id: 'PINK', label: 'Rosa', colors: ['#FFF8FB', '#FDEEF5', '#E84D8A', '#FFFFFF'] },
   { id: 'GREEN', label: 'Verde', colors: ['#F5FBF7', '#EAF6EE', '#1FA463', '#FFFFFF'] },
   { id: 'RED', label: 'Vermelho', colors: ['#FFF7F7', '#FDECEC', '#D94141', '#FFFFFF'] },
-  { id: 'GREEN_BLACK', label: 'Verde Black', colors: ['#0F1411', '#19221D', '#25BD70', '#A6C3B1'] },
-  { id: 'PINK_BLACK', label: 'Rosa Black', colors: ['#140F13', '#241923', '#F05A9D', '#DDB5C9'] },
-  { id: 'RED_BLACK', label: 'Vermelho Black', colors: ['#150E0E', '#251818', '#F05B5B', '#E0B1B1'] },
   { id: 'DEFAULT_STRONG', label: 'Padrão Forte', colors: ['#F7F8FC', '#5B4CF0', '#7C70F5', '#FFFFFF'] },
-  { id: 'GREEN_STRONG', label: 'Verde Forte', colors: ['#F5FBF7', '#188A53', '#27B56E', '#FFFFFF'] },
   { id: 'PINK_STRONG', label: 'Rosa Forte', colors: ['#FFF8FB', '#D93E7C', '#F0629B', '#FFFFFF'] },
+  { id: 'GREEN_STRONG', label: 'Verde Forte', colors: ['#F5FBF7', '#188A53', '#27B56E', '#FFFFFF'] },
   { id: 'RED_STRONG', label: 'Vermelho Forte', colors: ['#FFF7F7', '#C83232', '#E15353', '#FFFFFF'] },
-]
+  { id: 'DARK', label: 'Dark clássico', colors: ['#121212', '#18181B', '#7C5CFF', '#23232A'] },
+  { id: 'BLACK_GRAY', label: 'Cinza e preto', colors: ['#0F1115', '#161A20', '#4F7CFF', '#1E232B'] },
+  { id: 'PINK_BLACK', label: 'Rosa Black', colors: ['#140F13', '#241923', '#F05A9D', '#DDB5C9'] },
+  { id: 'GREEN_BLACK', label: 'Verde Black', colors: ['#0F1411', '#19221D', '#25BD70', '#A6C3B1'] },
+  { id: 'RED_BLACK', label: 'Vermelho Black', colors: ['#150E0E', '#251818', '#F05B5B', '#E0B1B1'] },
+];
 const THEME_CACHE_KEY = 'konnix-theme-cache'
 const THEME_COOKIE_KEY = 'konnix_theme'
 
@@ -97,7 +97,7 @@ export function applyCookieThemeEarly() {
   if (theme) applyTheme(theme)
 }
 
-function applyTheme(theme: string | null | undefined) {
+export function applyTheme(theme: string | null | undefined) {
   const normalized = normalizeTheme(theme)
   const attribute = normalized === 'DEFAULT' ? '' : normalized.toLowerCase().replace('_', '-')
   if (attribute) document.documentElement.dataset.theme = attribute
@@ -112,7 +112,7 @@ function cachedTheme(): Theme {
   }
 }
 
-function cacheTheme(theme: string | null | undefined) {
+export function cacheTheme(theme: string | null | undefined) {
   const normalized = normalizeTheme(theme)
   try {
     localStorage.setItem(THEME_CACHE_KEY, normalized)
@@ -120,6 +120,7 @@ function cacheTheme(theme: string | null | undefined) {
     /* cache opcional */
   }
   writeThemeCookie(normalized)
+  window.dispatchEvent(new CustomEvent('konnix:theme-changed', { detail: normalized }))
 }
 
 function clearCachedTheme() {
@@ -674,7 +675,7 @@ function IconPencil({ size = 18 }: { size?: number }) {
   )
 }
 
-function PaletteIcon() {
+export function PaletteIcon() {
   return <svg className="palette-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h2.5a6.5 6.5 0 1 0-2.5-10Z" />
     <circle cx="7.5" cy="10" r=".75" fill="currentColor" />
@@ -1052,6 +1053,17 @@ export default function App() {
   useEffect(() => {
     applyTheme(session?.user?.theme ?? readThemeCookie() ?? (session?.token ? cachedTheme() : 'DEFAULT'))
   }, [session?.token, session?.user?.theme])
+
+  // Sync theme applied from AdminView (or other contexts in the same tab)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<string>).detail as Theme
+      applyTheme(next)
+      setSession((current) => current ? { ...current, user: { ...current.user!, theme: next } } : current)
+    }
+    window.addEventListener('konnix:theme-changed', handler)
+    return () => window.removeEventListener('konnix:theme-changed', handler)
+  }, [])
 
   if (isTauri && desktopServers.length === 0) {
     return <ServerSetup onConnected={(server) => connectDesktopServer(server)} />
@@ -3115,7 +3127,7 @@ function AboutDetails({ className = '' }: { className?: string }) {
   </dl>
 }
 
-function ThemeModal({ theme, onClose, onPreview, onSaved, notify }: {
+export function ThemeModal({ theme, onClose, onPreview, onSaved, notify }: {
   theme: Theme
   onClose: () => void
   onPreview: (theme: Theme) => void
