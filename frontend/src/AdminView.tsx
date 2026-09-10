@@ -219,17 +219,44 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
   )
 }
 
+function SearchIcon() {
+  return (
+    <svg className="admin-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  )
+}
+
 function UsersPanel({ notify }: { notify: (text: string) => void }) {
   const [users, setUsers] = useState<User[]>([])
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const requestId = useRef(0)
-  const [busy, setBusy] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [userPage, setUserPage] = useState(0)
   const [userPageSize, setUserPageSize] = useState(6)
-  const [filters, setFilters] = useState({ active: true, readOnly: true, inactive: true, ADMIN: true, USER: true, BOT: true })
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'READ_ONLY' | 'DISABLED'>('ALL')
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'USER' | 'BOT'>('ALL')
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 300)
@@ -245,55 +272,272 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
   }, [notify, debouncedQuery])
   useEffect(() => { load() }, [load])
 
-  const update = async (action: () => Promise<User>, success: string) => {
-    if (busy) return
-    setBusy(true)
-    try { const updated = await action(); setUsers((old) => old.map((user) => user.id === updated.id ? updated : user)); notify(success) }
-    catch (error) { notify(error instanceof ApiError ? error.message : 'Operação não realizada') }
-    finally { setBusy(false) }
+  const clearFilters = () => {
+    setQuery('')
+    setStatusFilter('ALL')
+    setRoleFilter('ALL')
+    setUserPage(0)
   }
 
-  const toggleFilter = (filter: keyof typeof filters, group: ('active' | 'readOnly' | 'inactive')[] | ('ADMIN' | 'USER' | 'BOT')[], checked: boolean) => {
-    if (!checked && group.every((item) => item === filter || !filters[item])) return
-    setUserPage(0)
-    setFilters((current) => ({ ...current, [filter]: checked }))
-  }
+  const hasActiveFilters = query.trim() !== '' || statusFilter !== 'ALL' || roleFilter !== 'ALL'
 
   const filteredUsers = users.filter((user) => {
     const status = accountStatus(user)
-    const statusVisible = status === 'ACTIVE' ? filters.active : status === 'READ_ONLY' ? filters.readOnly : filters.inactive
-    return statusVisible && user.roles.some((role) => filters[role as 'ADMIN' | 'USER' | 'BOT'])
+    const matchesStatus = statusFilter === 'ALL' || status === statusFilter
+    const matchesRole = roleFilter === 'ALL' || user.roles.includes(roleFilter)
+    return matchesStatus && matchesRole
   })
+
   const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize))
   const visibleUsers = filteredUsers.slice(userPage * userPageSize, userPage * userPageSize + userPageSize)
+
+  const totalUsers = users.length
   const onlineCount = users.filter((user) => user.active && user.presenceStatus !== 'offline').length
-  const offlineCount = users.length - onlineCount
+  const activeCount = users.filter((user) => accountStatus(user) === 'ACTIVE').length
+  const readOnlyCount = users.filter((user) => accountStatus(user) === 'READ_ONLY').length
 
   return (
     <section className="admin-panel">
-       <div className="admin-panel-title"><div className="users-title-line"><h1>Users</h1><div className="user-metrics"><span>Total <strong>{users.length}</strong></span><span className="metric-online">● {onlineCount} online</span><span className="metric-offline">● {offlineCount} offline</span><span className="metric-active">● {users.filter((user) => accountStatus(user) === 'ACTIVE').length} ativos</span><span className="metric-read-only">● {users.filter((user) => accountStatus(user) === 'READ_ONLY').length} leitura</span><span className="metric-inactive">● {users.filter((user) => accountStatus(user) === 'DISABLED').length} desativados</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Novo usuário</button></div>
-       <div className="admin-toolbar users-toolbar"><input className="input" value={query} placeholder="Pesquisar nome, username ou e-mail" onChange={(event) => { setUserPage(0); setQuery(event.target.value) }} /><div className="user-filter-groups"><div className="user-filter-group"><strong>Status</strong><div className="user-filter-list">{(['active', 'readOnly', 'inactive'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['active', 'readOnly', 'inactive'], event.target.checked)} />{filter === 'active' ? 'Ativos' : filter === 'readOnly' ? 'Leitura' : 'Desativados'}</label>)}</div></div><div className="user-filter-group"><strong>Roles</strong><div className="user-filter-list">{(['ADMIN', 'USER', 'BOT'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['ADMIN', 'USER', 'BOT'], event.target.checked)} />{filter}</label>)}</div></div></div></div>
-       <Pager page={userPage} totalPages={userTotalPages} onPage={setUserPage} pageSize={userPageSize} onPageSize={(size) => { setUserPageSize(size); setUserPage(0) }} />
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Usuário</th><th>Username</th><th>Roles</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-         {visibleUsers.map((user) => <UserRow key={user.id} user={user} busy={busy} onEdit={() => setEditingUser(user)} onRoles={(roles) => update(() => api.adminUpdateRoles(user.id, roles), 'Roles atualizadas')} />)}
-        {filteredUsers.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhum usuário encontrado.</td></tr>}
-      </tbody></table></div>
-      {editingUser && <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onUpdated={(updated) => setUsers((old) => old.map((item) => item.id === updated.id ? updated : item))} notify={notify} />}
-      {createOpen && <CreateUserModal onClose={() => setCreateOpen(false)} onCreated={(user) => { setUsers((old) => [user, ...old]); setCreateOpen(false); notify('Usuário criado') }} notify={notify} />}
+      <div className="admin-panel-title">
+        <div>
+          <h1>Usuários</h1>
+          <p>Gerenciamento de contas, permissões e status de acesso corporativo.</p>
+        </div>
+        <button className="btn-primary admin-create-btn" onClick={() => setCreateOpen(true)}>
+          <PlusIcon />
+          <span>Novo usuário</span>
+        </button>
+      </div>
+
+      <div className="timeseries-summary-grid users-summary-grid">
+        <div className="timeseries-stat-chip">
+          <span>Total de Usuários</span>
+          <strong>{totalUsers.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Online Agora</span>
+          <strong className="stat-value-online">
+            <span className="online-indicator-dot" /> {onlineCount.toLocaleString('pt-BR')}
+          </strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Contas Ativas</span>
+          <strong className="stat-value-active">{activeCount.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Modo Leitura</span>
+          <strong className="stat-value-warning">{readOnlyCount.toLocaleString('pt-BR')}</strong>
+        </div>
+      </div>
+
+      <div className="users-toolbar-card">
+        <div className="users-search-box">
+          <SearchIcon />
+          <input
+            className="input users-search-input"
+            value={query}
+            placeholder="Pesquisar por nome, username ou e-mail..."
+            onChange={(event) => {
+              setUserPage(0)
+              setQuery(event.target.value)
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => { setQuery(''); setUserPage(0) }}
+              aria-label="Limpar pesquisa"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="users-filter-controls">
+          <div className="admin-filter-group">
+            <label className="admin-filter-label" htmlFor="user-status-filter">Status</label>
+            <select
+              id="user-status-filter"
+              className="admin-filter-select"
+              value={statusFilter}
+              onChange={(e) => {
+                setUserPage(0)
+                setStatusFilter(e.target.value as any)
+              }}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="ACTIVE">Ativos</option>
+              <option value="READ_ONLY">Somente leitura</option>
+              <option value="DISABLED">Desativados</option>
+            </select>
+          </div>
+
+          <div className="admin-filter-group">
+            <label className="admin-filter-label" htmlFor="user-role-filter">Papel</label>
+            <select
+              id="user-role-filter"
+              className="admin-filter-select"
+              value={roleFilter}
+              onChange={(e) => {
+                setUserPage(0)
+                setRoleFilter(e.target.value as any)
+              }}
+            >
+              <option value="ALL">Todos os papéis</option>
+              <option value="ADMIN">Administradores (ADMIN)</option>
+              <option value="USER">Usuários (USER)</option>
+              <option value="BOT">Bots (BOT)</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="btn-ghost admin-clear-filters-btn"
+              onClick={clearFilters}
+              title="Redefinir filtros"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Usuário</th>
+              <th>Username</th>
+              <th>Papéis</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'right', paddingRight: '1.2rem' }}>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.map((user) => (
+              <UserRow
+                key={user.id}
+                user={user}
+                onEdit={() => setEditingUser(user)}
+              />
+            ))}
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={5} className="admin-empty">
+                  Nenhum usuário encontrado para os critérios selecionados.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <div className="admin-table-footer">
+          <div className="admin-table-count">
+            Mostrando <strong>{filteredUsers.length > 0 ? userPage * userPageSize + 1 : 0}</strong> a{' '}
+            <strong>{Math.min((userPage + 1) * userPageSize, filteredUsers.length)}</strong> de{' '}
+            <strong>{filteredUsers.length}</strong> {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
+          </div>
+          <Pager
+            page={userPage}
+            totalPages={userTotalPages}
+            onPage={setUserPage}
+            pageSize={userPageSize}
+            onPageSize={(size) => {
+              setUserPageSize(size)
+              setUserPage(0)
+            }}
+          />
+        </div>
+      </div>
+
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onUpdated={(updated) =>
+            setUsers((old) => old.map((item) => (item.id === updated.id ? updated : item)))
+          }
+          notify={notify}
+        />
+      )}
+      {createOpen && (
+        <CreateUserModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(user) => {
+            setUsers((old) => [user, ...old])
+            setCreateOpen(false)
+            notify('Usuário criado com sucesso')
+          }}
+          notify={notify}
+        />
+      )}
     </section>
   )
 }
 
-function UserRow({ user, busy, onEdit, onRoles }: { user: User; busy: boolean; onEdit: () => void; onRoles: (roles: string[]) => void }) {
-  const [roles, setRoles] = useState(user.roles)
+function UserRow({
+  user,
+  onEdit,
+}: {
+  user: User
+  onEdit: () => void
+}) {
   const status = accountStatus(user)
-  return <tr>
-    <td><div className="admin-user-cell"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="admin-user-avatar" fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><span><strong>{user.name}</strong><small className="admin-subline">{user.email || 'sem e-mail'}</small>{user.passwordMigrationRequired && <span className="admin-warning">Senha pendente de migração</span>}</span></div></td>
-    <td>@{user.username}</td>
-    <td><div className="role-list">{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} disabled={busy} onChange={(event) => { const next = event.target.checked ? [...roles, role] : roles.filter((item) => item !== role); setRoles(next); onRoles(next) }} />{role}</label>)}</div></td>
-    <td><span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>{accountStatusLabel(status)}</span></td>
-    <td><div className="admin-row-actions"><button className="icon-action" title="Editar usuário" aria-label="Editar usuário" onClick={onEdit}>✎</button></div></td>
-  </tr>
+  return (
+    <tr>
+      <td>
+        <div className="admin-user-cell">
+          <AvatarImage
+            path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`}
+            className="admin-user-avatar"
+            fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>}
+            alt={user.name}
+          />
+          <div className="admin-user-cell-info">
+            <strong>{user.name}</strong>
+            <small className="admin-subline">{user.email || 'sem e-mail'}</small>
+            {user.passwordMigrationRequired && (
+              <span className="admin-warning">Senha pendente de migração</span>
+            )}
+          </div>
+        </div>
+      </td>
+      <td>
+        <span className="admin-username-badge">@{user.username}</span>
+      </td>
+      <td>
+        <div className="user-roles-cell">
+          {user.roles.map((role) => (
+            <span key={role} className={`user-role-pill ${role.toLowerCase()}`}>
+              {role}
+            </span>
+          ))}
+          {user.roles.length === 0 && <span className="user-role-pill muted">—</span>}
+        </div>
+      </td>
+      <td>
+        <span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>
+          {accountStatusLabel(status)}
+        </span>
+      </td>
+      <td>
+        <div className="admin-row-actions">
+          <button
+            type="button"
+            className="admin-action-btn"
+            title={`Editar ${user.name}`}
+            aria-label={`Editar ${user.name}`}
+            onClick={onEdit}
+          >
+            <EditIcon />
+            <span>Editar</span>
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
 }
 
 function EditUserModal({ user, onClose, onUpdated, notify }: { user: User; onClose: () => void; onUpdated: (user: User) => void; notify: (text: string) => void }) {
@@ -1017,5 +1261,40 @@ function SettingsPanel({ notify }: { notify: (text: string) => void }) {
 
 function Pager({ page, totalPages, onPage, pageSize, onPageSize }: { page: number; totalPages: number; onPage: (page: number) => void; pageSize?: number; onPageSize?: (size: number) => void }) {
   if (totalPages <= 0) return null
-  return <div className="admin-pager">{pageSize && onPageSize && <label className="admin-page-size">Registros <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}><option value={6}>6</option><option value={15}>15</option><option value={30}>30</option><option value={50}>50</option></select></label>}<button className="btn-ghost" disabled={page === 0} onClick={() => onPage(page - 1)}>Anterior</button><span>{page + 1} / {totalPages}</span><button className="btn-ghost" disabled={page + 1 >= totalPages} onClick={() => onPage(page + 1)}>Próxima</button></div>
+  return (
+    <div className="admin-pager">
+      {pageSize && onPageSize && (
+        <label className="admin-page-size">
+          <span>Registros</span>
+          <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>
+            <option value={6}>6</option>
+            <option value={15}>15</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      )}
+      <div className="admin-pager-controls">
+        <button
+          type="button"
+          className="btn-ghost admin-pager-btn"
+          disabled={page === 0}
+          onClick={() => onPage(page - 1)}
+          title="Página anterior"
+        >
+          ← Anterior
+        </button>
+        <span className="admin-pager-current">{page + 1} / {totalPages}</span>
+        <button
+          type="button"
+          className="btn-ghost admin-pager-btn"
+          disabled={page + 1 >= totalPages}
+          onClick={() => onPage(page + 1)}
+          title="Próxima página"
+        >
+          Próxima →
+        </button>
+      </div>
+    </div>
+  )
 }
