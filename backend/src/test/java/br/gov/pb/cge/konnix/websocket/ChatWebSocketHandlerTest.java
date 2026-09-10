@@ -53,7 +53,7 @@ class ChatWebSocketHandlerTest {
     }
 
     @Test
-    void conectarUsuarioOfflineAlteraStatusParaOnlineEPublica() throws Exception {
+    void conectarUsuarioOfflineMantemStatusEChegaASincronizar() throws Exception {
         UUID userId = UUID.randomUUID();
         User user = new User();
         user.setId(userId);
@@ -68,9 +68,9 @@ class ChatWebSocketHandlerTest {
 
         handler.afterConnectionEstablished(session);
 
-        assertThat(user.getPresenceStatus()).isEqualTo("online");
-        verify(userRepository).save(user);
-        verify(eventPublisher).publishPresence(userId, "fulano", "online");
+        assertThat(user.getPresenceStatus()).isEqualTo("offline");
+        verify(userRepository, never()).save(user);
+        verify(eventPublisher).publishPresence(userId, "fulano", "offline");
         assertThat(sessionRegistry.sessionsOf(userId)).contains(session);
     }
 

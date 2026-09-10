@@ -65,6 +65,18 @@ export const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
 ];
 const THEME_CACHE_KEY = 'konnix-theme-cache'
 const THEME_COOKIE_KEY = 'konnix_theme'
+const MANUAL_PRESENCE_KEY = 'konnix-manual-presence'
+
+function readManualPresence(): PresenceStatus | null {
+  try {
+    const value = localStorage.getItem(MANUAL_PRESENCE_KEY)
+    return value === 'offline' || value === 'away' || value === 'busy' || value === 'mission' || value === 'vacation'
+      ? value
+      : null
+  } catch {
+    return null
+  }
+}
 
 function normalizeTheme(theme: string | null | undefined): Theme {
   const normalized = theme?.trim().replace(/-/g, '_').toUpperCase()
@@ -1288,17 +1300,20 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const presenceStatusRef = useRef(me.presenceStatus)
   presenceStatusRef.current = me.presenceStatus
   const presenceUpdateInFlightRef = useRef(false)
-  const autoAwayRef = useRef(false)
+  const onPresenceChangeRef = useRef(onPresenceChange)
+  onPresenceChangeRef.current = onPresenceChange
 
   const changePresenceManually = useCallback(async (status: PresenceStatus) => {
-    autoAwayRef.current = false
+    try {
+      if (status === 'online') localStorage.removeItem(MANUAL_PRESENCE_KEY)
+      else localStorage.setItem(MANUAL_PRESENCE_KEY, status)
+    } catch { /* armazenamento indisponível */ }
     return onPresenceChange(status)
   }, [onPresenceChange])
 
   const registerInteraction = useCallback(() => {
-    if (!autoAwayRef.current || presenceStatusRef.current === 'online' || presenceUpdateInFlightRef.current) return
+    if (presenceStatusRef.current !== 'away' || presenceUpdateInFlightRef.current) return
     presenceUpdateInFlightRef.current = true
-    autoAwayRef.current = false
     void onPresenceChange('online')
       .catch(() => undefined)
       .finally(() => { presenceUpdateInFlightRef.current = false })
@@ -1314,9 +1329,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       idleTimer = setTimeout(() => {
         if (presenceStatusRef.current === 'online' && !presenceUpdateInFlightRef.current) {
           presenceUpdateInFlightRef.current = true
-          autoAwayRef.current = true
-          void onPresenceChange('away')
-            .catch(() => { autoAwayRef.current = false })
+          void onPresenceChangeRef.current('away')
+            .catch(() => undefined)
             .finally(() => { presenceUpdateInFlightRef.current = false })
         }
       }, remaining)
@@ -1330,10 +1344,21 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
     const events: (keyof DocumentEventMap)[] = ['pointerdown', 'keydown', 'input', 'touchstart']
     events.forEach((event) => document.addEventListener(event, onInteraction, true))
+
+    let lastMouseMove = 0
+    const onMouseMove = () => {
+      const now = Date.now()
+      if (now - lastMouseMove < 1000) return
+      lastMouseMove = now
+      onInteraction()
+    }
+    document.addEventListener('mousemove', onMouseMove, true)
+
     scheduleAway()
     return () => {
       if (idleTimer) clearTimeout(idleTimer)
       events.forEach((event) => document.removeEventListener(event, onInteraction, true))
+      document.removeEventListener('mousemove', onMouseMove, true)
     }
   }, [registerInteraction, onPresenceChange])
 
@@ -1482,8 +1507,19 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
       ws.onopen = () => {
-        if (presenceStatusRef.current === 'offline') {
-          onProfileUpdated((prev) => ({ ...prev, presenceStatus: 'online' }))
+        const manual = readManualPresence()
+        if (manual) {
+          if (manual !== presenceStatusRef.current && !presenceUpdateInFlightRef.current) {
+            presenceUpdateInFlightRef.current = true
+            void onPresenceChangeRef.current(manual)
+              .catch(() => undefined)
+              .finally(() => { presenceUpdateInFlightRef.current = false })
+          }
+        } else if (presenceStatusRef.current === 'offline') {
+          presenceUpdateInFlightRef.current = true
+          void onPresenceChangeRef.current('online')
+            .catch(() => undefined)
+            .finally(() => { presenceUpdateInFlightRef.current = false })
         }
         void loadRooms()
       }
@@ -1620,9 +1656,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           } else if (evt.type === 'presence.updated') {
             const presence = evt.data as unknown as { userId: string; status: PresenceStatus }
             if (presence.userId === me.id) {
-              if (presence.status === 'online') {
-                autoAwayRef.current = false
-              }
               onProfileUpdated((prev) => ({ ...prev, presenceStatus: presence.status }))
             }
             setRooms((prev) => prev.map((room) => room.directPartner?.userId === presence.userId
