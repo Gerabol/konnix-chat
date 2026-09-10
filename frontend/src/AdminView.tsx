@@ -170,16 +170,17 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
           <div><strong>Konnix</strong><span>Administração</span></div>
         </div>
         <div className="admin-header-actions">
-          <span>{me.name}</span>
+          <span className="admin-user-name" title={me.name}>{me.name}</span>
           <button
             type="button"
             className="btn-ghost admin-theme-btn"
             aria-label="Selecionar tema"
+            title="Selecionar tema"
             onClick={() => setShowThemeModal(true)}
           >
             <PaletteIcon />
           </button>
-          <button className="btn-ghost" onClick={onBack}>Voltar ao chat</button>
+          <button className="btn-ghost admin-back-btn" onClick={onBack}>Voltar ao chat</button>
         </div>
       </header>
       <div className="admin-body">

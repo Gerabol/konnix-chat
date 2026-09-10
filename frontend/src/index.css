@@ -4910,6 +4910,7 @@ img.room-header-avatar {
   padding: 0.55rem clamp(1rem, 3vw, 2rem);
   background: var(--konnix-surface);
   border-bottom: 1px solid var(--konnix-border);
+  flex-wrap: nowrap;
 }
 
 .admin-brand,
@@ -4919,6 +4920,30 @@ img.room-header-avatar {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+}
+
+.admin-brand {
+  flex-shrink: 0;
+}
+
+.admin-header-actions {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.admin-user-name {
+  color: var(--konnix-ink-soft);
+  font-size: 0.8rem;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.admin-back-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .admin-page-size { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--konnix-ink-soft); font-size: 0.78rem; }
@@ -5622,7 +5647,57 @@ img.room-header-avatar {
   .admin-modal > .forward-list,
   .admin-modal > .modal-actions { margin-left: 18px; margin-right: 18px; }
   .admin-modal .modal-close { top: 14px; right: 14px; }
-  .admin-header { align-items: flex-start; flex-direction: column; gap: 0.6rem; }
+  .admin-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    min-height: 52px;
+    padding: 0.45rem 0.65rem;
+    padding-top: calc(0.45rem + var(--safe-top));
+  }
+  .admin-brand {
+    gap: 0.45rem;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .admin-brand img {
+    width: 32px;
+    height: 32px;
+  }
+  .admin-brand div {
+    white-space: nowrap;
+  }
+  .admin-brand strong {
+    font-size: 0.92rem;
+    line-height: 1.1;
+  }
+  .admin-brand span {
+    font-size: 0.68rem;
+    line-height: 1.1;
+  }
+  .admin-header-actions {
+    gap: 0.4rem;
+    flex-shrink: 0;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  .admin-user-name {
+    max-width: clamp(48px, 16vw, 90px);
+    font-size: 0.78rem;
+  }
+  .admin-theme-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: 7px;
+  }
+  .admin-back-btn {
+    min-height: 34px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.78rem;
+  }
   .admin-body { flex-direction: column; min-height: 0; }
   .admin-tabs { position: static; flex-direction: row; width: 100%; height: auto; overflow-x: auto; padding: 0.6rem; border-right: 0; border-bottom: 1px solid var(--konnix-border); }
   .admin-content { border-left: 0; }
@@ -5631,6 +5706,44 @@ img.room-header-avatar {
   .users-title-line, .users-toolbar { align-items: flex-start; flex-direction: column; }
   .users-toolbar > .input { max-width: none; }
   .user-metrics { flex-wrap: wrap; }
+}
+
+@media (max-width: 380px) {
+  .admin-header {
+    gap: 0.35rem;
+    padding-left: 0.45rem;
+    padding-right: 0.45rem;
+  }
+  .admin-brand {
+    gap: 0.35rem;
+  }
+  .admin-brand img {
+    width: 28px;
+    height: 28px;
+  }
+  .admin-brand strong {
+    font-size: 0.85rem;
+  }
+  .admin-brand span {
+    font-size: 0.62rem;
+  }
+  .admin-header-actions {
+    gap: 0.3rem;
+  }
+  .admin-user-name {
+    max-width: 44px;
+    font-size: 0.72rem;
+  }
+  .admin-theme-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+  }
+  .admin-back-btn {
+    min-height: 32px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.72rem;
+  }
 }
 
 /* Indicador de Digitação em Tempo Real */
