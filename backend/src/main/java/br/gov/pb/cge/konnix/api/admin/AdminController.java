@@ -137,6 +137,13 @@ public class AdminController {
         return ApiResponse.ok(userService.changeAccountStatus(id, request.status(), principal(auth).id(), ip(http)));
     }
 
+    @PostMapping("/users/batch")
+    public ApiResponse<BatchUserCreateResponse> createUsersBatch(
+            @Valid @RequestBody CreateUsersBatchRequest request,
+            Authentication auth, HttpServletRequest http) {
+        return ApiResponse.ok(userService.createBatch(request, principal(auth).id(), ip(http)));
+    }
+
     @GetMapping("/rooms")
     public ApiResponse<List<RoomResponse>> rooms() { return ApiResponse.ok(roomService.adminList()); }
 

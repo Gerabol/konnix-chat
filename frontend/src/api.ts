@@ -1,5 +1,11 @@
 export type AccountStatus = 'ACTIVE' | 'READ_ONLY' | 'DISABLED'
 
+export type BatchUserCreateResult = {
+  total: number
+  created: number
+  errors: { index: number; username: string; code: string; message: string }[]
+}
+
 export type User = {
   id: string
   username: string
@@ -339,6 +345,11 @@ export const api = {
   },
   createUser(input: { username: string; name: string; email: string; password: string }) {
     return request<User>('/api/v1/users', { method: 'POST', body: JSON.stringify(input) })
+  },
+  createUsersBatch(users: { username: string; name: string; email?: string; password: string }[], roles?: string[]) {
+    return request<BatchUserCreateResult>('/api/v1/admin/users/batch', {
+      method: 'POST', body: JSON.stringify({ users, roles: roles ?? ['USER'] }),
+    })
   },
   adminUsers(q = '', page = 0, size = 25) {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
