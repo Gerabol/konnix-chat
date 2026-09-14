@@ -166,7 +166,7 @@ INSERT INTO users (
     '{esc_username}',
     '{esc_name}',
     '{esc_email}',
-    crypt('{DEFAULT_PASSWORD}', gen_salt('bf', 10)),
+    '$argon2id$v=19$m=19456,t=2,p=1$IDwmsq2uIr3JDQohx9AF3Q$CcSEemUsLBXZdX8bHK/8irYy5BixN9Gnf8KC8vU07UM',
     {active_str},
     '{status_str}',
     'USER',
@@ -179,6 +179,8 @@ INSERT INTO users (
 ) ON CONFLICT (username) DO UPDATE SET
     name = EXCLUDED.name,
     email = EXCLUDED.email,
+    password_hash = EXCLUDED.password_hash,
+    password_change_required = EXCLUDED.password_change_required,
     active = EXCLUDED.active,
     account_status = EXCLUDED.account_status,
     updated_at = now();
