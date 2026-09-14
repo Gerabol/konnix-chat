@@ -5309,6 +5309,152 @@ img.room-header-avatar {
   border-color: var(--konnix-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--konnix-primary) 15%, transparent);
 }
+
+/* ==========================================================================
+   Componente Dropdown / Select de Filtros do Painel de Administração
+   - Ancoragem: placement bottom-start com offset (margin-top de 4px)
+   - Sem sobreposição: abre imediatamente abaixo do botão disparador
+   - Cores semânticas do tema (suporte a Light/Dark sem cores fixas escuras)
+   - Indicador de seleção: Dot indicator na cor primária de destaque (bg-primary)
+   ========================================================================== */
+
+.admin-filter-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.admin-filter-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-height: 38px;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--konnix-border);
+  border-radius: 8px;
+  background: var(--konnix-surface);
+  color: var(--konnix-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+
+.admin-filter-dropdown-trigger:hover,
+.admin-filter-dropdown-trigger:focus-visible,
+.admin-filter-dropdown-trigger.open {
+  border-color: var(--konnix-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--konnix-primary) 18%, transparent);
+  background: color-mix(in srgb, var(--konnix-primary) 8%, var(--konnix-surface));
+}
+
+.admin-filter-dropdown-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-filter-dropdown-caret {
+  font-size: 0.65rem;
+  color: var(--konnix-ink-soft);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.admin-filter-dropdown-trigger.open .admin-filter-dropdown-caret {
+  transform: rotate(180deg);
+}
+
+/* Menu Flutuante - bottom-start imediatamente abaixo com offset */
+.admin-filter-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px); /* Espaçamento vertical / offset sem sobreposição */
+  left: 0;               /* placement: bottom-start / bottom-left */
+  z-index: 1250;
+  min-width: 100%;
+  width: max-content;
+  max-width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid var(--konnix-border);
+  border-radius: 9px;
+  background: var(--konnix-surface);
+  box-shadow: var(--konnix-shadow);
+  animation: admin-dropdown-appear 0.12s ease-out;
+}
+
+@keyframes admin-dropdown-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-filter-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 32px;
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--konnix-ink);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  user-select: none;
+}
+
+.admin-filter-dropdown-item:hover,
+.admin-filter-dropdown-item:focus-visible,
+.admin-filter-dropdown-item.highlighted {
+  background: var(--konnix-bg);
+  color: var(--konnix-ink);
+  outline: none;
+}
+
+.admin-filter-dropdown-item.selected {
+  background: color-mix(in srgb, var(--konnix-primary) 12%, var(--konnix-surface));
+  color: var(--konnix-primary-deep, var(--konnix-primary));
+  font-weight: 600;
+}
+
+/* Indicador de Seleção: Dot Indicator no lugar do checkmark */
+.admin-filter-dot-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.admin-filter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--konnix-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--konnix-primary) 28%, transparent);
+  display: block;
+}
+
+.admin-filter-item-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .admin-clear-filters-btn {
   display: inline-flex;
   align-items: center;
@@ -5462,9 +5608,17 @@ img.room-header-avatar {
 .admin-status { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .admin-status.active { background: rgba(48, 164, 108, 0.13); color: #228b5c; }
 .admin-status.read-only { background: rgba(245, 166, 35, 0.16); color: #a66a00; }
-.admin-status.inactive { background: rgba(229, 72, 77, 0.13); color: var(--konnix-danger); }
+.admin-account-status-selector { position: relative; display: inline-block; }
 .admin-account-status-selector .presence-pill { max-width: 140px; }
-.role-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.admin-account-status-selector .presence-menu {
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  background: var(--konnix-surface);
+  border: 1px solid var(--konnix-border);
+  box-shadow: var(--konnix-shadow);
+  color: var(--konnix-ink);
+}
 .role-list label, .admin-check { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--konnix-ink-soft); font-size: 0.75rem; }
 .inline-editor { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
 .icon-action { width: 30px; height: 30px; border: 1px solid var(--konnix-border); border-radius: 7px; background: var(--konnix-surface); color: var(--konnix-primary-deep); font-size: 1.1rem; }
