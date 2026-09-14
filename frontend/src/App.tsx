@@ -1726,6 +1726,10 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         if (!currentWs || currentWs.readyState === WebSocket.CLOSED) {
           connect()
         }
+        const activeRoom = activeRoomIdRef.current
+        if (activeRoom) {
+          void api.markRoomRead(activeRoom).catch(() => undefined)
+        }
       }
     }
     document.addEventListener('visibilitychange', onVisibilityOrFocus)
@@ -1750,6 +1754,18 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     }, 60_000)
     return () => clearInterval(interval)
   }, [session.token, loadRooms])
+
+  useEffect(() => {
+    if (!session.token) return
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      const activeRoom = activeRoomIdRef.current
+      if (activeRoom) {
+        void api.markRoomRead(activeRoom).catch(() => undefined)
+      }
+    }, 10_000)
+    return () => clearInterval(interval)
+  }, [session.token])
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -4143,17 +4159,23 @@ function RoomView({
       return
     }
     forceScrollToBottomRef.current = true
-    const sent = await onSend(draft, quotedMessage?.id, pendingAttachments)
-    if (!sent) {
-      forceScrollToBottomRef.current = false
-      return
-    }
+    const content = draft
+    const attachmentList = pendingAttachments
+    const quoted = quotedMessage
     setDraft('')
     setPendingAttachments([])
     setCodeBlock(null)
     setQuotedMessage(null)
     setComposerExpanded(false)
-    if (sendingAttachments) forceScrollToBottomRef.current = true
+    const sent = await onSend(content, quoted?.id, attachmentList)
+    if (!sent) {
+      forceScrollToBottomRef.current = false
+      setDraft(content)
+      setPendingAttachments(attachmentList)
+      setQuotedMessage(quoted)
+    } else if (sendingAttachments) {
+      forceScrollToBottomRef.current = true
+    }
   }
 
   const startEditing = (message: Message) => {
