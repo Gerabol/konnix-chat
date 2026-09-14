@@ -108,146 +108,21 @@ function AccountStatusSelector({ status, onChange, disabled }: { status: Account
     {open && <div className="presence-menu" role="menu">
       {ACCOUNT_STATUS_OPTIONS.map((option, index) => {
         const optionTone = ACCOUNT_STATUS_TONES[option.value]
-        const isSelected = option.value === status
         return <button
           type="button"
           role="menuitem"
           key={option.value}
-          className={`presence-option presence-${optionTone} ${isSelected ? 'selected' : ''} ${index === highlightedIndex ? 'highlighted' : ''}`}
+          className={`presence-option presence-${optionTone} ${option.value === status ? 'selected' : ''} ${index === highlightedIndex ? 'highlighted' : ''}`}
           onMouseEnter={() => setHighlightedIndex(index)}
           onClick={() => select(option.value)}
         >
-          <span className="admin-filter-dot-slot" aria-hidden="true">
-            {isSelected && <span className="admin-filter-dot" />}
-          </span>
+          <span className="presence-check">{option.value === status ? '✓' : ''}</span>
           <span className="presence-dot" aria-hidden="true" />
           <span>{option.label}</span>
         </button>
       })}
     </div>}
   </div>
-}
-
-export interface AdminFilterOption<T extends string = string> {
-  value: T
-  label: string
-}
-
-export function AdminFilterDropdown<T extends string>({
-  id,
-  value,
-  options,
-  onChange,
-  disabled = false,
-  ariaLabel,
-  className = '',
-}: {
-  id?: string
-  value: T
-  options: AdminFilterOption<T>[]
-  onChange: (value: T) => void
-  disabled?: boolean
-  ariaLabel?: string
-  className?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const currentIndex = Math.max(0, options.findIndex((opt) => opt.value === value))
-  const [highlightedIndex, setHighlightedIndex] = useState(currentIndex)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setHighlightedIndex(currentIndex)
-  }, [currentIndex])
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const current = options[currentIndex] || options[0]
-
-  const select = (next: T) => {
-    onChange(next)
-    setOpen(false)
-  }
-
-  return (
-    <div className={`admin-filter-dropdown ${className}`.trim()} ref={dropdownRef}>
-      <button
-        type="button"
-        id={id}
-        className={`admin-filter-dropdown-trigger ${open ? 'open' : ''}`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={ariaLabel || current?.label}
-        disabled={disabled}
-        onClick={() => {
-          if (!disabled) {
-            setHighlightedIndex(currentIndex)
-            setOpen((prev) => !prev)
-          }
-        }}
-        onKeyDown={(event) => {
-          if (!open && (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault()
-            setOpen(true)
-          } else if (open && event.key === 'ArrowDown') {
-            event.preventDefault()
-            setHighlightedIndex((idx) => (idx + 1) % options.length)
-          } else if (open && event.key === 'ArrowUp') {
-            event.preventDefault()
-            setHighlightedIndex((idx) => (idx - 1 + options.length) % options.length)
-          } else if (open && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault()
-            if (options[highlightedIndex]) {
-              select(options[highlightedIndex].value)
-            }
-          }
-        }}
-      >
-        <span className="admin-filter-dropdown-value">{current?.label}</span>
-        <span className="admin-filter-dropdown-caret" aria-hidden="true">▾</span>
-      </button>
-      {open && (
-        <div className="admin-filter-dropdown-menu" role="listbox" tabIndex={-1}>
-          {options.map((option, index) => {
-            const isSelected = option.value === value
-            return (
-              <button
-                type="button"
-                role="option"
-                key={option.value}
-                aria-selected={isSelected}
-                className={`admin-filter-dropdown-item ${isSelected ? 'selected' : ''} ${index === highlightedIndex ? 'highlighted' : ''}`}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                onClick={() => select(option.value)}
-              >
-                <span className="admin-filter-dot-slot" aria-hidden="true">
-                  {isSelected && <span className="admin-filter-dot" />}
-                </span>
-                <span className="admin-filter-item-label">{option.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 export default function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
@@ -482,40 +357,38 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
         <div className="users-filter-controls">
           <div className="admin-filter-group">
             <label className="admin-filter-label" htmlFor="user-status-filter">Status</label>
-            <AdminFilterDropdown
+            <select
               id="user-status-filter"
+              className="admin-filter-select"
               value={statusFilter}
-              options={[
-                { value: 'ALL', label: 'Todos os status' },
-                { value: 'ACTIVE', label: 'Ativos' },
-                { value: 'READ_ONLY', label: 'Somente leitura' },
-                { value: 'DISABLED', label: 'Desativados' },
-              ]}
-              onChange={(val) => {
+              onChange={(e) => {
                 setUserPage(0)
-                setStatusFilter(val as any)
+                setStatusFilter(e.target.value as any)
               }}
-              ariaLabel="Filtrar por status da conta"
-            />
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="ACTIVE">Ativos</option>
+              <option value="READ_ONLY">Somente leitura</option>
+              <option value="DISABLED">Desativados</option>
+            </select>
           </div>
 
           <div className="admin-filter-group">
             <label className="admin-filter-label" htmlFor="user-role-filter">Papel</label>
-            <AdminFilterDropdown
+            <select
               id="user-role-filter"
+              className="admin-filter-select"
               value={roleFilter}
-              options={[
-                { value: 'ALL', label: 'Todos os papéis' },
-                { value: 'ADMIN', label: 'Administradores (ADMIN)' },
-                { value: 'USER', label: 'Usuários (USER)' },
-                { value: 'BOT', label: 'Bots (BOT)' },
-              ]}
-              onChange={(val) => {
+              onChange={(e) => {
                 setUserPage(0)
-                setRoleFilter(val as any)
+                setRoleFilter(e.target.value as any)
               }}
-              ariaLabel="Filtrar por papel do usuário"
-            />
+            >
+              <option value="ALL">Todos os papéis</option>
+              <option value="ADMIN">Administradores (ADMIN)</option>
+              <option value="USER">Usuários (USER)</option>
+              <option value="BOT">Bots (BOT)</option>
+            </select>
           </div>
 
           {hasActiveFilters && (
@@ -794,39 +667,9 @@ function AuditPanel() {
   return <section className="admin-panel">
     <div className="admin-panel-title"><div><h1>Ações</h1><p>Registro seguro das ações administrativas.</p></div></div>
     <div className="admin-filter-grid">
-      <label className="admin-label">Usuário
-        <AdminFilterDropdown
-          value={filters.user}
-          options={[
-            { value: '', label: 'Todos os usuários' },
-            ...options.users.map((user) => ({ value: user.id, label: `${user.name || user.username} (@${user.username})` })),
-          ]}
-          onChange={(val) => { setPage(0); setFilters({ ...filters, user: val }) }}
-          ariaLabel="Filtrar por usuário"
-        />
-      </label>
-      <label className="admin-label">Ação
-        <AdminFilterDropdown
-          value={filters.action}
-          options={[
-            { value: '', label: 'Todas as ações' },
-            ...options.actions.map((action) => ({ value: action, label: action })),
-          ]}
-          onChange={(val) => { setPage(0); setFilters({ ...filters, action: val }) }}
-          ariaLabel="Filtrar por ação"
-        />
-      </label>
-      <label className="admin-label">Recurso
-        <AdminFilterDropdown
-          value={filters.resource}
-          options={[
-            { value: '', label: 'Todos os recursos' },
-            ...options.resources.map((resource) => ({ value: resource, label: resource })),
-          ]}
-          onChange={(val) => { setPage(0); setFilters({ ...filters, resource: val }) }}
-          ariaLabel="Filtrar por recurso"
-        />
-      </label>
+      <label className="admin-label">Usuário<select className="input" value={filters.user} onChange={(event) => { setPage(0); setFilters({ ...filters, user: event.target.value }) }}><option value="">Todos os usuários</option>{options.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username} (@{user.username})</option>)}</select></label>
+      <label className="admin-label">Ação<select className="input" value={filters.action} onChange={(event) => { setPage(0); setFilters({ ...filters, action: event.target.value }) }}><option value="">Todas as ações</option>{options.actions.map((action) => <option key={action} value={action}>{action}</option>)}</select></label>
+      <label className="admin-label">Recurso<select className="input" value={filters.resource} onChange={(event) => { setPage(0); setFilters({ ...filters, resource: event.target.value }) }}><option value="">Todos os recursos</option>{options.resources.map((resource) => <option key={resource} value={resource}>{resource}</option>)}</select></label>
       <label className="admin-label">De<input className="input" type="datetime-local" value={filters.from} onChange={(event) => { setPage(0); setFilters({ ...filters, from: event.target.value }) }} /></label>
       <label className="admin-label">Até<input className="input" type="datetime-local" value={filters.to} onChange={(event) => { setPage(0); setFilters({ ...filters, to: event.target.value }) }} /></label>
     </div>
