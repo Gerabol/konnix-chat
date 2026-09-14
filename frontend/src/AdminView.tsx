@@ -116,13 +116,137 @@ function AccountStatusSelector({ status, onChange, disabled }: { status: Account
           onMouseEnter={() => setHighlightedIndex(index)}
           onClick={() => select(option.value)}
         >
-          <span className="presence-check">{option.value === status ? '✓' : ''}</span>
+          <span className="presence-dot-slot" aria-hidden="true">
+            {option.value === status && <span className="presence-selected-dot" />}
+          </span>
           <span className="presence-dot" aria-hidden="true" />
           <span>{option.label}</span>
         </button>
       })}
     </div>}
   </div>
+}
+
+interface AdminFilterOption {
+  value: string
+  label: string
+}
+
+function AdminFilterDropdown({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  fullWidth = false,
+  variant = 'default',
+  id,
+}: {
+  value: string
+  options: AdminFilterOption[]
+  onChange: (value: string) => void
+  ariaLabel?: string
+  fullWidth?: boolean
+  variant?: 'default' | 'subtle'
+  id?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const selectedIndex = Math.max(0, options.findIndex((opt) => opt.value === value))
+  const selectedOption = options[selectedIndex] || options[0]
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const select = (val: string) => {
+    onChange(val)
+    setOpen(false)
+  }
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault()
+      setHighlightedIndex(selectedIndex)
+      setOpen(true)
+    } else if (open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedIndex((i) => (i + 1) % options.length)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedIndex((i) => (i - 1 + options.length) % options.length)
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        select(options[highlightedIndex].value)
+      } else if (e.key === 'Tab') {
+        setOpen(false)
+      }
+    }
+  }
+
+  return (
+    <div
+      className={`admin-filter-dropdown ${fullWidth ? 'full-width' : ''} ${variant === 'subtle' ? 'variant-subtle' : ''}`}
+      ref={containerRef}
+    >
+      <button
+        type="button"
+        id={id}
+        className={`admin-filter-dropdown-trigger ${open ? 'open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => {
+          setHighlightedIndex(selectedIndex)
+          setOpen((v) => !v)
+        }}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span className="admin-filter-dropdown-value">{selectedOption?.label || value}</span>
+        <span className="admin-filter-dropdown-caret" aria-hidden="true">▾</span>
+      </button>
+
+      {open && (
+        <div className="admin-filter-dropdown-menu" role="listbox" tabIndex={-1}>
+          {options.map((opt, index) => {
+            const isSelected = opt.value === value
+            return (
+              <button
+                type="button"
+                role="option"
+                key={opt.value}
+                aria-selected={isSelected}
+                className={`admin-filter-dropdown-item ${isSelected ? 'selected' : ''} ${index === highlightedIndex ? 'highlighted' : ''}`}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                onClick={() => select(opt.value)}
+              >
+                <span className="admin-filter-dot-slot" aria-hidden="true">
+                  {isSelected && <span className="admin-filter-dot" />}
+                </span>
+                <span className="admin-filter-item-label">{opt.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
@@ -356,39 +480,43 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
 
         <div className="users-filter-controls">
           <div className="admin-filter-group">
-            <label className="admin-filter-label" htmlFor="user-status-filter">Status</label>
-            <select
+            <span className="admin-filter-label">Status</span>
+            <AdminFilterDropdown
               id="user-status-filter"
-              className="admin-filter-select"
               value={statusFilter}
-              onChange={(e) => {
+              options={[
+                { value: 'ALL', label: 'Todos os status' },
+                { value: 'ACTIVE', label: 'Ativos' },
+                { value: 'READ_ONLY', label: 'Somente leitura' },
+                { value: 'DISABLED', label: 'Desativados' },
+              ]}
+              onChange={(val) => {
                 setUserPage(0)
-                setStatusFilter(e.target.value as any)
+                setStatusFilter(val as any)
               }}
-            >
-              <option value="ALL">Todos os status</option>
-              <option value="ACTIVE">Ativos</option>
-              <option value="READ_ONLY">Somente leitura</option>
-              <option value="DISABLED">Desativados</option>
-            </select>
+              ariaLabel="Filtrar por status"
+              variant="subtle"
+            />
           </div>
 
           <div className="admin-filter-group">
-            <label className="admin-filter-label" htmlFor="user-role-filter">Papel</label>
-            <select
+            <span className="admin-filter-label">Papel</span>
+            <AdminFilterDropdown
               id="user-role-filter"
-              className="admin-filter-select"
               value={roleFilter}
-              onChange={(e) => {
+              options={[
+                { value: 'ALL', label: 'Todos os papéis' },
+                { value: 'ADMIN', label: 'Administradores (ADMIN)' },
+                { value: 'USER', label: 'Usuários (USER)' },
+                { value: 'BOT', label: 'Bots (BOT)' },
+              ]}
+              onChange={(val) => {
                 setUserPage(0)
-                setRoleFilter(e.target.value as any)
+                setRoleFilter(val as any)
               }}
-            >
-              <option value="ALL">Todos os papéis</option>
-              <option value="ADMIN">Administradores (ADMIN)</option>
-              <option value="USER">Usuários (USER)</option>
-              <option value="BOT">Bots (BOT)</option>
-            </select>
+              ariaLabel="Filtrar por papel"
+              variant="subtle"
+            />
           </div>
 
           {hasActiveFilters && (
@@ -667,9 +795,42 @@ function AuditPanel() {
   return <section className="admin-panel">
     <div className="admin-panel-title"><div><h1>Ações</h1><p>Registro seguro das ações administrativas.</p></div></div>
     <div className="admin-filter-grid">
-      <label className="admin-label">Usuário<select className="input" value={filters.user} onChange={(event) => { setPage(0); setFilters({ ...filters, user: event.target.value }) }}><option value="">Todos os usuários</option>{options.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username} (@{user.username})</option>)}</select></label>
-      <label className="admin-label">Ação<select className="input" value={filters.action} onChange={(event) => { setPage(0); setFilters({ ...filters, action: event.target.value }) }}><option value="">Todas as ações</option>{options.actions.map((action) => <option key={action} value={action}>{action}</option>)}</select></label>
-      <label className="admin-label">Recurso<select className="input" value={filters.resource} onChange={(event) => { setPage(0); setFilters({ ...filters, resource: event.target.value }) }}><option value="">Todos os recursos</option>{options.resources.map((resource) => <option key={resource} value={resource}>{resource}</option>)}</select></label>
+      <label className="admin-label">Usuário
+        <AdminFilterDropdown
+          value={filters.user}
+          options={[
+            { value: '', label: 'Todos os usuários' },
+            ...options.users.map((user) => ({ value: user.id, label: `${user.name || user.username} (@${user.username})` })),
+          ]}
+          onChange={(val) => { setPage(0); setFilters({ ...filters, user: val }) }}
+          ariaLabel="Filtrar por usuário"
+          fullWidth
+        />
+      </label>
+      <label className="admin-label">Ação
+        <AdminFilterDropdown
+          value={filters.action}
+          options={[
+            { value: '', label: 'Todas as ações' },
+            ...options.actions.map((action) => ({ value: action, label: action })),
+          ]}
+          onChange={(val) => { setPage(0); setFilters({ ...filters, action: val }) }}
+          ariaLabel="Filtrar por ação"
+          fullWidth
+        />
+      </label>
+      <label className="admin-label">Recurso
+        <AdminFilterDropdown
+          value={filters.resource}
+          options={[
+            { value: '', label: 'Todos os recursos' },
+            ...options.resources.map((resource) => ({ value: resource, label: resource })),
+          ]}
+          onChange={(val) => { setPage(0); setFilters({ ...filters, resource: val }) }}
+          ariaLabel="Filtrar por recurso"
+          fullWidth
+        />
+      </label>
       <label className="admin-label">De<input className="input" type="datetime-local" value={filters.from} onChange={(event) => { setPage(0); setFilters({ ...filters, from: event.target.value }) }} /></label>
       <label className="admin-label">Até<input className="input" type="datetime-local" value={filters.to} onChange={(event) => { setPage(0); setFilters({ ...filters, to: event.target.value }) }} /></label>
     </div>
