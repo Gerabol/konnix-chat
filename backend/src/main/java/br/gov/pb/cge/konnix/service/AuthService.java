@@ -52,7 +52,9 @@ public class AuthService {
             throw ApiExceptions.tooManyAttempts();
         }
 
-        User user = userRepository.findByUsername(username).orElse(null);
+        User user = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByEmail(username))
+                .orElse(null);
 
         if (user == null) {
             loginAttemptService.registerFailure(username);
