@@ -1,5 +1,6 @@
 package br.gov.pb.cge.konnix.domain.user;
 
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -34,6 +35,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     long countByActiveTrueAndRoles_Name(String roleName);
 
     long countByAccountStatus(String accountStatus);
+
+    List<User> findByActiveTrueAndRoles_Name(String roleName);
 
     @Modifying
     @Transactional

@@ -24,6 +24,7 @@ import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
@@ -41,13 +42,15 @@ public class PollService {
     private final AuditService auditService;
     private final ChatEventPublisher eventPublisher;
     private final PushNotificationService pushNotificationService;
+    private final RoomAccessService roomAccessService;
 
     public PollService(RoomRepository roomRepository, RoomMemberRepository roomMemberRepository,
                        UserRepository userRepository, MessageRepository messageRepository,
                        PollRepository pollRepository, PollOptionRepository optionRepository,
                        PollVoteRepository voteRepository, MessageService messageService,
                        AuditService auditService, ChatEventPublisher eventPublisher,
-                       PushNotificationService pushNotificationService) {
+                       PushNotificationService pushNotificationService,
+                       RoomAccessService roomAccessService) {
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
         this.userRepository = userRepository;
@@ -59,6 +62,7 @@ public class PollService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.pushNotificationService = pushNotificationService;
+        this.roomAccessService = roomAccessService;
     }
 
     @Transactional
@@ -66,8 +70,7 @@ public class PollService {
         User user = writableUser(actor);
         Room room = roomRepository.findById(roomId).orElseThrow(() -> ApiExceptions.notFound("room/" + roomId));
         requireMember(room, actor);
-        if (!"PRIVATE_GROUP".equals(room.getType())) throw ApiExceptions.pollOnlyGroup();
-        if (room.isReadOnly() && !actor.hasRole("ADMIN")) throw ApiExceptions.roomReadOnly();
+        if (!roomAccessService.canWriteToRoom(room, actor.id(), actor.hasRole("ADMIN"))) throw ApiExceptions.roomReadOnly();
         List<String> options = new LinkedHashSet<>(request.options().stream().map(String::trim)
                 .filter(value -> !value.isBlank()).toList()).stream().toList();
         if (request.question().isBlank() || options.size() < 2) throw ApiExceptions.pollInvalid();
@@ -77,6 +80,8 @@ public class PollService {
         message.setUser(user);
         message.setContent(request.question().trim());
         message.setMessageType("POLL");
+        room.setUpdatedAt(Instant.now());
+        roomRepository.save(room);
         messageRepository.save(message);
 
         Poll poll = new Poll();

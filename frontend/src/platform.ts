@@ -9,14 +9,16 @@ export function appEnvironment(): AppEnvironment {
 }
 
 export async function notifyDesktop(title: string, body: string, roomId?: string): Promise<void> {
-  if (!isTauri) return
-  const notification = new window.Notification(title, { body, tag: roomId })
+  if (!isTauri && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
+  const notification = new Notification(title, { body, tag: roomId })
   notification.onclick = () => {
     window.focus()
-    void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-      const appWindow = getCurrentWindow()
-      return appWindow.show().then(() => appWindow.setFocus())
-    }).catch(() => undefined)
+    if (isTauri) {
+      void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow()
+        return appWindow.show().then(() => appWindow.setFocus())
+      }).catch(() => undefined)
+    }
     if (roomId) window.dispatchEvent(new CustomEvent('konnix:navigate', { detail: { roomId } }))
     notification.close()
   }

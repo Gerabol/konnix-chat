@@ -1,0 +1,34 @@
+﻿# Modo desenvolvimento com hot reload
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Frontend: Vite HMR via volume montado (polling ativo no vite.config.ts)
+# Backend:  Spring Boot DevTools via mvn spring-boot:run com fonte montada
+
+services:
+  backend:
+    image: maven:3.9.9-eclipse-temurin-21
+    container_name: konnix-backend
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - konnix_maven_cache:/root/.m2
+    command: mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Dspring.devtools.restart.poll-interval=2s -Dspring.devtools.restart.quiet-period=1s"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/konnix
+      SPRING_DATASOURCE_USERNAME: konnix
+      SPRING_DATASOURCE_PASSWORD: konnix
+
+      KONNIX_UPLOADS_DIR: /tmp/uploads
+
+      KONNIX_ADMIN_USERNAME: ${KONNIX_ADMIN_USERNAME:-admin}
+      KONNIX_ADMIN_NAME: ${KONNIX_ADMIN_NAME:-Administrador}
+      KONNIX_ADMIN_EMAIL: ${KONNIX_ADMIN_EMAIL:-admin@konnix.local}
+      KONNIX_ADMIN_PASSWORD: ${KONNIX_ADMIN_PASSWORD:-}
+
+      KONNIX_VAPID_PUBLIC_KEY: ${KONNIX_VAPID_PUBLIC_KEY:-}
+      KONNIX_VAPID_PRIVATE_KEY: ${KONNIX_VAPID_PRIVATE_KEY:-}
+      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:konnix@konnix.local}
+
+volumes:
+  konnix_maven_cache:
+    name: konnix_maven_cache

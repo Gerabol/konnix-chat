@@ -25,7 +25,7 @@ public class FileStorageService {
 
     private final Path root;
 
-    public FileStorageService(@Value("${konnix.uploads.dir:/app/uploads}") String uploadsDir) {
+    public FileStorageService(@Value("${konnix.uploads.dir:./uploads}") String uploadsDir) {
         this.root = Paths.get(uploadsDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(root);
@@ -63,7 +63,9 @@ public class FileStorageService {
         if (storagePath == null || storagePath.isBlank()) {
             throw ApiExceptions.filePhysicalMissing();
         }
-        Path resolved = resolveSafe(storagePath);
+        // Remove any leading slash that could break path resolution on Windows
+        String sanitized = storagePath.startsWith("/") ? storagePath.substring(1) : storagePath;
+        Path resolved = resolveSafe(sanitized);
         File file = resolved.toFile();
         if (!file.isFile()) {
             throw ApiExceptions.filePhysicalMissing();

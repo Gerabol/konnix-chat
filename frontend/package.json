@@ -23,8 +23,10 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-window-state": "^2.4.1",
+    "@types/prismjs": "^1.26.6",
     "emoji-mart": "^5.6.0",
     "lamejs": "^1.2.1",
+    "prismjs": "^1.30.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

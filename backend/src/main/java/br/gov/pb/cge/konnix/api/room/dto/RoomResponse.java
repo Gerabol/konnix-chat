@@ -1,5 +1,6 @@
 package br.gov.pb.cge.konnix.api.room.dto;
 
+import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
 import br.gov.pb.cge.konnix.domain.room.Room;
 
 import java.time.Instant;
@@ -17,7 +18,8 @@ public record RoomResponse(
         Instant lastActivityAt,
         long unreadCount,
         DirectPartner directPartner,
-        boolean favorite) {
+        boolean favorite,
+        MessageResponse pinnedMessage) {
 
     public record DirectPartner(UUID userId, String username, String name, String email, String accountStatus, String presenceStatus) {
     }
@@ -41,6 +43,13 @@ public record RoomResponse(
 
     public static RoomResponse from(Room room, DirectPartner directPartner, Instant lastActivityAt,
                                     long unreadCount, boolean favorite) {
+        return from(room, directPartner, lastActivityAt, unreadCount, favorite,
+                room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                        ? MessageResponse.from(room.getPinnedMessage()) : null);
+    }
+
+    public static RoomResponse from(Room room, DirectPartner directPartner, Instant lastActivityAt,
+                                    long unreadCount, boolean favorite, MessageResponse pinnedMessage) {
         return new RoomResponse(
                 room.getId(),
                 room.getName(),
@@ -53,6 +62,7 @@ public record RoomResponse(
                 lastActivityAt,
                 unreadCount,
                 directPartner,
-                favorite);
+                favorite,
+                pinnedMessage);
     }
 }

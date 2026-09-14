@@ -26,7 +26,7 @@ export type Room = {
   id: string
   name: string
   displayName: string
-  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'DIRECT'
+  type: 'CHANNEL' | 'PRIVATE_GROUP' | 'PUBLIC_GROUP' | 'DIRECT'
   createdBy: string | null
   readOnly: boolean
   createdAt: string
@@ -35,6 +35,7 @@ export type Room = {
   unreadCount: number
   favorite: boolean
   directPartner: { userId: string; username: string; name: string; email: string | null; accountStatus: AccountStatus; presenceStatus: PresenceStatus } | null
+  pinnedMessage: Message | null
 }
 
 export type DirectoryUser = {
@@ -89,6 +90,7 @@ export type Message = {
   reactions: MessageReaction[]
   forwardedFromUsername: string | null
   poll: Poll | null
+  roles: string[]
 }
 
 export type Poll = {
@@ -157,6 +159,27 @@ export type MonitoringMetrics = {
   activeSessions: number
   totalAuditEvents: number
   databaseSizeBytes: number
+  activity: { day: string; messages: number; activeUsers: number }[]
+}
+
+export type MessageTimeSeriesPeriod = 'DAYS_7' | 'DAYS_30' | 'DAYS_90' | 'MONTHS_12' | 'YEARS'
+
+export type MessageTimeSeriesPoint = {
+  dateKey: string
+  label: string
+  messages: number
+  activeUsers: number
+}
+
+export type MessageTimeSeriesResponse = {
+  granularity: 'day' | 'month' | 'year'
+  period: MessageTimeSeriesPeriod
+  totalMessages: number
+  totalActiveUsers: number
+  averageMessages: number
+  peakMessages: number
+  peakPeriodLabel: string
+  points: MessageTimeSeriesPoint[]
 }
 
 export type AppSettings = { name: string; maxUploadBytes: number }
@@ -287,6 +310,9 @@ export const api = {
   userProfile(userId: string) {
     return request<PublicProfile>(`/api/v1/profiles/users/${userId}`)
   },
+  commonRooms(userId: string) {
+    return request<Room[]>(`/api/v1/profiles/users/${userId}/common-rooms`)
+  },
   updatePresence(status: PresenceStatus) {
     return request<User>('/api/v1/auth/presence', {
       method: 'POST',
@@ -332,6 +358,29 @@ export const api = {
   updateOwnProfile(name: string, email: string) {
     return request<User>('/api/v1/auth/profile', {
       method: 'PATCH', body: JSON.stringify({ name, email }),
+    })
+  },
+  reportIssue(content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
+    return request<{ message: string }>('/api/v1/support/report', {
+      method: 'POST',
+      body: form,
+    })
+  },
+  respondToReport(messageId: string, content: string, files?: File[]) {
+    const form = new FormData()
+    form.append('messageId', messageId)
+    form.append('content', content)
+    if (files) {
+      files.forEach((file) => form.append('files', file))
+    }
+    return request<Message>('/api/v1/support/respond', {
+      method: 'POST',
+      body: form,
     })
   },
   uploadUserAvatar(userId: string, file: File) {
@@ -409,8 +458,11 @@ export const api = {
   adminAuditOptions() {
     return request<AuditOptions>('/api/v1/admin/audit/options')
   },
-  adminMonitoringMetrics() {
-    return request<MonitoringMetrics>('/api/v1/admin/monitoring/metrics')
+  adminMonitoringMetrics(days: number = 7) {
+    return request<MonitoringMetrics>(`/api/v1/admin/monitoring/metrics?days=${days}`)
+  },
+  adminMessageTimeSeries(period: MessageTimeSeriesPeriod = 'DAYS_7') {
+    return request<MessageTimeSeriesResponse>(`/api/v1/admin/monitoring/messages-timeseries?period=${period}`)
   },
   adminSettings() {
     return request<AppSettings>('/api/v1/admin/settings')
@@ -422,10 +474,16 @@ export const api = {
     const url = q && q.trim() ? `/api/v1/users/directory?q=${encodeURIComponent(q.trim())}` : '/api/v1/users/directory'
     return request<DirectoryUser[]>(url)
   },
-  addMember(roomId: string, userId: string) {
+  addMember(roomId: string, userId: string, role?: string) {
     return request<RoomMember>(`/api/v1/rooms/${roomId}/members`, {
       method: 'POST',
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId, role }),
+    })
+  },
+  updateMemberRole(roomId: string, userId: string, role: string) {
+    return request<RoomMember>(`/api/v1/rooms/${roomId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId, role }),
     })
   },
   room(id: string) {
@@ -435,6 +493,16 @@ export const api = {
     return request<Room>('/api/v1/rooms', {
       method: 'POST',
       body: JSON.stringify({ name, displayName: displayName || undefined, type }),
+    })
+  },
+  pinMessage(roomId: string, messageId: string) {
+    return request<Room>(`/api/v1/rooms/${roomId}/pin/${messageId}`, {
+      method: 'POST',
+    })
+  },
+  unpinMessage(roomId: string) {
+    return request<Room>(`/api/v1/rooms/${roomId}/pin`, {
+      method: 'DELETE',
     })
   },
   createDm(userId: string) {

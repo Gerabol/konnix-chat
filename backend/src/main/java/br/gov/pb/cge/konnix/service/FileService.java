@@ -28,6 +28,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -55,6 +56,7 @@ public class FileService {
     private final PushNotificationService pushNotificationService;
     private final SystemSettingService systemSettingService;
     private final long maxFileSize;
+    private final RoomAccessService roomAccessService;
 
     public FileService(FileStorageService storageService,
                        AttachmentRepository attachmentRepository,
@@ -66,6 +68,7 @@ public class FileService {
                        ChatEventPublisher eventPublisher,
                        PushNotificationService pushNotificationService,
                        SystemSettingService systemSettingService,
+                       RoomAccessService roomAccessService,
                        @Value("${konnix.files.max-size:62914560}") long maxFileSize) {
         this.storageService = storageService;
         this.attachmentRepository = attachmentRepository;
@@ -77,6 +80,7 @@ public class FileService {
         this.eventPublisher = eventPublisher;
         this.pushNotificationService = pushNotificationService;
         this.systemSettingService = systemSettingService;
+        this.roomAccessService = roomAccessService;
         this.maxFileSize = maxFileSize;
     }
 
@@ -90,7 +94,7 @@ public class FileService {
         requireWritable(actor);
         Room room = roomOrThrow(roomId);
         requireMember(room, actor);
-        if (room.isReadOnly() && !actor.hasRole("ADMIN")) {
+        if (!roomAccessService.canWriteToRoom(room, actor.id(), actor.hasRole("ADMIN"))) {
             throw ApiExceptions.roomReadOnly();
         }
         if (file == null || file.isEmpty()) {
@@ -121,6 +125,8 @@ public class FileService {
             message.setUser(actorUser);
             message.setContent(content == null || content.isBlank() ? originalName.trim() : content.trim());
             message.setMessageType("FILE");
+            room.setUpdatedAt(Instant.now());
+            roomRepository.save(room);
             messageRepository.save(message);
 
             Attachment attachment = new Attachment();

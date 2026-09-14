@@ -1,6 +1,15 @@
+# Variáveis de ambiente e segredos locais (Zero Leakage)
 .env
+.env*
+!.env.example
+!.env*.example
+deploy/.env*
+!deploy/.env*.example
+
+# Builds e dependências
 node_modules/
 target/
 dist/
 *.log
 .DS_Store
+

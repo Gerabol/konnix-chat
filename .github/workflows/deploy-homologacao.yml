@@ -1,0 +1,33 @@
+name: Deploy Homologação (Staging)
+
+on:
+  push:
+    branches:
+      - homologacao
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-homologacao
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy no Servidor Local (Homologação)
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Preparar Arquivo de Ambiente (.env)
+        run: node deploy/deploy-helper.js prepare-staging-env
+
+      - name: Atualizar e Subir Containers de Homologação
+        run: docker compose --env-file deploy/.env.staging -f deploy/docker-compose.staging.yml up -d --build --remove-orphans
+
+      - name: Healthcheck e URL Pública do Cloudflare Tunnel
+        run: node deploy/deploy-helper.js healthcheck-staging

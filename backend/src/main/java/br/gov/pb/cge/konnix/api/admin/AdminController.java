@@ -188,8 +188,15 @@ public class AdminController {
     }
 
     @GetMapping("/monitoring/metrics")
-    public ApiResponse<MonitoringMetricsResponse> metrics() {
-        return ApiResponse.ok(monitoringService.metrics());
+    public ApiResponse<MonitoringMetricsResponse> metrics(@RequestParam(defaultValue = "7") int days) {
+        return ApiResponse.ok(monitoringService.metrics(days));
+    }
+
+    @GetMapping("/monitoring/messages-timeseries")
+    public ApiResponse<MessageTimeSeriesResponse> messageTimeSeries(
+            @RequestParam(defaultValue = "DAYS_7") String period) {
+        MessageTimeSeriesPeriod selectedPeriod = MessageTimeSeriesPeriod.fromString(period);
+        return ApiResponse.ok(monitoringService.messageTimeSeries(selectedPeriod));
     }
 
     @GetMapping("/settings")

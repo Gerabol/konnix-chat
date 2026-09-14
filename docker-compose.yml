@@ -32,12 +32,12 @@ services:
       SPRING_DATASOURCE_USERNAME: konnix
       SPRING_DATASOURCE_PASSWORD: konnix
 
-      KONNIX_UPLOADS_DIR: /app/uploads
+      KONNIX_UPLOADS_DIR: /tmp/konnix-uploads
 
       KONNIX_ADMIN_USERNAME: ${KONNIX_ADMIN_USERNAME:-admin}
       KONNIX_ADMIN_NAME: ${KONNIX_ADMIN_NAME:-Administrador}
       KONNIX_ADMIN_EMAIL: ${KONNIX_ADMIN_EMAIL:-admin@konnix.local}
-      KONNIX_ADMIN_PASSWORD: ${KONNIX_ADMIN_PASSWORD:-}
+      KONNIX_ADMIN_PASSWORD: ${KONNIX_ADMIN_PASSWORD:-admin123}
 
       KONNIX_VAPID_PUBLIC_KEY: ${KONNIX_VAPID_PUBLIC_KEY:-}
       KONNIX_VAPID_PRIVATE_KEY: ${KONNIX_VAPID_PRIVATE_KEY:-}
@@ -74,6 +74,7 @@ services:
 
     volumes:
       - ./frontend:/app
+      - /app/node_modules
 
     command: ["sh", "-c", "npm ci --legacy-peer-deps && npm run dev -- --host 0.0.0.0"]
 

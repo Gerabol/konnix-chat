@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from './api'
-import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MonitoringMetrics, Room, RoomMember, User } from './api'
-import { AvatarImage } from './App'
+import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
+import { AvatarImage, cacheTheme, PaletteIcon, ThemeModal, applyTheme } from './App'
 import ApiDocsPanel from './ApiDocsPanel'
 import { validatePassword } from './passwordValidation'
 
@@ -23,9 +23,7 @@ function accountStatusLabel(status: AccountStatus): string {
 }
 
 function adminLogoPath(theme: User['theme']): string {
-  const darkTheme = theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
-  const path = darkTheme ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
-  return `${path}?theme=${theme}`
+  return `/icons/Konnix white.png?theme=${theme}`
 }
 
 function adminThemeAttribute(theme: User['theme']): string {
@@ -128,11 +126,25 @@ function AccountStatusSelector({ status, onChange, disabled }: { status: Account
 }
 
 export default function AdminView({ me, onBack }: { me: User; onBack: () => void }) {
+  const [currentTheme, setCurrentTheme] = useState<User['theme']>(() => me.theme)
+  const [showThemeModal, setShowThemeModal] = useState(false)
+
   useEffect(() => {
-    const attribute = adminThemeAttribute(me.theme)
+    const attribute = adminThemeAttribute(currentTheme)
     if (attribute) document.documentElement.dataset.theme = attribute
     else delete document.documentElement.dataset.theme
-  }, [me.theme])
+  }, [currentTheme])
+
+  // Keep theme in sync when changed from the chat side (and vice-versa)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<string>).detail as User['theme']
+      setCurrentTheme(next)
+      applyTheme(next)
+    }
+    window.addEventListener('konnix:theme-changed', handler)
+    return () => window.removeEventListener('konnix:theme-changed', handler)
+  }, [])
 
   const [tab, setTab] = useState<Tab>(() => {
     try {
@@ -154,12 +166,21 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
     <div className="admin-shell">
       <header className="admin-header">
         <div className="admin-brand">
-           <img key={adminLogoPath(me.theme)} src={adminLogoPath(me.theme)} alt="Konnix" />
+           <img key={adminLogoPath(currentTheme)} src={adminLogoPath(currentTheme)} alt="Konnix" />
           <div><strong>Konnix</strong><span>Administração</span></div>
         </div>
         <div className="admin-header-actions">
-          <span>{me.name}</span>
-          <button className="btn-ghost" onClick={onBack}>Voltar ao chat</button>
+          <span className="admin-user-name" title={me.name}>{me.name}</span>
+          <button
+            type="button"
+            className="btn-ghost admin-theme-btn"
+            aria-label="Selecionar tema"
+            title="Selecionar tema"
+            onClick={() => setShowThemeModal(true)}
+          >
+            <PaletteIcon />
+          </button>
+          <button className="btn-ghost admin-back-btn" onClick={onBack}>Voltar ao chat</button>
         </div>
       </header>
       <div className="admin-body">
@@ -181,7 +202,47 @@ export default function AdminView({ me, onBack }: { me: User; onBack: () => void
         </main>
       </div>
       {toast && <button className="toast admin-toast" onClick={() => setToast(null)}>{toast}</button>}
+      {showThemeModal && (
+        <ThemeModal
+          theme={currentTheme as any}
+          onClose={() => setShowThemeModal(false)}
+          onPreview={(t) => { setCurrentTheme(t as any); applyTheme(t) }}
+          onSaved={(user) => {
+            setCurrentTheme(user.theme)
+            cacheTheme(user.theme)
+            setShowThemeModal(false)
+          }}
+          notify={notify}
+        />
+      )}
     </div>
+  )
+}
+
+function SearchIcon() {
+  return (
+    <svg className="admin-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
   )
 }
 
@@ -190,12 +251,12 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const requestId = useRef(0)
-  const [busy, setBusy] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [userPage, setUserPage] = useState(0)
   const [userPageSize, setUserPageSize] = useState(6)
-  const [filters, setFilters] = useState({ active: true, readOnly: true, inactive: true, ADMIN: true, USER: true, BOT: true })
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'READ_ONLY' | 'DISABLED'>('ALL')
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'USER' | 'BOT'>('ALL')
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 300)
@@ -211,55 +272,272 @@ function UsersPanel({ notify }: { notify: (text: string) => void }) {
   }, [notify, debouncedQuery])
   useEffect(() => { load() }, [load])
 
-  const update = async (action: () => Promise<User>, success: string) => {
-    if (busy) return
-    setBusy(true)
-    try { const updated = await action(); setUsers((old) => old.map((user) => user.id === updated.id ? updated : user)); notify(success) }
-    catch (error) { notify(error instanceof ApiError ? error.message : 'Operação não realizada') }
-    finally { setBusy(false) }
+  const clearFilters = () => {
+    setQuery('')
+    setStatusFilter('ALL')
+    setRoleFilter('ALL')
+    setUserPage(0)
   }
 
-  const toggleFilter = (filter: keyof typeof filters, group: ('active' | 'readOnly' | 'inactive')[] | ('ADMIN' | 'USER' | 'BOT')[], checked: boolean) => {
-    if (!checked && group.every((item) => item === filter || !filters[item])) return
-    setUserPage(0)
-    setFilters((current) => ({ ...current, [filter]: checked }))
-  }
+  const hasActiveFilters = query.trim() !== '' || statusFilter !== 'ALL' || roleFilter !== 'ALL'
 
   const filteredUsers = users.filter((user) => {
     const status = accountStatus(user)
-    const statusVisible = status === 'ACTIVE' ? filters.active : status === 'READ_ONLY' ? filters.readOnly : filters.inactive
-    return statusVisible && user.roles.some((role) => filters[role as 'ADMIN' | 'USER' | 'BOT'])
+    const matchesStatus = statusFilter === 'ALL' || status === statusFilter
+    const matchesRole = roleFilter === 'ALL' || user.roles.includes(roleFilter)
+    return matchesStatus && matchesRole
   })
+
   const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize))
   const visibleUsers = filteredUsers.slice(userPage * userPageSize, userPage * userPageSize + userPageSize)
+
+  const totalUsers = users.length
   const onlineCount = users.filter((user) => user.active && user.presenceStatus !== 'offline').length
-  const offlineCount = users.length - onlineCount
+  const activeCount = users.filter((user) => accountStatus(user) === 'ACTIVE').length
+  const readOnlyCount = users.filter((user) => accountStatus(user) === 'READ_ONLY').length
 
   return (
     <section className="admin-panel">
-       <div className="admin-panel-title"><div className="users-title-line"><h1>Users</h1><div className="user-metrics"><span>Total <strong>{users.length}</strong></span><span className="metric-online">● {onlineCount} online</span><span className="metric-offline">● {offlineCount} offline</span><span className="metric-active">● {users.filter((user) => accountStatus(user) === 'ACTIVE').length} ativos</span><span className="metric-read-only">● {users.filter((user) => accountStatus(user) === 'READ_ONLY').length} leitura</span><span className="metric-inactive">● {users.filter((user) => accountStatus(user) === 'DISABLED').length} desativados</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Novo usuário</button></div>
-       <div className="admin-toolbar users-toolbar"><input className="input" value={query} placeholder="Pesquisar nome, username ou e-mail" onChange={(event) => { setUserPage(0); setQuery(event.target.value) }} /><div className="user-filter-groups"><div className="user-filter-group"><strong>Status</strong><div className="user-filter-list">{(['active', 'readOnly', 'inactive'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['active', 'readOnly', 'inactive'], event.target.checked)} />{filter === 'active' ? 'Ativos' : filter === 'readOnly' ? 'Leitura' : 'Desativados'}</label>)}</div></div><div className="user-filter-group"><strong>Roles</strong><div className="user-filter-list">{(['ADMIN', 'USER', 'BOT'] as const).map((filter) => <label key={filter}><input type="checkbox" checked={filters[filter]} onChange={(event) => toggleFilter(filter, ['ADMIN', 'USER', 'BOT'], event.target.checked)} />{filter}</label>)}</div></div></div></div>
-       <Pager page={userPage} totalPages={userTotalPages} onPage={setUserPage} pageSize={userPageSize} onPageSize={(size) => { setUserPageSize(size); setUserPage(0) }} />
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Usuário</th><th>Status</th><th>Roles</th><th>Ações</th></tr></thead><tbody>
-         {visibleUsers.map((user) => <UserRow key={user.id} user={user} busy={busy} onEdit={() => setEditingUser(user)} onRoles={(roles) => update(() => api.adminUpdateRoles(user.id, roles), 'Roles atualizadas')} />)}
-        {filteredUsers.length === 0 && <tr><td colSpan={4} className="admin-empty">Nenhum usuário encontrado.</td></tr>}
-      </tbody></table></div>
-       <Pager page={userPage} totalPages={userTotalPages} onPage={setUserPage} pageSize={userPageSize} onPageSize={(size) => { setUserPageSize(size); setUserPage(0) }} />
-      {editingUser && <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onUpdated={(updated) => setUsers((old) => old.map((item) => item.id === updated.id ? updated : item))} notify={notify} />}
-      {createOpen && <CreateUserModal onClose={() => setCreateOpen(false)} onCreated={(user) => { setUsers((old) => [user, ...old]); setCreateOpen(false); notify('Usuário criado') }} notify={notify} />}
+      <div className="admin-panel-title">
+        <div>
+          <h1>Usuários</h1>
+          <p>Gerenciamento de contas, permissões e status de acesso corporativo.</p>
+        </div>
+        <button className="btn-primary admin-create-btn" onClick={() => setCreateOpen(true)}>
+          <PlusIcon />
+          <span>Novo usuário</span>
+        </button>
+      </div>
+
+      <div className="timeseries-summary-grid users-summary-grid">
+        <div className="timeseries-stat-chip">
+          <span>Total de Usuários</span>
+          <strong>{totalUsers.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Online Agora</span>
+          <strong className="stat-value-online">
+            <span className="online-indicator-dot" /> {onlineCount.toLocaleString('pt-BR')}
+          </strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Contas Ativas</span>
+          <strong className="stat-value-active">{activeCount.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>Modo Leitura</span>
+          <strong className="stat-value-warning">{readOnlyCount.toLocaleString('pt-BR')}</strong>
+        </div>
+      </div>
+
+      <div className="users-toolbar-card">
+        <div className="users-search-box">
+          <SearchIcon />
+          <input
+            className="input users-search-input"
+            value={query}
+            placeholder="Pesquisar por nome, username ou e-mail..."
+            onChange={(event) => {
+              setUserPage(0)
+              setQuery(event.target.value)
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => { setQuery(''); setUserPage(0) }}
+              aria-label="Limpar pesquisa"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="users-filter-controls">
+          <div className="admin-filter-group">
+            <label className="admin-filter-label" htmlFor="user-status-filter">Status</label>
+            <select
+              id="user-status-filter"
+              className="admin-filter-select"
+              value={statusFilter}
+              onChange={(e) => {
+                setUserPage(0)
+                setStatusFilter(e.target.value as any)
+              }}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="ACTIVE">Ativos</option>
+              <option value="READ_ONLY">Somente leitura</option>
+              <option value="DISABLED">Desativados</option>
+            </select>
+          </div>
+
+          <div className="admin-filter-group">
+            <label className="admin-filter-label" htmlFor="user-role-filter">Papel</label>
+            <select
+              id="user-role-filter"
+              className="admin-filter-select"
+              value={roleFilter}
+              onChange={(e) => {
+                setUserPage(0)
+                setRoleFilter(e.target.value as any)
+              }}
+            >
+              <option value="ALL">Todos os papéis</option>
+              <option value="ADMIN">Administradores (ADMIN)</option>
+              <option value="USER">Usuários (USER)</option>
+              <option value="BOT">Bots (BOT)</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="btn-ghost admin-clear-filters-btn"
+              onClick={clearFilters}
+              title="Redefinir filtros"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Usuário</th>
+              <th>Username</th>
+              <th>Papéis</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'right', paddingRight: '1.2rem' }}>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.map((user) => (
+              <UserRow
+                key={user.id}
+                user={user}
+                onEdit={() => setEditingUser(user)}
+              />
+            ))}
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={5} className="admin-empty">
+                  Nenhum usuário encontrado para os critérios selecionados.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <div className="admin-table-footer">
+          <div className="admin-table-count">
+            Mostrando <strong>{filteredUsers.length > 0 ? userPage * userPageSize + 1 : 0}</strong> a{' '}
+            <strong>{Math.min((userPage + 1) * userPageSize, filteredUsers.length)}</strong> de{' '}
+            <strong>{filteredUsers.length}</strong> {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
+          </div>
+          <Pager
+            page={userPage}
+            totalPages={userTotalPages}
+            onPage={setUserPage}
+            pageSize={userPageSize}
+            onPageSize={(size) => {
+              setUserPageSize(size)
+              setUserPage(0)
+            }}
+          />
+        </div>
+      </div>
+
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onUpdated={(updated) =>
+            setUsers((old) => old.map((item) => (item.id === updated.id ? updated : item)))
+          }
+          notify={notify}
+        />
+      )}
+      {createOpen && (
+        <CreateUserModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(user) => {
+            setUsers((old) => [user, ...old])
+            setCreateOpen(false)
+            notify('Usuário criado com sucesso')
+          }}
+          notify={notify}
+        />
+      )}
     </section>
   )
 }
 
-function UserRow({ user, busy, onEdit, onRoles }: { user: User; busy: boolean; onEdit: () => void; onRoles: (roles: string[]) => void }) {
-  const [roles, setRoles] = useState(user.roles)
+function UserRow({
+  user,
+  onEdit,
+}: {
+  user: User
+  onEdit: () => void
+}) {
   const status = accountStatus(user)
-  return <tr>
-    <td><div className="admin-user-cell"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="admin-user-avatar" fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><span><strong>{user.name}</strong><small className="admin-subline">@{user.username} · {user.email || 'sem e-mail'}</small>{user.passwordMigrationRequired && <span className="admin-warning">Senha pendente de migração</span>}</span></div></td>
-    <td><span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>{accountStatusLabel(status)}</span></td>
-    <td><div className="role-list">{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} disabled={busy} onChange={(event) => { const next = event.target.checked ? [...roles, role] : roles.filter((item) => item !== role); setRoles(next); onRoles(next) }} />{role}</label>)}</div></td>
-    <td><div className="admin-row-actions"><button className="icon-action" title="Editar usuário" aria-label="Editar usuário" onClick={onEdit}>✎</button></div></td>
-  </tr>
+  return (
+    <tr>
+      <td>
+        <div className="admin-user-cell">
+          <AvatarImage
+            path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`}
+            className="admin-user-avatar"
+            fallback={<span className="admin-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>}
+            alt={user.name}
+          />
+          <div className="admin-user-cell-info">
+            <strong>{user.name}</strong>
+            <small className="admin-subline">{user.email || 'sem e-mail'}</small>
+            {user.passwordMigrationRequired && (
+              <span className="admin-warning">Senha pendente de migração</span>
+            )}
+          </div>
+        </div>
+      </td>
+      <td>
+        <span className="admin-username-badge">@{user.username}</span>
+      </td>
+      <td>
+        <div className="user-roles-cell">
+          {user.roles.map((role) => (
+            <span key={role} className={`user-role-pill ${role.toLowerCase()}`}>
+              {role}
+            </span>
+          ))}
+          {user.roles.length === 0 && <span className="user-role-pill muted">—</span>}
+        </div>
+      </td>
+      <td>
+        <span className={`admin-status ${status === 'ACTIVE' ? 'active' : status === 'READ_ONLY' ? 'read-only' : 'inactive'}`}>
+          {accountStatusLabel(status)}
+        </span>
+      </td>
+      <td>
+        <div className="admin-row-actions">
+          <button
+            type="button"
+            className="admin-action-btn"
+            title={`Editar ${user.name}`}
+            aria-label={`Editar ${user.name}`}
+            onClick={onEdit}
+          >
+            <EditIcon />
+            <span>Editar</span>
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
 }
 
 function EditUserModal({ user, onClose, onUpdated, notify }: { user: User; onClose: () => void; onUpdated: (user: User) => void; notify: (text: string) => void }) {
@@ -267,6 +545,7 @@ function EditUserModal({ user, onClose, onUpdated, notify }: { user: User; onClo
   const [name, setName] = useState(user.name)
   const [email, setEmail] = useState(user.email || '')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [roles, setRoles] = useState(user.roles)
   const [avatar, setAvatar] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
@@ -286,12 +565,13 @@ function EditUserModal({ user, onClose, onUpdated, notify }: { user: User; onClo
     } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao atualizar usuário') }
     finally { setBusy(false) }
   }
-  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Editar usuário</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="edit-user-heading"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="edit-user-avatar" fallback={<span className="edit-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><div className="edit-user-title"><strong>{user.name}</strong><small>@{user.username}</small></div><AccountStatusSelector status={selectedStatus} onChange={setSelectedStatus} disabled={busy || user.roles.includes('ADMIN')} /></div><div className="modal-fields"><label className="admin-label">Nome<input autoComplete="off" className="input" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-label">E-mail<input autoComplete="off" className="input" value={email} onChange={(event) => setEmail(event.target.value)} /></label><div className="password-roles-row"><label className="admin-label">Nova senha (opcional)<input autoComplete="new-password" className="input" type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label><div className="edit-role-grid"><strong>Roles</strong>{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles(event.target.checked ? [...roles, role] : roles.filter((item) => item !== role))} />{role}</label>)}</div></div><label className="admin-label">Imagem de perfil<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy || !name.trim() || (password.length > 0 && password.length < 8)} onClick={save}>{busy ? 'Salvando...' : 'Salvar alterações'}</button></div></div></div>
+  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Editar usuário</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="edit-user-heading"><AvatarImage path={`${userAvatarPath(user.id)}?v=${encodeURIComponent(user.updatedAt)}`} className="edit-user-avatar" fallback={<span className="edit-user-avatar">{user.name.slice(0, 1).toUpperCase()}</span>} alt={user.name} /><div className="edit-user-title"><strong>{user.name}</strong><small>@{user.username}</small></div><AccountStatusSelector status={selectedStatus} onChange={setSelectedStatus} disabled={busy || user.roles.includes('ADMIN')} /></div><div className="modal-fields"><label className="admin-label">Nome<input autoComplete="off" className="input" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-label">E-mail<input autoComplete="off" className="input" value={email} onChange={(event) => setEmail(event.target.value)} /></label><div className="password-roles-row"><label className="admin-label">Nova senha (opcional)<span className="password-input-wrap"><input autoComplete="new-password" className="input" type={showPassword ? 'text' : 'password'} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}>{showPassword ? 'Ocultar' : 'Exibir'}</button></span></label><div className="edit-role-grid"><strong>Roles</strong>{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles(event.target.checked ? [...roles, role] : roles.filter((item) => item !== role))} />{role}</label>)}</div></div><label className="admin-label">Imagem de perfil<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy || !name.trim() || (password.length > 0 && password.length < 8)} onClick={save}>{busy ? 'Salvando...' : 'Salvar alterações'}</button></div></div></div>
 }
 
 function CreateUserModal({ onClose, onCreated, notify }: { onClose: () => void; onCreated: (user: User) => void; notify: (text: string) => void }) {
   useEscapeClose(onClose)
   const [form, setForm] = useState({ username: '', name: '', email: '', password: '' })
+  const [showPassword, setShowPassword] = useState(false)
   const [avatar, setAvatar] = useState<File | null>(null)
   const [roles, setRoles] = useState(['USER'])
   const [busy, setBusy] = useState(false)
@@ -303,7 +583,7 @@ function CreateUserModal({ onClose, onCreated, notify }: { onClose: () => void; 
     setBusy(true)
     try { let user = await api.createUser(form); if (JSON.stringify(roles) !== JSON.stringify(['USER'])) user = await api.adminUpdateRoles(user.id, roles); if (avatar) user = await api.uploadUserAvatar(user.id, avatar); onCreated(user) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao criar usuário') } finally { setBusy(false) }
   }
-  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Novo usuário</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="edit-user-heading"><span className="admin-user-avatar admin-generic-avatar">👤</span><div className="edit-user-title"><strong>Novo usuário</strong><small>Configure os dados da conta</small></div><span className="admin-status active">Ativo</span></div><div className="modal-fields"><label className="admin-label">Nome<input autoComplete="off" className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="admin-label">Username<input autoComplete="off" className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label className="admin-label">E-mail<input autoComplete="off" className="input" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><div className="password-roles-row"><label className="admin-label">Senha<input autoComplete="new-password" className="input" type="password" minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label><div className="edit-role-grid"><strong>Roles</strong>{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles(event.target.checked ? [...roles, role] : roles.filter((item) => item !== role))} />{role}</label>)}</div></div><label className="admin-label">Imagem de perfil<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy} onClick={submit}>{busy ? 'Criando...' : 'Criar usuário'}</button></div></div></div>
+  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Novo usuário</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="edit-user-heading"><span className="admin-user-avatar admin-generic-avatar">👤</span><div className="edit-user-title"><strong>Novo usuário</strong><small>Configure os dados da conta</small></div><span className="admin-status active">Ativo</span></div><div className="modal-fields"><label className="admin-label">Nome<input autoComplete="off" className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="admin-label">Username<input autoComplete="off" className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label className="admin-label">E-mail<input autoComplete="off" className="input" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><div className="password-roles-row"><label className="admin-label">Senha<span className="password-input-wrap"><input autoComplete="new-password" className="input" type={showPassword ? 'text' : 'password'} minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}>{showPassword ? 'Ocultar' : 'Exibir'}</button></span></label><div className="edit-role-grid"><strong>Roles</strong>{ROLE_OPTIONS.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => setRoles(event.target.checked ? [...roles, role] : roles.filter((item) => item !== role))} />{role}</label>)}</div></div><label className="admin-label">Imagem de perfil<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy} onClick={submit}>{busy ? 'Criando...' : 'Criar usuário'}</button></div></div></div>
 }
 
 function RoomsPanel({ notify }: { notify: (text: string) => void }) {
@@ -320,7 +600,7 @@ function RoomsPanel({ notify }: { notify: (text: string) => void }) {
   const roomTotalPages = Math.max(1, Math.ceil(filteredRows.length / roomPageSize))
   const visibleRooms = filteredRows.slice(roomPage * roomPageSize, roomPage * roomPageSize + roomPageSize)
   const readOnlyCount = roomRows.filter(({ room }) => room.readOnly).length
-  return <section className="admin-panel"><div className="admin-panel-title"><div className="users-title-line"><h1>Canais e grupos</h1><div className="user-metrics"><span>Total de grupos <strong>{roomRows.length}</strong></span><span className="metric-online">● {roomRows.length - readOnlyCount} normais</span><span className="metric-inactive">● {readOnlyCount} só leitura</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Novo canal</button></div><div className="admin-toolbar"><input autoComplete="off" className="input" value={roomQuery} placeholder="Pesquisar canal ou grupo" onChange={(event) => { setRoomPage(0); setRoomQuery(event.target.value) }} /></div><Pager page={roomPage} totalPages={roomTotalPages} onPage={setRoomPage} pageSize={roomPageSize} onPageSize={(size) => { setRoomPageSize(size); setRoomPage(0) }} /><div className="admin-table-wrap"><table className="admin-table admin-rooms-table"><thead><tr><th>Sala</th><th>Usuários</th><th>Status</th><th>Criação</th><th>Ações</th></tr></thead><tbody>{visibleRooms.map(({ room, members }) => <tr key={room.id}><td><div className="admin-user-cell"><AvatarImage path={`${apiRoomAvatar(room.id)}?v=${encodeURIComponent(room.updatedAt)}`} className="admin-room-avatar" fallback={<span className="admin-room-avatar">{room.type === 'CHANNEL' ? '#' : '🔒'}</span>} alt={room.displayName || room.name} /><span><strong>{room.displayName || room.name}</strong><small className="admin-subline">{room.type === 'CHANNEL' ? 'Canal' : 'Grupo privado'} · {room.name}</small></span></div></td><td>{members.length}</td><td><span className={`admin-status ${room.readOnly ? 'inactive' : 'active'}`}>{room.readOnly ? 'Só leitura' : 'Normal'}</span></td><td>{new Date(room.createdAt).toLocaleDateString('pt-BR')}</td><td><div className="admin-row-actions"><button className="icon-action" title="Editar sala" aria-label="Editar sala" onClick={() => setSelected(room)}>✎</button><button className="owner-action" onClick={() => setOwnersRoom({ room, members })}>Proprietários</button></div></td></tr>)}{visibleRooms.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhuma sala encontrada.</td></tr>}</tbody></table></div><Pager page={roomPage} totalPages={roomTotalPages} onPage={setRoomPage} pageSize={roomPageSize} onPageSize={(size) => { setRoomPageSize(size); setRoomPage(0) }} />{selected && <RoomEditor room={selected} onClose={() => setSelected(null)} onSaved={(room) => { setRoomRows((old) => old.map((row) => row.room.id === room.id ? { ...row, room } : row)); setSelected(null); notify('Sala atualizada') }} notify={notify} />}{ownersRoom && <OwnersModal room={ownersRoom.room} members={ownersRoom.members} onClose={() => setOwnersRoom(null)} onChanged={(members) => { setRoomRows((old) => old.map((row) => row.room.id === ownersRoom.room.id ? { ...row, members } : row)); setOwnersRoom({ ...ownersRoom, members }) }} notify={notify} />}{createOpen && <CreateChannelModal onClose={() => setCreateOpen(false)} onCreated={(room) => { setRoomRows((old) => [{ room, members: [] }, ...old]); setRoomPage(0); setCreateOpen(false); notify('Canal criado') }} notify={notify} />}</section>
+  return <section className="admin-panel"><div className="admin-panel-title"><div className="users-title-line"><h1>Canais e grupos</h1><div className="user-metrics"><span>Total de salas <strong>{roomRows.length}</strong></span><span className="metric-online">● {roomRows.length - readOnlyCount} normais</span><span className="metric-inactive">● {readOnlyCount} só leitura</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Nova sala</button></div><div className="admin-toolbar"><input autoComplete="off" className="input" value={roomQuery} placeholder="Pesquisar canal ou grupo" onChange={(event) => { setRoomPage(0); setRoomQuery(event.target.value) }} /></div><Pager page={roomPage} totalPages={roomTotalPages} onPage={setRoomPage} pageSize={roomPageSize} onPageSize={(size) => { setRoomPageSize(size); setRoomPage(0) }} /><div className="admin-table-wrap"><table className="admin-table admin-rooms-table"><thead><tr><th>Sala</th><th>Usuários</th><th>Status</th><th>Criação</th><th>Ações</th></tr></thead><tbody>{visibleRooms.map(({ room, members }) => <tr key={room.id}><td><div className="admin-user-cell"><AvatarImage path={`${apiRoomAvatar(room.id)}?v=${encodeURIComponent(room.updatedAt)}`} className="admin-room-avatar" fallback={<span className="admin-room-avatar">{room.type === 'CHANNEL' ? '#' : '🔒'}</span>} alt={room.displayName || room.name} /><span><strong>{room.displayName || room.name}</strong><small className="admin-subline">{room.type === 'CHANNEL' ? 'Canal (#)' : 'Grupo (🔒)'} · {room.name}</small></span></div></td><td>{members.length}</td><td><span className={`admin-status ${room.readOnly ? 'inactive' : 'active'}`}>{room.readOnly ? 'Só leitura' : 'Normal'}</span></td><td>{new Date(room.createdAt).toLocaleDateString('pt-BR')}</td><td><div className="admin-row-actions"><button className="icon-action" title="Editar sala" aria-label="Editar sala" onClick={() => setSelected(room)}>✎</button><button className="owner-action" onClick={() => setOwnersRoom({ room, members })}>Proprietários</button></div></td></tr>)}{visibleRooms.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhuma sala encontrada.</td></tr>}</tbody></table></div>{selected && <RoomEditor room={selected} onClose={() => setSelected(null)} onSaved={(room) => { setRoomRows((old) => old.map((row) => row.room.id === room.id ? { ...row, room } : row)); setSelected(null); notify('Sala atualizada') }} notify={notify} />}{ownersRoom && <OwnersModal room={ownersRoom.room} members={ownersRoom.members} onClose={() => setOwnersRoom(null)} onChanged={(members) => { setRoomRows((old) => old.map((row) => row.room.id === ownersRoom.room.id ? { ...row, members } : row)); setOwnersRoom({ ...ownersRoom, members }) }} notify={notify} />}{createOpen && <CreateChannelModal onClose={() => setCreateOpen(false)} onCreated={(room) => { setRoomRows((old) => [{ room, members: [] }, ...old]); setRoomPage(0); setCreateOpen(false); notify('Sala criada') }} notify={notify} />}</section>
 }
 
 function apiRoomAvatar(roomId: string) { return `/api/v1/rooms/${roomId}/avatar` }
@@ -336,10 +616,11 @@ function CreateChannelModal({ onClose, onCreated, notify }: { onClose: () => voi
   useEscapeClose(onClose)
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [type, setType] = useState<'CHANNEL' | 'PRIVATE_GROUP'>('CHANNEL')
   const [avatar, setAvatar] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
-  const submit = async () => { setBusy(true); try { let room = await api.createRoom(name, displayName, 'CHANNEL'); if (avatar) room = await api.uploadRoomAvatar(room.id, avatar); onCreated(room) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao criar canal') } finally { setBusy(false) } }
-  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Novo canal</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="new-user-avatar"><span className="admin-room-avatar admin-generic-avatar">#</span><span>Imagem opcional do canal</span></div><div className="modal-fields"><input autoComplete="off" className="input" placeholder="Nome técnico" value={name} onChange={(event) => setName(event.target.value)} /><input autoComplete="off" className="input" placeholder="Nome de exibição" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /><label className="admin-label">Imagem do canal<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy || !name.trim()} onClick={submit}>{busy ? 'Criando...' : 'Criar canal'}</button></div></div></div>
+  const submit = async () => { setBusy(true); try { let room = await api.createRoom(name, displayName, type); if (avatar) room = await api.uploadRoomAvatar(room.id, avatar); onCreated(room) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao criar sala') } finally { setBusy(false) } }
+  return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Nova sala / canal</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="new-user-avatar"><span className="admin-room-avatar admin-generic-avatar">{type === 'CHANNEL' ? '#' : '🔒'}</span><span>Imagem opcional da sala</span></div><div className="modal-fields"><label className="admin-label">Tipo de sala<select className="input" value={type} onChange={(e) => setType(e.target.value as 'CHANNEL' | 'PRIVATE_GROUP')}><option value="CHANNEL"># Canal</option><option value="PRIVATE_GROUP">🔒 Grupo</option></select></label><input autoComplete="off" className="input" placeholder="Nome técnico (ex: financeiro)" value={name} onChange={(event) => setName(event.target.value)} /><input autoComplete="off" className="input" placeholder="Nome de exibição (ex: Financeiro)" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /><label className="admin-label">Imagem da sala<input autoComplete="off" className="input" type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] || null)} /></label></div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={busy || !name.trim()} onClick={submit}>{busy ? 'Criando...' : 'Criar sala'}</button></div></div></div>
 }
 
 function RoomEditor({ room, onClose, onSaved, notify }: { room: Room; onClose: () => void; onSaved: (room: Room) => void; notify: (text: string) => void }) {
@@ -401,29 +682,567 @@ function AuditPanel() {
   </section>
 }
 
+const DAILY_ACTIVE_DAYS_OPTIONS = [
+  { value: 7, label: '7 dias' },
+  { value: 15, label: '15 dias' },
+  { value: 30, label: '30 dias' },
+  { value: 90, label: '90 dias' },
+]
+
+const MESSAGE_TIME_SERIES_OPTIONS: { value: MessageTimeSeriesPeriod; label: string }[] = [
+  { value: 'DAYS_7', label: '7 dias' },
+  { value: 'DAYS_30', label: '30 dias' },
+  { value: 'DAYS_90', label: '90 dias' },
+  { value: 'MONTHS_12', label: '12 meses' },
+  { value: 'YEARS', label: 'Anual' },
+]
+
 function MonitoringPanel() {
   const [metrics, setMetrics] = useState<MonitoringMetrics | null>(null)
+  const [activeUsersDays, setActiveUsersDays] = useState<number>(7)
   const [error, setError] = useState<string | null>(null)
+
   useEffect(() => {
-    api.adminMonitoringMetrics().then(setMetrics).catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
-  }, [])
+    api.adminMonitoringMetrics(activeUsersDays)
+      .then((data) => {
+        setMetrics(data)
+        setError(null)
+      })
+      .catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
+  }, [activeUsersDays])
+
   const megabytes = metrics ? (metrics.databaseSizeBytes / (1024 * 1024)).toFixed(1) : '0.0'
   const fileGigabytes = metrics ? (metrics.totalFileBytes / (1024 * 1024 * 1024)).toFixed(2) : '0.00'
+
   return <section className="admin-panel">
     <div className="admin-panel-title"><div><h1>Visão geral</h1><p>Indicadores operacionais do Konnix Chat.</p></div></div>
     {error && <div className="admin-error">{error}</div>}
     {!error && !metrics && <div className="admin-loading">Carregando métricas...</div>}
-    {metrics && <div className="monitoring-grid">
-      <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
-      <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
-      <MetricCard label="Mensagens" value={metrics.totalMessages.toLocaleString('pt-BR')} detail="Mensagens registradas" />
-      <MetricCard label="Usuários" value={metrics.totalUsers.toLocaleString('pt-BR')} detail={`${metrics.activeUsers} ativos · ${metrics.readOnlyUsers} leitura · ${metrics.disabledUsers} desativados`} />
-      <MetricCard label="Grupos" value={metrics.totalGroups.toLocaleString('pt-BR')} detail={`${metrics.totalChannels} canais`} />
-      <MetricCard label="Logins hoje" value={metrics.dailyLogins.toLocaleString('pt-BR')} detail="Entradas bem-sucedidas desde meia-noite" />
-      <MetricCard label="Sessões ativas" value={metrics.activeSessions.toLocaleString('pt-BR')} detail="Sessões válidas no momento" />
-      <MetricCard label="Eventos auditados" value={metrics.totalAuditEvents.toLocaleString('pt-BR')} detail="Registros de auditoria" />
-    </div>}
+    {metrics && <>
+      <MessagesTimeSeriesChart />
+      <div className="monitoring-charts-grid">
+        <UserStatusPieChart active={metrics.activeUsers} readOnly={metrics.readOnlyUsers} disabled={metrics.disabledUsers} />
+        <DailyActiveUsersChart activity={metrics.activity} days={activeUsersDays} onDaysChange={setActiveUsersDays} />
+      </div>
+      <div className="monitoring-grid">
+        <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
+        <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
+        <MetricCard label="Mensagens" value={metrics.totalMessages.toLocaleString('pt-BR')} detail="Mensagens registradas" />
+        <MetricCard label="Usuários" value={metrics.totalUsers.toLocaleString('pt-BR')} detail={`${metrics.activeUsers} ativos · ${metrics.readOnlyUsers} leitura · ${metrics.disabledUsers} desativados`} />
+        <MetricCard label="Grupos" value={metrics.totalGroups.toLocaleString('pt-BR')} detail={`${metrics.totalChannels} canais`} />
+        <MetricCard label="Logins hoje" value={metrics.dailyLogins.toLocaleString('pt-BR')} detail="Entradas bem-sucedidas desde meia-noite" />
+        <MetricCard label="Sessões ativas" value={metrics.activeSessions.toLocaleString('pt-BR')} detail="Sessões válidas no momento" />
+        <MetricCard label="Eventos auditados" value={metrics.totalAuditEvents.toLocaleString('pt-BR')} detail="Registros de auditoria" />
+      </div>
+    </>}
   </section>
+}
+
+function MessagesTimeSeriesChart() {
+  const [period, setPeriod] = useState<MessageTimeSeriesPeriod>('DAYS_7')
+  const [data, setData] = useState<MessageTimeSeriesResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    api.adminMessageTimeSeries(period)
+      .then((res) => {
+        if (active) {
+          setData(res)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : 'Falha ao carregar série temporal de mensagens')
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [period])
+
+  const points = data?.points ?? []
+  const maximum = Math.max(1, ...points.map((point) => point.messages))
+  const intervalUnit = data?.granularity === 'month' ? 'mês' : data?.granularity === 'year' ? 'ano' : 'dia'
+  const periodOptionLabel = MESSAGE_TIME_SERIES_OPTIONS.find((opt) => opt.value === period)?.label ?? period
+
+  // SVG coordinate configuration
+  const svgWidth = 800
+  const svgHeight = 220
+  const padLeft = 45
+  const padRight = 25
+  const padTop = 20
+  const padBottom = 35
+  const chartW = svgWidth - padLeft - padRight
+  const chartH = svgHeight - padTop - padBottom
+
+  const coords = useMemo(() => {
+    return points.map((pt, i) => {
+      const x = padLeft + (points.length <= 1 ? chartW / 2 : (i / (points.length - 1)) * chartW)
+      const y = padTop + chartH - (pt.messages / maximum) * chartH
+      return { x, y, pt, i }
+    })
+  }, [points, maximum, chartW, chartH, padLeft, padTop])
+
+  // Smooth non-negative monotone spline path (prevents negative overshoot and keeps zero-days flat)
+  const linePath = useMemo(() => {
+    if (coords.length === 0) return ''
+    if (coords.length === 1) return `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
+
+    const bottomY = padTop + chartH
+    const n = coords.length
+
+    // 1. Calculate secant slopes between adjacent points
+    const deltas: number[] = []
+    for (let i = 0; i < n - 1; i++) {
+      const dx = coords[i + 1].x - coords[i].x
+      const dy = coords[i + 1].y - coords[i].y
+      deltas.push(dx === 0 ? 0 : dy / dx)
+    }
+
+    // 2. Calculate initial tangent slopes (Hermite / Fritsch-Carlson)
+    const slopes: number[] = new Array(n).fill(0)
+    slopes[0] = deltas[0]
+    slopes[n - 1] = deltas[n - 2]
+
+    for (let i = 1; i < n - 1; i++) {
+      const dPrev = deltas[i - 1]
+      const dNext = deltas[i]
+      if (dPrev * dNext <= 0) {
+        // Local extremum (peak or valley) or plateau
+        slopes[i] = 0
+      } else {
+        slopes[i] = (dPrev + dNext) / 2
+      }
+    }
+
+    // Zero-floor constraint: any point at 0 messages must have a flat tangent (slope = 0)
+    for (let i = 0; i < n; i++) {
+      if (coords[i].pt.messages === 0) {
+        slopes[i] = 0
+      }
+    }
+
+    // 3. Fritsch-Carlson monotonicity adjustment to prevent overshoots
+    for (let i = 0; i < n - 1; i++) {
+      const delta = deltas[i]
+      if (delta === 0) {
+        slopes[i] = 0
+        slopes[i + 1] = 0
+      } else {
+        const alpha = slopes[i] / delta
+        const beta = slopes[i + 1] / delta
+        if (alpha < 0) slopes[i] = 0
+        if (beta < 0) slopes[i + 1] = 0
+        const dist = alpha * alpha + beta * beta
+        if (dist > 9) {
+          const tau = 3 / Math.sqrt(dist)
+          slopes[i] = tau * alpha * delta
+          slopes[i + 1] = tau * beta * delta
+        }
+      }
+    }
+
+    // 4. Generate SVG path
+    let d = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
+    for (let i = 0; i < n - 1; i++) {
+      const p1 = coords[i]
+      const p2 = coords[i + 1]
+
+      // If both points have 0 messages, draw a flat straight line directly on the floor
+      if (p1.pt.messages === 0 && p2.pt.messages === 0) {
+        d += ` L ${p2.x.toFixed(1)} ${bottomY.toFixed(1)}`
+        continue
+      }
+
+      const dx = p2.x - p1.x
+      const cp1x = p1.x + dx / 3
+      let cp1y = p1.y + slopes[i] * (dx / 3)
+      const cp2x = p2.x - dx / 3
+      let cp2y = p2.y - slopes[i + 1] * (dx / 3)
+
+      // Strict non-negative clamp: control points can NEVER exceed the bottom baseline (bottomY)
+      // and cannot exceed the top padding
+      cp1y = Math.min(bottomY, Math.max(padTop, cp1y))
+      cp2y = Math.min(bottomY, Math.max(padTop, cp2y))
+
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
+    }
+
+    return d
+  }, [coords, padTop, chartH])
+
+  const areaPath = useMemo(() => {
+    if (coords.length < 2 || !linePath) return ''
+    const firstX = coords[0].x.toFixed(1)
+    const lastX = coords[coords.length - 1].x.toFixed(1)
+    const bottomY = (padTop + chartH).toFixed(1)
+    return `${linePath} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`
+  }, [coords, linePath, padTop, chartH])
+
+  const hoveredPoint = hoveredIndex !== null && coords[hoveredIndex] ? coords[hoveredIndex] : null
+
+  // Y-axis grid ticks (3 ticks: 0, 50%, 100%)
+  const yTicks = [
+    { value: maximum, y: padTop },
+    { value: Math.round(maximum / 2), y: padTop + chartH / 2 },
+    { value: 0, y: padTop + chartH },
+  ]
+
+  const shouldShowLabel = (index: number, total: number) => {
+    if (total <= 12) return true
+    if (total <= 30) return index % 4 === 0 || index === total - 1
+    if (total <= 60) return index % 8 === 0 || index === total - 1
+    return index % 15 === 0 || index === total - 1
+  }
+
+  return (
+    <article className="activity-card activity-card-main">
+      <div className="activity-card-head">
+        <div>
+          <h2>Série Temporal de Mensagens</h2>
+          <p>Evolução do envio de mensagens ao longo do tempo ({periodOptionLabel}).</p>
+        </div>
+        <div className="activity-period-wrap">
+          <select
+            className="activity-period-select"
+            value={period}
+            disabled={loading}
+            onChange={(event) => setPeriod(event.target.value as MessageTimeSeriesPeriod)}
+            aria-label="Intervalo de exibição da série temporal"
+          >
+            {MESSAGE_TIME_SERIES_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {data && (
+        <div className="timeseries-summary-grid">
+          <div className="timeseries-stat-chip">
+            <span>Total no período</span>
+            <strong>{data.totalMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Média por {intervalUnit}</span>
+            <strong>{data.averageMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Pico ({data.peakPeriodLabel || '—'})</span>
+            <strong>{data.peakMessages.toLocaleString('pt-BR')}</strong>
+          </div>
+          <div className="timeseries-stat-chip">
+            <span>Intervalos avaliados</span>
+            <strong>{data.points.length.toLocaleString('pt-BR')}</strong>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="admin-error">{error}</div>}
+
+      <div className={`timeseries-svg-container ${loading ? 'activity-chart-loading' : ''}`}>
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="timeseries-svg"
+          onMouseLeave={() => setHoveredIndex(null)}
+        >
+          <defs>
+            <linearGradient id="timeseries-area-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--konnix-primary)" stopOpacity="0.4" />
+              <stop offset="85%" stopColor="var(--konnix-primary)" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="var(--konnix-primary)" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines & Y-axis labels */}
+          {yTicks.map((tick) => (
+            <g key={tick.y}>
+              <line
+                x1={padLeft}
+                y1={tick.y}
+                x2={padLeft + chartW}
+                y2={tick.y}
+                stroke="var(--konnix-border)"
+                strokeDasharray={tick.value === 0 ? 'none' : '3 3'}
+                strokeWidth="1"
+                opacity="0.65"
+              />
+              <text
+                x={padLeft - 8}
+                y={tick.y + 4}
+                textAnchor="end"
+                className="timeseries-axis-label"
+              >
+                {tick.value.toLocaleString('pt-BR')}
+              </text>
+            </g>
+          ))}
+
+          {/* Area fill */}
+          {areaPath && (
+            <path
+              d={areaPath}
+              fill="url(#timeseries-area-gradient)"
+              className="timeseries-area"
+            />
+          )}
+
+          {/* Spline line */}
+          {linePath && (
+            <path
+              d={linePath}
+              fill="none"
+              stroke="var(--konnix-primary)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="timeseries-line"
+            />
+          )}
+
+          {/* Dots */}
+          {coords.map(({ x, y, pt, i }) => {
+            const isHovered = hoveredIndex === i
+            const baseR = coords.length <= 15 ? 4.5 : coords.length <= 35 ? 3.5 : 2.5
+            return (
+              <g key={pt.dateKey}>
+                {isHovered && (
+                  <circle cx={x} cy={y} r={baseR + 5} fill="var(--konnix-primary)" opacity="0.25" />
+                )}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={isHovered ? baseR + 2 : baseR}
+                  fill="var(--konnix-surface)"
+                  stroke="var(--konnix-primary)"
+                  strokeWidth={isHovered ? 2.5 : 2}
+                  className="timeseries-dot"
+                />
+              </g>
+            )
+          })}
+
+          {/* X-axis labels */}
+          {coords.map(({ x, pt, i }) => {
+            if (!shouldShowLabel(i, coords.length)) return null
+            return (
+              <text
+                key={pt.dateKey}
+                x={x}
+                y={padTop + chartH + 18}
+                textAnchor="middle"
+                className="timeseries-axis-label"
+              >
+                {pt.label}
+              </text>
+            )
+          })}
+
+          {/* Vertical cursor guide & tooltip */}
+          {hoveredPoint && (
+            <>
+              <line
+                x1={hoveredPoint.x}
+                y1={padTop}
+                x2={hoveredPoint.x}
+                y2={padTop + chartH}
+                stroke="var(--konnix-primary)"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+                opacity="0.7"
+              />
+              <g
+                transform={`translate(${Math.min(Math.max(hoveredPoint.x, padLeft + 52), padLeft + chartW - 52)}, ${Math.max(hoveredPoint.y - 42, padTop + 6)})`}
+                pointerEvents="none"
+              >
+                <rect
+                  x="-52"
+                  y="0"
+                  width="104"
+                  height="34"
+                  rx="6"
+                  className="timeseries-tooltip-box"
+                />
+                <text
+                  x="0"
+                  y="13"
+                  textAnchor="middle"
+                  className="timeseries-tooltip-title"
+                >
+                  {hoveredPoint.pt.label}
+                </text>
+                <text
+                  x="0"
+                  y="26"
+                  textAnchor="middle"
+                  className="timeseries-tooltip-val"
+                >
+                  {hoveredPoint.pt.messages.toLocaleString('pt-BR')} msgs
+                </text>
+              </g>
+            </>
+          )}
+
+          {/* Invisible hover hitbox slices across the chart */}
+          {coords.map(({ pt, i }) => {
+            const sliceW = chartW / Math.max(1, coords.length)
+            const sliceX = padLeft + i * sliceW
+            return (
+              <rect
+                key={pt.dateKey}
+                x={sliceX}
+                y={padTop}
+                width={sliceW}
+                height={chartH}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHoveredIndex(i)}
+              />
+            )
+          })}
+        </svg>
+
+        {points.length === 0 && !loading && (
+          <div className="admin-empty" style={{ padding: '2rem 0', textAlign: 'center' }}>
+            Nenhum dado registrado para o período.
+          </div>
+        )}
+      </div>
+
+      <div className="activity-legend">
+        <span><i />Mensagens enviadas</span>
+      </div>
+    </article>
+  )
+}
+
+function UserStatusPieChart({ active, readOnly, disabled }: { active: number; readOnly: number; disabled: number }) {
+  const total = active + readOnly + disabled
+  const r = 34
+  const c = 2 * Math.PI * r
+
+  const items = [
+    { label: 'Ativos', count: active, color: 'var(--konnix-ok, #30a46c)' },
+    { label: 'Leitura', count: readOnly, color: 'var(--konnix-accent, #22c7d6)' },
+    { label: 'Desativados', count: disabled, color: 'var(--konnix-danger, #e5484d)' },
+  ].filter((item) => item.count > 0)
+
+  let accumulated = 0
+  const slices = items.map((item) => {
+    const strokeLength = total > 0 ? (item.count / total) * c : 0
+    const offset = -accumulated
+    accumulated += strokeLength
+    return { ...item, strokeLength, offset }
+  })
+
+  return <article className="activity-card pie-chart-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Perfis de Usuário</h2>
+        <p>Distribuição de contas por status ({total.toLocaleString('pt-BR')} usuários).</p>
+      </div>
+    </div>
+    <div className="pie-chart-body">
+      <div className="pie-chart-svg-wrap">
+        <svg viewBox="0 0 90 90" className="pie-chart-svg">
+          <circle cx="45" cy="45" r={r} fill="none" stroke="var(--konnix-border)" strokeWidth="10" />
+          {total > 0 && slices.map((slice) => (
+            <circle
+              key={slice.label}
+              cx="45"
+              cy="45"
+              r={r}
+              fill="none"
+              stroke={slice.color}
+              strokeWidth="12"
+              strokeDasharray={`${slice.strokeLength} ${c - slice.strokeLength}`}
+              strokeDashoffset={slice.offset}
+              transform="rotate(-90 45 45)"
+              className="pie-segment"
+            />
+          ))}
+          <text x="45" y="42" textAnchor="middle" className="pie-center-total">{total}</text>
+          <text x="45" y="55" textAnchor="middle" className="pie-center-label">Usuários</text>
+        </svg>
+      </div>
+      <div className="pie-chart-legend">
+        {items.map((item) => {
+          const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
+          return (
+            <div key={item.label} className="pie-legend-item">
+              <span className="pie-legend-dot" style={{ backgroundColor: item.color }} />
+              <div className="pie-legend-info">
+                <strong>{item.label}</strong>
+                <small>{item.count.toLocaleString('pt-BR')} <em>({percent}%)</em></small>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  </article>
+}
+
+function DailyActiveUsersChart({ activity, days, onDaysChange }: { activity: MonitoringMetrics['activity']; days: number; onDaysChange?: (days: number) => void }) {
+  const maxActive = Math.max(1, ...activity.map((point) => point.activeUsers))
+
+  return <article className="activity-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Usuários Ativos por Dia</h2>
+        <p>Frequência diária nos últimos {days} dias.</p>
+      </div>
+      {onDaysChange && (
+        <div className="activity-period-wrap">
+          <select
+            className="activity-period-select"
+            value={days}
+            onChange={(event) => onDaysChange(Number(event.target.value))}
+            aria-label="Intervalo de usuários ativos"
+          >
+            {DAILY_ACTIVE_DAYS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+    <div className="activity-chart-wrap">
+      <div
+        className={`activity-chart ${days > 30 ? 'activity-chart-compact' : ''}`}
+        aria-label={`Usuários ativos por dia nos últimos ${days} dias`}
+      >
+        {activity.map((point, index) => {
+          const dateObj = new Date(`${point.day}T12:00:00`)
+          const label = days <= 15
+            ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+            : (index % (days > 30 ? 15 : 4) === 0 ? dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '')
+          const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          const barHeightPercent = Math.max(point.activeUsers ? 8 : 2, (point.activeUsers / maxActive) * 100)
+          return (
+            <div className="activity-column" key={point.day} title={`${formattedDate}: ${point.activeUsers} usuários ativos`}>
+              <div className="activity-bars">
+                <div className="activity-bar-wrap" style={{ height: `${barHeightPercent}%` }}>
+                  <span className="activity-bar-value">{point.activeUsers.toLocaleString('pt-BR')}</span>
+                  <i className="activity-users-bar" />
+                </div>
+              </div>
+              <small>{label}</small>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+    <div className="activity-legend">
+      <span><i className="activity-users-dot" />Usuários ativos por dia</span>
+    </div>
+  </article>
 }
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -442,5 +1261,40 @@ function SettingsPanel({ notify }: { notify: (text: string) => void }) {
 
 function Pager({ page, totalPages, onPage, pageSize, onPageSize }: { page: number; totalPages: number; onPage: (page: number) => void; pageSize?: number; onPageSize?: (size: number) => void }) {
   if (totalPages <= 0) return null
-  return <div className="admin-pager">{pageSize && onPageSize && <label className="admin-page-size">Registros <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}><option value={6}>6</option><option value={15}>15</option><option value={30}>30</option><option value={50}>50</option></select></label>}<button className="btn-ghost" disabled={page === 0} onClick={() => onPage(page - 1)}>Anterior</button><span>{page + 1} / {totalPages}</span><button className="btn-ghost" disabled={page + 1 >= totalPages} onClick={() => onPage(page + 1)}>Próxima</button></div>
+  return (
+    <div className="admin-pager">
+      {pageSize && onPageSize && (
+        <label className="admin-page-size">
+          <span>Registros</span>
+          <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>
+            <option value={6}>6</option>
+            <option value={15}>15</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      )}
+      <div className="admin-pager-controls">
+        <button
+          type="button"
+          className="btn-ghost admin-pager-btn"
+          disabled={page === 0}
+          onClick={() => onPage(page - 1)}
+          title="Página anterior"
+        >
+          ← Anterior
+        </button>
+        <span className="admin-pager-current">{page + 1} / {totalPages}</span>
+        <button
+          type="button"
+          className="btn-ghost admin-pager-btn"
+          disabled={page + 1 >= totalPages}
+          onClick={() => onPage(page + 1)}
+          title="Próxima página"
+        >
+          Próxima →
+        </button>
+      </div>
+    </div>
+  )
 }

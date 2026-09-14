@@ -1,0 +1,97 @@
+name: konnix-prod
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: konnix-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-konnix}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}"
+      POSTGRES_DB: "${POSTGRES_DB:-konnix_prod}"
+    volumes:
+      - konnix_prod_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-konnix} -d ${POSTGRES_DB:-konnix_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - konnix_prod_net
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: konnix-prod-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-konnix_prod}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-konnix}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:?ERRO: POSTGRES_PASSWORD obrigatorio no deploy/.env.prod}"
+
+      KONNIX_UPLOADS_DIR: "/app/uploads"
+
+      KONNIX_ADMIN_USERNAME: "${KONNIX_ADMIN_USERNAME:-admin}"
+      KONNIX_ADMIN_NAME: "${KONNIX_ADMIN_NAME:-Administrador}"
+      KONNIX_ADMIN_EMAIL: "${KONNIX_ADMIN_EMAIL:?ERRO: KONNIX_ADMIN_EMAIL obrigatorio no deploy/.env.prod}"
+      KONNIX_ADMIN_PASSWORD: "${KONNIX_ADMIN_PASSWORD:?ERRO: KONNIX_ADMIN_PASSWORD obrigatorio no deploy/.env.prod}"
+
+      KONNIX_VAPID_PUBLIC_KEY: "${KONNIX_VAPID_PUBLIC_KEY:-}"
+      KONNIX_VAPID_PRIVATE_KEY: "${KONNIX_VAPID_PRIVATE_KEY:-}"
+      KONNIX_VAPID_SUBJECT: "${KONNIX_VAPID_SUBJECT:-mailto:admin@konnix.local}"
+
+    ports:
+      - "127.0.0.1:${PROD_BACKEND_PORT:-8080}:8080"
+
+    volumes:
+      - konnix_prod_uploads:/app/uploads
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -s http://127.0.0.1:8080/api/public/server-info > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+    networks:
+      - konnix_prod_net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.prod
+    container_name: konnix-prod-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${PROD_FRONTEND_PORT:-80}:80"
+    networks:
+      - konnix_prod_net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: konnix-prod-cloudflared
+    restart: always
+    depends_on:
+      - frontend
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_PROD_TUNNEL_TOKEN:?ERRO: CLOUDFLARE_PROD_TUNNEL_TOKEN obrigatorio no deploy/.env.prod}"
+    command: ["tunnel", "--no-autoupdate", "run"]
+    networks:
+      - konnix_prod_net
+
+networks:
+  konnix_prod_net:
+    name: konnix_prod_net
+    driver: bridge
+
+volumes:
+  konnix_prod_postgres_data:
+    name: konnix_prod_postgres_data
+  konnix_prod_uploads:
+    name: konnix_prod_uploads

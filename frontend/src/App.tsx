@@ -24,6 +24,8 @@ import { activateDesktopServer } from './desktop/servers/serverManager'
 import { getActiveServerId, getDesktopServers } from './desktop/servers/serverStore'
 import { setActiveServer } from './api'
 import { validatePassword } from './passwordValidation'
+import { RoleBadge } from './RoleBadge'
+import { CodeBlock, detectLanguage, formatHtml, formatJson } from './CodeBlock'
 
 type EmojiSelection = { native?: string }
 
@@ -36,34 +38,56 @@ if (isTauri) setActiveServer(initialDesktopServer?.url ?? null, initialDesktopSe
 
 const ROOM_ICON: Record<string, string> = {
   CHANNEL: '#',
-  PRIVATE_GROUP: '\u{1F512}',
+  PRIVATE_GROUP: '🔒',
+  PUBLIC_GROUP: '🔒',
   DIRECT: '@',
+};
+
+function getRoomIcon(room: Room): string {
+  if (room.name === 'bug-reports') return '🐛';
+  return ROOM_ICON[room.type] ?? '';
 }
 
-const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
+export const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
   { id: 'DEFAULT', label: 'Padrão', colors: ['#f7f8fc', '#ffffff', '#5b4cf0', '#22c7d6'] },
-  { id: 'DARK', label: 'Dark clássico', colors: ['#121212', '#18181B', '#7C5CFF', '#23232A'] },
-  { id: 'BLACK_GRAY', label: 'Cinza e preto', colors: ['#0F1115', '#161A20', '#4F7CFF', '#1E232B'] },
   { id: 'PINK', label: 'Rosa', colors: ['#FFF8FB', '#FDEEF5', '#E84D8A', '#FFFFFF'] },
   { id: 'GREEN', label: 'Verde', colors: ['#F5FBF7', '#EAF6EE', '#1FA463', '#FFFFFF'] },
   { id: 'RED', label: 'Vermelho', colors: ['#FFF7F7', '#FDECEC', '#D94141', '#FFFFFF'] },
-  { id: 'GREEN_BLACK', label: 'Verde Black', colors: ['#0F1411', '#19221D', '#25BD70', '#A6C3B1'] },
-  { id: 'PINK_BLACK', label: 'Rosa Black', colors: ['#140F13', '#241923', '#F05A9D', '#DDB5C9'] },
-  { id: 'RED_BLACK', label: 'Vermelho Black', colors: ['#150E0E', '#251818', '#F05B5B', '#E0B1B1'] },
   { id: 'DEFAULT_STRONG', label: 'Padrão Forte', colors: ['#F7F8FC', '#5B4CF0', '#7C70F5', '#FFFFFF'] },
-  { id: 'GREEN_STRONG', label: 'Verde Forte', colors: ['#F5FBF7', '#188A53', '#27B56E', '#FFFFFF'] },
   { id: 'PINK_STRONG', label: 'Rosa Forte', colors: ['#FFF8FB', '#D93E7C', '#F0629B', '#FFFFFF'] },
+  { id: 'GREEN_STRONG', label: 'Verde Forte', colors: ['#F5FBF7', '#188A53', '#27B56E', '#FFFFFF'] },
   { id: 'RED_STRONG', label: 'Vermelho Forte', colors: ['#FFF7F7', '#C83232', '#E15353', '#FFFFFF'] },
-]
+  { id: 'DARK', label: 'Dark clássico', colors: ['#121212', '#18181B', '#7C5CFF', '#23232A'] },
+  { id: 'BLACK_GRAY', label: 'Cinza e preto', colors: ['#0F1115', '#161A20', '#4F7CFF', '#1E232B'] },
+  { id: 'PINK_BLACK', label: 'Rosa Black', colors: ['#140F13', '#241923', '#F05A9D', '#DDB5C9'] },
+  { id: 'GREEN_BLACK', label: 'Verde Black', colors: ['#0F1411', '#19221D', '#25BD70', '#A6C3B1'] },
+  { id: 'RED_BLACK', label: 'Vermelho Black', colors: ['#150E0E', '#251818', '#F05B5B', '#E0B1B1'] },
+];
 const THEME_CACHE_KEY = 'konnix-theme-cache'
 const THEME_COOKIE_KEY = 'konnix_theme'
+const MANUAL_PRESENCE_KEY = 'konnix-manual-presence'
+
+function readManualPresence(): PresenceStatus | null {
+  try {
+    const value = localStorage.getItem(MANUAL_PRESENCE_KEY)
+    return value === 'offline' || value === 'away' || value === 'busy' || value === 'mission' || value === 'vacation'
+      ? value
+      : null
+  } catch {
+    return null
+  }
+}
 
 function normalizeTheme(theme: string | null | undefined): Theme {
   const normalized = theme?.trim().replace(/-/g, '_').toUpperCase()
   return THEME_OPTIONS.some((option) => option.id === normalized) ? normalized as Theme : 'DEFAULT'
 }
 
-function isDarkTheme(theme: Theme): boolean {
+export function isDarkTheme(theme: Theme): boolean {
+  return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK')
+}
+
+export function isWhiteSidebarLogoTheme(theme: Theme): boolean {
   return theme === 'DARK' || theme === 'BLACK_GRAY' || theme.endsWith('_BLACK') || theme.endsWith('_STRONG')
 }
 
@@ -85,7 +109,7 @@ export function applyCookieThemeEarly() {
   if (theme) applyTheme(theme)
 }
 
-function applyTheme(theme: string | null | undefined) {
+export function applyTheme(theme: string | null | undefined) {
   const normalized = normalizeTheme(theme)
   const attribute = normalized === 'DEFAULT' ? '' : normalized.toLowerCase().replace('_', '-')
   if (attribute) document.documentElement.dataset.theme = attribute
@@ -100,7 +124,7 @@ function cachedTheme(): Theme {
   }
 }
 
-function cacheTheme(theme: string | null | undefined) {
+export function cacheTheme(theme: string | null | undefined) {
   const normalized = normalizeTheme(theme)
   try {
     localStorage.setItem(THEME_CACHE_KEY, normalized)
@@ -108,6 +132,7 @@ function cacheTheme(theme: string | null | undefined) {
     /* cache opcional */
   }
   writeThemeCookie(normalized)
+  window.dispatchEvent(new CustomEvent('konnix:theme-changed', { detail: normalized }))
 }
 
 function clearCachedTheme() {
@@ -268,17 +293,18 @@ function AudioRecordButton({
   onDone,
   onRecordingChange,
   onStopReady,
+  onError,
   disabled,
   resetKey,
 }: {
   onDone: (file: File) => void
   onRecordingChange: (recording: boolean, elapsedSeconds: number) => void
   onStopReady: (stop: (() => void) | null) => void
+  onError: (message: string) => void
   disabled: boolean
   resetKey: number
 }) {
   const [recording, setRecording] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -311,7 +337,6 @@ function AudioRecordButton({
     chunksRef.current = []
     setRecording(false)
     onRecordingChange(false, 0)
-    setError(null)
   }, [resetKey, onRecordingChange])
 
   useEffect(() => () => {
@@ -336,13 +361,12 @@ function AudioRecordButton({
       mediaRef.current?.stop()
       return
     }
-    setError(null)
     if (!window.isSecureContext) {
-      setError('O microfone exige HTTPS ou acesso por localhost')
+      onError('O microfone exige HTTPS ou acesso por localhost')
       return
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Este navegador não oferece suporte à gravação de áudio')
+      onError('Este navegador não oferece suporte à gravação de áudio')
       return
     }
     try {
@@ -367,7 +391,7 @@ function AudioRecordButton({
         setRecording(false)
         onRecordingChange(false, 0)
         if (blob.size === 0) {
-          setError('A gravação ficou vazia. Tente novamente')
+          onError('A gravação ficou vazia. Tente novamente')
           return
         }
         try {
@@ -383,7 +407,7 @@ function AudioRecordButton({
         setRecording(false)
         releaseResources()
         onRecordingChange(false, 0)
-        setError('Não foi possível gravar o áudio')
+        onError('Não foi possível gravar o áudio')
       }
       rec.start(250)
       mediaRef.current = rec
@@ -395,11 +419,11 @@ function AudioRecordButton({
         if (startedAt !== null) onRecordingChange(true, Math.floor((Date.now() - startedAt) / 1000))
       }, 250)
     } catch (err) {
-      const name = err instanceof DOMException ? err.name : ''
-      setError(
-        name === 'NotAllowedError'
+      const name = (err && typeof err === 'object' && 'name' in err) ? String((err as { name?: unknown }).name) : ''
+      onError(
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
           ? 'Permita o acesso ao microfone nas configurações do navegador'
-          : name === 'NotFoundError'
+          : name === 'NotFoundError' || name === 'DevicesNotFoundError'
             ? 'Nenhum microfone foi encontrado'
             : 'Não foi possível acessar o microfone',
       )
@@ -407,19 +431,121 @@ function AudioRecordButton({
   }
 
   return (
-    <span className="audio-record-wrap">
+<span className="audio-record-wrap">
+        <button
+          type="button"
+          className={`composer-action ${recording ? 'recording' : ''}`}
+          title={recording ? 'Parar gravação' : 'Gravar áudio'}
+          disabled={disabled}
+          onClick={toggle}
+        >
+          {recording ? <IconStop size={15} /> : <IconMic size={15} />}
+          <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+        </button>
+      </span>
+    )
+  }
+
+function IconX({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
+function ComposerActionBox({
+  roomType,
+  readOnlyAccount,
+  roomReadOnly,
+  muted,
+  clearDisabled,
+  editing,
+  onAttach,
+  onCode,
+  onPoll,
+  onClear,
+  onCancelEdit,
+}: {
+  roomType: Room['type']
+  readOnlyAccount: boolean
+  roomReadOnly: boolean
+  muted: boolean
+  clearDisabled: boolean
+  editing: boolean
+  onAttach: () => void
+  onCode: () => void
+  onPoll: () => void
+  onClear: () => void
+  onCancelEdit: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const showPoll = roomType === 'PRIVATE_GROUP' && !readOnlyAccount && !roomReadOnly
+
+  return (
+    <div className="composer-action-box" ref={ref}>
       <button
         type="button"
-        className={`composer-action ${recording ? 'recording' : ''}`}
-        title={recording ? 'Parar gravação' : 'Gravar áudio'}
-        disabled={disabled}
-        onClick={toggle}
+        className="composer-action-trigger"
+        aria-label="Mais ações"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Mais ações"
+        disabled={muted}
+        onClick={() => setOpen((o) => !o)}
       >
-        {recording ? <IconStop size={15} /> : <IconMic size={15} />}
-        <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+        <IconPlus size={22} />
       </button>
-      {error && <small className="audio-record-error" role="alert">{error}</small>}
-    </span>
+      {open && (
+        <div className="composer-actions-popover" role="menu" aria-label="Mais ações">
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconClip size={18} /></span>
+            <span>Anexar Arquivo</span>
+          </button>
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCode(); setOpen(false) }} disabled={muted}>
+            <span className="composer-action-box-icon"><IconCode size={18} /></span>
+            <span>Bloco de Código</span>
+          </button>
+          {showPoll && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onPoll(); setOpen(false) }}>
+              <span className="composer-action-box-icon"><span aria-hidden="true">▣</span></span>
+              <span>Criar Enquete</span>
+            </button>
+          )}
+          <button type="button" role="menuitem" className="composer-action-box-item composer-action-box-item-danger" onClick={() => { onClear(); setOpen(false) }} disabled={clearDisabled}>
+            <span className="composer-action-box-icon"><IconTrash size={18} /></span>
+            <span>Limpar Mensagem</span>
+          </button>
+          {editing && (
+            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCancelEdit(); setOpen(false) }} disabled={muted}>
+              <span className="composer-action-box-icon"><IconX size={18} /></span>
+              <span>Cancelar Edição</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -486,6 +612,52 @@ function IconSend({ size = 15 }: { size?: number }) {
   )
 }
 
+function IconPlus({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function IconSearch({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function IconSettings({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function IconMessage({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function IconArrowLeft({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  )
+}
+
+
+
 function PersonIcon({ size = 19 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -515,7 +687,7 @@ function IconPencil({ size = 18 }: { size?: number }) {
   )
 }
 
-function PaletteIcon() {
+export function PaletteIcon() {
   return <svg className="palette-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h2.5a6.5 6.5 0 1 0-2.5-10Z" />
     <circle cx="7.5" cy="10" r=".75" fill="currentColor" />
@@ -536,21 +708,52 @@ function IconLogout({ size = 16 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 17 15 12 10 7" /><path d="M15 12H3" /><path d="M21 19V5a2 2 0 0 0-2-2h-6" /></svg>
 }
 
+function IconAlertTriangle({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  )
+}
+
+function IconInfo({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  )
+}
+
 type InlineMatch = {
   start: number
   end: number
   kind: 'block' | 'code' | 'strike' | 'bold' | 'italic'
   inner: string
+  lang?: string
 }
 
 function renderInline(text: string, out: ReactNode[], key: number): void {
   const candidates: InlineMatch[] = []
-  const block = text.match(/```[^\n`]*\r?\n([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
+  const block = text.match(/```([a-zA-Z0-9_#-]+)?(?:\r?\n|[ \t]+)([\s\S]*?)```/) ?? text.match(/```([\s\S]*?)```/)
   const code = text.match(/`([^`]+)`/)
   const strike = text.match(/~~([^~]+)~~/)
   const bold = text.match(/\*\*([^*]+)\*\*/) ?? text.match(/\*([^*]+)\*/)
   const italic = text.match(/_([^_]+)_/)
-  if (block) candidates.push({ start: block.index!, end: block.index! + block[0].length, kind: 'block', inner: block[1].replace(/^\r?\n/, '').replace(/\r?\n$/, '') })
+  if (block) {
+    const rawLang = block[2] !== undefined ? block[1] : undefined
+    const innerContent = block[2] !== undefined ? block[2] : (block[1] ?? '')
+    candidates.push({
+      start: block.index!,
+      end: block.index! + block[0].length,
+      kind: 'block',
+      inner: innerContent.replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
+      lang: rawLang,
+    })
+  }
   if (code) candidates.push({ start: code.index!, end: code.index! + code[0].length, kind: 'code', inner: code[1] })
   if (strike) candidates.push({ start: strike.index!, end: strike.index! + strike[0].length, kind: 'strike', inner: strike[1] })
   if (bold) candidates.push({ start: bold.index!, end: bold.index! + bold[0].length, kind: 'bold', inner: bold[1] })
@@ -564,7 +767,7 @@ function renderInline(text: string, out: ReactNode[], key: number): void {
   const m = candidates[0]
   if (m.start > 0) out.push(text.slice(0, m.start))
   if (m.kind === 'block') {
-    out.push(<pre key={key}><code>{m.inner}</code></pre>)
+    out.push(<CodeBlock key={key} code={m.inner} language={m.lang} />)
   } else if (m.kind === 'code') {
     out.push(<code key={key}>{m.inner}</code>)
   } else {
@@ -620,11 +823,39 @@ function roomSubtitle(room: Room): string {
   if (room.type === 'DIRECT') {
     return room.directPartner ? `@${room.directPartner.username} | ${room.directPartner.email || 'sem e-mail'}` : 'Conversa'
   }
-  return room.type === 'CHANNEL' ? 'Grupo' : 'Grupo privado'
+  if (room.type === 'CHANNEL') return 'Canal'
+  return 'Grupo'
 }
 
 function roomActivityTime(room: Room): number {
   return Date.parse(room.lastActivityAt ?? room.updatedAt ?? room.createdAt) || 0
+}
+
+export type TypingUser = {
+  userId: string
+  username: string
+  name: string
+  timestamp: number
+}
+
+export function TypingDots() {
+  return (
+    <span className="typing-dots" aria-hidden="true">
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+    </span>
+  )
+}
+
+function formatTypingText(typingMap: Record<string, TypingUser> | undefined, isDirect: boolean): string | null {
+  if (!typingMap) return null
+  const users = Object.values(typingMap)
+  if (users.length === 0) return null
+  if (isDirect) return 'digitando...'
+  if (users.length === 1) return `${users[0].name || users[0].username} está digitando...`
+  if (users.length === 2) return `${users[0].name || users[0].username} e ${users[1].name || users[1].username} estão digitando...`
+  return `${users[0].name || users[0].username} e outros estão digitando...`
 }
 
 function formatRecordingTime(totalSeconds: number): string {
@@ -685,9 +916,63 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const handleViewport = () => {
+      if (window.visualViewport) {
+        const vh = window.visualViewport.height
+        document.documentElement.style.setProperty('--app-height', `${vh}px`)
+      } else {
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+      }
+    }
+
+    handleViewport()
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewport)
+      window.visualViewport.addEventListener('scroll', handleViewport)
+    } else {
+      window.addEventListener('resize', handleViewport)
+    }
+
+    const preventOverscroll = (e: TouchEvent) => {
+      let el = e.target as HTMLElement | null
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.tagName === 'A') {
+          return
+        }
+        const style = window.getComputedStyle(el)
+        if (/(auto|scroll)/.test(style.overflowY + style.overflowX + style.overflow)) {
+          return
+        }
+        el = el.parentElement
+      }
+      if (e.touches.length === 1) {
+        e.preventDefault()
+      }
+    }
+
+    const handleScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0)
+      }
+    }
+
     const onPopState = () => setPathname(window.location.pathname)
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    document.addEventListener('touchmove', preventOverscroll, { passive: false })
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('scroll', handleScroll)
+      document.removeEventListener('touchmove', preventOverscroll)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewport)
+        window.visualViewport.removeEventListener('scroll', handleViewport)
+      } else {
+        window.removeEventListener('resize', handleViewport)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -755,15 +1040,24 @@ export default function App() {
   }, [])
 
   const handlePresenceChange = useCallback(async (status: PresenceStatus) => {
+    const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || 'DEFAULT') as Theme
     const user = await api.updatePresence(status)
-    setSession((current) => current ? { ...current, user } : current)
-    return user
-  }, [])
+    const preservedTheme = (currentTheme || user.theme || 'DEFAULT') as Theme
+    setSession((current) => current ? { ...current, user: { ...user, theme: preservedTheme } } : current)
+    cacheTheme(preservedTheme)
+    applyTheme(preservedTheme)
+    return { ...user, theme: preservedTheme }
+  }, [session?.user?.theme])
 
   const [profileRevision, setProfileRevision] = useState(0)
 
-  const handleProfileUpdated = useCallback((user: User) => {
-    setSession((current) => (current ? { ...current, user } : current))
+  const handleProfileUpdated = useCallback((userOrUpdater: User | ((prev: User) => User)) => {
+    setSession((current) => {
+      if (!current?.user) return current
+      const nextUser = typeof userOrUpdater === 'function' ? userOrUpdater(current.user) : userOrUpdater
+      const currentTheme = (readThemeCookie() || cachedTheme() || current.user.theme || nextUser.theme || 'DEFAULT') as Theme
+      return { ...current, user: { ...nextUser, theme: nextUser.theme || currentTheme } }
+    })
     setProfileRevision((revision) => revision + 1)
   }, [])
 
@@ -775,6 +1069,17 @@ export default function App() {
   useEffect(() => {
     applyTheme(session?.user?.theme ?? readThemeCookie() ?? (session?.token ? cachedTheme() : 'DEFAULT'))
   }, [session?.token, session?.user?.theme])
+
+  // Sync theme applied from AdminView (or other contexts in the same tab)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<string>).detail as Theme
+      applyTheme(next)
+      setSession((current) => current ? { ...current, user: { ...current.user!, theme: next } } : current)
+    }
+    window.addEventListener('konnix:theme-changed', handler)
+    return () => window.removeEventListener('konnix:theme-changed', handler)
+  }, [])
 
   if (isTauri && desktopServers.length === 0) {
     return <ServerSetup onConnected={(server) => connectDesktopServer(server)} />
@@ -945,7 +1250,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   avatarRevision: number
   onLogout: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
-  onProfileUpdated: (user: User) => void
+  onProfileUpdated: (userOrUpdater: User | ((prev: User) => User)) => void
   onThemeUpdated: (user: User) => void
 }) {
   const online = useOnline()
@@ -954,12 +1259,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
-  const [unread, setUnread] = useState<Record<string, number>>({})
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
-  const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(() => {
-    try { return localStorage.getItem('konnix-message-notifications') !== 'false' } catch { return true }
-  })
+  const [toast, setToast] = useState<{ id: number; text: string; anchor: 'content' | 'modal' } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [searchUsers, setSearchUsers] = useState<DirectoryUser[]>([])
@@ -967,11 +1269,13 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [newRoomOpen, setNewRoomOpen] = useState(false)
   const [newDmOpen, setNewDmOpen] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [reportIssueOpen, setReportIssueOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
+  const [typingByRoom, setTypingByRoom] = useState<Record<string, Record<string, TypingUser>>>({})
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [standalone] = useState(
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -986,8 +1290,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const onlineRef = useRef(online)
   onlineRef.current = online
   const wsRef = useRef<WebSocket | null>(null)
-  const messageNotificationsEnabledRef = useRef(messageNotificationsEnabled)
-  messageNotificationsEnabledRef.current = messageNotificationsEnabled
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const roomLoadRequestRef = useRef(0)
   const isInitializingConversationRef = useRef(false)
@@ -998,17 +1300,20 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const presenceStatusRef = useRef(me.presenceStatus)
   presenceStatusRef.current = me.presenceStatus
   const presenceUpdateInFlightRef = useRef(false)
-  const autoAwayRef = useRef(false)
+  const onPresenceChangeRef = useRef(onPresenceChange)
+  onPresenceChangeRef.current = onPresenceChange
 
   const changePresenceManually = useCallback(async (status: PresenceStatus) => {
-    autoAwayRef.current = false
+    try {
+      if (status === 'online') localStorage.removeItem(MANUAL_PRESENCE_KEY)
+      else localStorage.setItem(MANUAL_PRESENCE_KEY, status)
+    } catch { /* armazenamento indisponível */ }
     return onPresenceChange(status)
   }, [onPresenceChange])
 
   const registerInteraction = useCallback(() => {
-    if (!autoAwayRef.current || presenceStatusRef.current === 'online' || presenceUpdateInFlightRef.current) return
+    if (presenceStatusRef.current !== 'away' || presenceUpdateInFlightRef.current) return
     presenceUpdateInFlightRef.current = true
-    autoAwayRef.current = false
     void onPresenceChange('online')
       .catch(() => undefined)
       .finally(() => { presenceUpdateInFlightRef.current = false })
@@ -1024,9 +1329,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       idleTimer = setTimeout(() => {
         if (presenceStatusRef.current === 'online' && !presenceUpdateInFlightRef.current) {
           presenceUpdateInFlightRef.current = true
-          autoAwayRef.current = true
-          void onPresenceChange('away')
-            .catch(() => { autoAwayRef.current = false })
+          void onPresenceChangeRef.current('away')
+            .catch(() => undefined)
             .finally(() => { presenceUpdateInFlightRef.current = false })
         }
       }, remaining)
@@ -1040,10 +1344,21 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
     const events: (keyof DocumentEventMap)[] = ['pointerdown', 'keydown', 'input', 'touchstart']
     events.forEach((event) => document.addEventListener(event, onInteraction, true))
+
+    let lastMouseMove = 0
+    const onMouseMove = () => {
+      const now = Date.now()
+      if (now - lastMouseMove < 1000) return
+      lastMouseMove = now
+      onInteraction()
+    }
+    document.addEventListener('mousemove', onMouseMove, true)
+
     scheduleAway()
     return () => {
       if (idleTimer) clearTimeout(idleTimer)
       events.forEach((event) => document.removeEventListener(event, onInteraction, true))
+      document.removeEventListener('mousemove', onMouseMove, true)
     }
   }, [registerInteraction, onPresenceChange])
 
@@ -1054,22 +1369,61 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     [rooms, activeRoomId],
   )
 
-  const showToast = useCallback((text: string) => {
-    setToast({ id: Date.now(), text })
+  const showToast = useCallback((text: string, anchor: 'content' | 'modal' = 'content') => {
+    setToast({ id: Date.now(), text, anchor })
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 5000)
   }, [])
 
-  const setMessageNotifications = useCallback((enabled: boolean) => {
-    setMessageNotificationsEnabled(enabled)
-    try { localStorage.setItem('konnix-message-notifications', String(enabled)) } catch { /* preferência opcional */ }
+  const modalNotify = useCallback((text: string) => showToast(text, 'modal'), [showToast])
+
+  useEffect(() => {
+    registerModalToastDismiss(() => setToast((current) => (current && current.anchor === 'modal' ? null : current)))
+    return () => registerModalToastDismiss(null)
+  }, [])
+
+  const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: 'chat.typing', roomId, isTyping }))
+      } catch {
+        /* ignora erro */
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now()
+      setTypingByRoom((prev) => {
+        let changed = false
+        const next: Record<string, Record<string, TypingUser>> = {}
+        for (const [roomId, users] of Object.entries(prev)) {
+          const activeUsers: Record<string, TypingUser> = {}
+          for (const [userId, user] of Object.entries(users)) {
+            if (now - user.timestamp < 4500) {
+              activeUsers[userId] = user
+            } else {
+              changed = true
+            }
+          }
+          if (Object.keys(activeUsers).length > 0) {
+            next[roomId] = activeUsers
+          } else if (Object.keys(users).length > 0) {
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+    }, 1000)
+    return () => clearInterval(interval)
   }, [])
 
   const loadRooms = useCallback(async () => {
     try {
       const nextRooms = await api.rooms()
       setRooms(nextRooms)
-      setUnread(Object.fromEntries(nextRooms.map((room) => [room.id, room.unreadCount ?? 0])))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -1103,11 +1457,6 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       setHasMore(false)
       setNextBefore(null)
       setSidebarOpen(false)
-      setUnread((u) => {
-        const next = { ...u }
-        next[roomId] = 0
-        return next
-      })
       setRooms((prev) => prev.map((room) => room.id === roomId ? { ...room, unreadCount: 0 } : room))
       setLoadingRoom(true)
       try {
@@ -1157,6 +1506,23 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     const connect = () => {
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
+      ws.onopen = () => {
+        const manual = readManualPresence()
+        if (manual) {
+          if (manual !== presenceStatusRef.current && !presenceUpdateInFlightRef.current) {
+            presenceUpdateInFlightRef.current = true
+            void onPresenceChangeRef.current(manual)
+              .catch(() => undefined)
+              .finally(() => { presenceUpdateInFlightRef.current = false })
+          }
+        } else if (presenceStatusRef.current === 'offline') {
+          presenceUpdateInFlightRef.current = true
+          void onPresenceChangeRef.current('online')
+            .catch(() => undefined)
+            .finally(() => { presenceUpdateInFlightRef.current = false })
+        }
+        void loadRooms()
+      }
       ws.onmessage = (event) => {
         try {
           const evt = JSON.parse(event.data as string) as {
@@ -1166,33 +1532,88 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           }
           if (evt.type === 'message.created') {
             const msg = evt.data
-            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && (!isTauri || (document.visibilityState === 'visible' && document.hasFocus()))
+            if (msg.userId) {
+              setTypingByRoom((prev) => {
+                if (!prev[msg.roomId] || !prev[msg.roomId][msg.userId!]) return prev
+                const roomTyping = { ...prev[msg.roomId] }
+                delete roomTyping[msg.userId!]
+                return { ...prev, [msg.roomId]: roomTyping }
+              })
+            }
+            const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
+            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && !appInBackground
             const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
-            setRooms((prev) => prev.map((room) =>
-              room.id === msg.roomId
-                ? { ...room, lastActivityAt: msg.createdAt, unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (room.unreadCount ?? 0) }
-                : room,
-            ))
+            setRooms((prev) => {
+              const exists = prev.some((room) => room.id === msg.roomId)
+              if (!exists) {
+                void loadRooms()
+                return prev
+              }
+              const updated = prev.map((room) =>
+                room.id === msg.roomId
+                  ? {
+                      ...room,
+                      lastActivityAt: msg.createdAt,
+                      unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (activeRoomVisible ? 0 : (room.unreadCount ?? 0)),
+                    }
+                  : room,
+              )
+              return updated.sort((a, b) => roomActivityTime(b) - roomActivityTime(a))
+            })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
                if (activeRoomVisible && msg.messageType !== 'SYSTEM' && msg.userId !== me.id) {
                  api.markRoomRead(msg.roomId).catch(() => undefined)
                }
              }
-             if (shouldUnread) {
-               setUnread((u) => ({ ...u, [msg.roomId]: (u[msg.roomId] ?? 0) + 1 }))
-               const room = roomsRef.current.find((r) => r.id === msg.roomId)
-               const label = room ? roomDisplayName(room) : 'Chat'
-               const snippet = msg.content.replace(/\s+/g, ' ').trim()
-               if (messageNotificationsEnabledRef.current) {
-                 const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-                 if (isTauri) {
-                   void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                 } else if (msg.roomId !== activeRoomIdRef.current) {
-                   showToast(`${label} • ${body}`)
-                 }
-               }
-             }
+               if (shouldUnread) {
+                const room = roomsRef.current.find((r) => r.id === msg.roomId)
+                const label = room ? roomDisplayName(room) : 'Chat'
+                const snippet = msg.content.replace(/\s+/g, ' ').trim()
+                const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
+                if (appInBackground) {
+                  let enabled = false
+                  try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
+                  if (enabled) {
+                    if (isTauri) {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    }
+                  }
+                } else if (msg.roomId !== activeRoomIdRef.current) {
+                  showToast(`${label} • ${body}`)
+                }
+              }
+          } else if (evt.type === 'chat.typing') {
+            const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
+            const roomId = evt.roomId
+            if (roomId && payload?.userId && payload.userId !== me.id) {
+              if (payload.isTyping) {
+                setTypingByRoom((prev) => {
+                  const currentRoomTyping = { ...(prev[roomId] ?? {}) }
+                  currentRoomTyping[payload.userId] = {
+                    userId: payload.userId,
+                    username: payload.username,
+                    name: payload.name,
+                    timestamp: Date.now(),
+                  }
+                  return { ...prev, [roomId]: currentRoomTyping }
+                })
+              } else {
+                setTimeout(() => {
+                  setTypingByRoom((prev) => {
+                    const currentRoomTyping = prev[roomId]
+                    if (!currentRoomTyping || !currentRoomTyping[payload.userId]) return prev
+                    const user = currentRoomTyping[payload.userId]
+                    if (Date.now() - user.timestamp < 1200) return prev
+                    const updated = { ...currentRoomTyping }
+                    delete updated[payload.userId]
+                    return { ...prev, [roomId]: updated }
+                  })
+                }, 1200)
+              }
+            }
           } else if (evt.type === 'message.read') {
             const receipt = evt.data as unknown as ReadReceipt & { messageId: string }
             if (receipt.messageId) {
@@ -1234,27 +1655,25 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             }
           } else if (evt.type === 'presence.updated') {
             const presence = evt.data as unknown as { userId: string; status: PresenceStatus }
+            if (presence.userId === me.id) {
+              onProfileUpdated((prev) => ({ ...prev, presenceStatus: presence.status }))
+            }
             setRooms((prev) => prev.map((room) => room.directPartner?.userId === presence.userId
               ? { ...room, directPartner: { ...room.directPartner, presenceStatus: presence.status } }
               : room))
             setSearchUsers((prev) => prev.map((user) => user.id === presence.userId
               ? { ...user, presenceStatus: presence.status }
               : user))
+            window.dispatchEvent(new CustomEvent('konnix:presence', { detail: presence }))
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
-              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [...prev, room])
-              setUnread((prev) => ({ ...prev, [room.id]: room.unreadCount ?? 0 }))
+              setRooms((prev) => prev.some((item) => item.id === room.id) ? prev : [room, ...prev])
             }
           } else if (evt.type === 'room.removed') {
             const removedRoomId = evt.roomId
             if (removedRoomId) {
               setRooms((prev) => prev.filter((room) => room.id !== removedRoomId))
-              setUnread((prev) => {
-                const next = { ...prev }
-                delete next[removedRoomId]
-                return next
-              })
               if (activeRoomIdRef.current === removedRoomId) {
                 roomLoadRequestRef.current += 1
                 setActiveRoomId(null)
@@ -1264,6 +1683,27 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                 setNextBefore(null)
               }
             }
+          } else if (evt.type === 'room.pinned_message') {
+            const payload = evt.data as unknown as { roomId: string; pinnedMessage: Message | null }
+            if (payload?.roomId) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === payload.roomId ? { ...room, pinnedMessage: payload.pinnedMessage } : room,
+              ))
+            }
+          } else if (evt.type === 'room.updated') {
+            const updated = evt.data as unknown as Room
+            if (updated?.id) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === updated.id ? { ...room, name: updated.name, displayName: updated.displayName, readOnly: updated.readOnly, type: updated.type, updatedAt: updated.updatedAt } : room,
+              ))
+            }
+          } else if (evt.type === 'room.favorite.updated') {
+            const payload = evt.data as unknown as { roomId: string; favorite: boolean }
+            if (payload?.roomId) {
+              setRooms((prev) => prev.map((room) =>
+                room.id === payload.roomId ? { ...room, favorite: payload.favorite } : room,
+              ))
+            }
           }
         } catch {
           /* ignora payloads inválidos */
@@ -1272,19 +1712,44 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ws.onclose = () => {
         if (wsRef.current === ws) wsRef.current = null
         if (!closedByUser) {
-          retry = setTimeout(connect, 3000)
+          retry = setTimeout(connect, 1000)
         }
       }
       ws.onerror = () => ws?.close()
     }
 
     connect()
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        const currentWs = wsRef.current
+        if (!currentWs || currentWs.readyState === WebSocket.CLOSED) {
+          connect()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityOrFocus)
+    window.addEventListener('focus', onVisibilityOrFocus)
+
     return () => {
       closedByUser = true
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus)
+      window.removeEventListener('focus', onVisibilityOrFocus)
       if (retry) clearTimeout(retry)
       ws?.close()
     }
   }, [session.token, showToast])
+
+  useEffect(() => {
+    if (!session.token) return
+    const interval = setInterval(() => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void loadRooms()
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [session.token, loadRooms])
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -1357,7 +1822,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     const roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY' || activeRoom?.readOnly) return false
+    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY') return false
     setComposing(true)
     try {
       const createdMessages = attachments.length === 0
@@ -1396,8 +1861,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const startDirectConversation = useCallback(async (userId: string) => {
     try {
       const room = await api.createDm(userId)
-      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [...previous, room])
-      setUnread((previous) => ({ ...previous, [room.id]: room.unreadCount ?? 0 }))
+      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [room, ...previous])
       await openRoom(room.id)
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
   }, [openRoom, showToast])
@@ -1410,17 +1874,25 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const openTheme = useCallback(() => { setPreviewTheme(me.theme); setThemeOpen(true) }, [me.theme])
   const openProfileEdit = useCallback(() => setProfileEditOpen(true), [])
   const openAbout = useCallback(() => setAboutOpen(true), [])
+  const openReportIssue = useCallback(() => setReportIssueOpen(true), [])
   const openNewRoom = useCallback(() => setNewRoomOpen(true), [])
   const openNewDm = useCallback(() => setNewDmOpen(true), [])
 
-  const handleDelete = async (msg: Message) => {
+  const handleDelete = async (msg: Message, notifier: (text: string) => void = showToast) => {
     if (msg.deletedAt || msg.userId !== me.id || me.accountStatus === 'READ_ONLY') return
     try {
       const deleted = await api.deleteMessage(msg.id)
       setMessages((prev) => prev.map((m) => (m.id === deleted.id ? deleted : m)))
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Falha ao excluir mensagem')
+      notifier(err instanceof ApiError ? err.message : 'Falha ao excluir mensagem')
     }
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const message = pendingDelete
+    setPendingDelete(null)
+    await handleDelete(message, modalNotify)
   }
 
   const handleRoomCreated = async (roomId: string) => {
@@ -1457,8 +1929,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
-  const favoriteConversations = useMemo(() => conversations.filter((room) => room.favorite), [conversations])
+  const favoriteRooms = useMemo(() => rooms.filter((room) => room.favorite && room.directPartner?.accountStatus !== 'DISABLED'), [rooms])
   const regularConversations = useMemo(() => conversations.filter((room) => !room.favorite), [conversations])
+  const regularChannels = useMemo(() => channels.filter((room) => !room.favorite), [channels])
 
   return (
     <div className="chat-shell">
@@ -1467,30 +1940,30 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         <Sidebar
           me={me}
           theme={effectiveTheme}
-          channels={channels}
-           favoriteConversations={favoriteConversations}
-           regularConversations={regularConversations}
+          channels={regularChannels}
+          favoriteRooms={favoriteRooms}
+          regularConversations={regularConversations}
           activeRoomId={activeRoomId}
-          unread={unread}
-           search={search}
-           userResults={searchUsers}
+          search={search}
+          userResults={searchUsers}
           onSearch={setSearch}
           onOpenRoom={openRoom}
-           onNewRoom={openNewRoom}
-            onNewDm={openNewDm}
-            onStartUserDm={startUserDmFromSearch}
-           onLogout={onLogout}
+          onNewRoom={openNewRoom}
+          onNewDm={openNewDm}
+          onStartUserDm={startUserDmFromSearch}
+          onLogout={onLogout}
           onTheme={openTheme}
-            onEditProfile={openProfileEdit}
-            onAbout={openAbout}
+          onEditProfile={openProfileEdit}
+          onAbout={openAbout}
+          onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
           canInstall={!standalone && !!installEvent}
-           onInstall={installApp}
-             onPresenceChange={changePresenceManually}
-            onPresenceError={showToast}
-            messageNotificationsEnabled={messageNotificationsEnabled}
-             onMessageNotificationsChange={setMessageNotifications}
-          />
+          onInstall={installApp}
+          onPresenceChange={changePresenceManually}
+          onPresenceError={showToast}
+          typingByRoom={typingByRoom}
+          onClose={() => setSidebarOpen(false)}
+        />
 
         <main className="main">
           {!activeRoom ? (
@@ -1508,19 +1981,24 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               online={online}
               me={me}
               myAvatarVersion={myAvatarVersion}
-               onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
-               onSend={sendMessage}
-               onInitialPositioned={() => { isInitializingConversationRef.current = false }}
-                onDelete={handleDelete}
-                onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
-                onReaction={(message, emoji) => void reactMessage(message, emoji)}
+              typingUsers={typingByRoom[activeRoom.id]}
+              onTyping={(isTyping) => sendTypingStatus(activeRoom.id, isTyping)}
+              onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
+              onSend={sendMessage}
+              onInitialPositioned={() => { isInitializingConversationRef.current = false }}
+              onDelete={(message) => {
+                if (!message.deletedAt && message.userId === me.id && me.accountStatus !== 'READ_ONLY') setPendingDelete(message)
+              }}
+              onMessageUpdated={(updated) => setMessages((current) => current.map((item) => item.id === updated.id ? updated : item))}
+              onReaction={(message, emoji) => void reactMessage(message, emoji)}
               onStartDm={startDirectConversation}
               notify={showToast}
               readReceiptsEnabled={readReceiptsEnabled}
-               onSearchResult={addSearchResult}
-               onPollUpdated={addSearchResult}
-                onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
-             />
+              onSearchResult={addSearchResult}
+              onPollUpdated={addSearchResult}
+              onRoomUpdated={(updated) => setRooms((prev) => prev.map((item) => item.id === updated.id ? updated : item))}
+              onOpenRoom={openRoom}
+            />
           )}
         </main>
       </div>
@@ -1530,11 +2008,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           me={me}
           onClose={() => setNewRoomOpen(false)}
           onCreated={handleRoomCreated}
-          showToast={showToast}
+          showToast={modalNotify}
         />
       )}
       {newDmOpen && (
-        <NewDmModal me={me} onClose={() => setNewDmOpen(false)} onCreated={handleRoomCreated} showToast={showToast} />
+        <NewDmModal me={me} onClose={() => setNewDmOpen(false)} onCreated={handleRoomCreated} showToast={modalNotify} />
       )}
 
       {profileEditOpen && (
@@ -1547,7 +2025,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             setProfileEditOpen(false)
             void loadRooms()
           }}
-          notify={showToast}
+          notify={modalNotify}
         />
       )}
       {themeOpen && (
@@ -1556,10 +2034,12 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onClose={() => setThemeOpen(false)}
           onPreview={setPreviewTheme}
           onSaved={(user) => { onThemeUpdated(user); setPreviewTheme(null); setThemeOpen(false) }}
-          notify={showToast}
+          notify={modalNotify}
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}
+      {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
       {!online && (
         <div className="offline-banner" role="alert">
@@ -1583,7 +2063,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       )}
 
       {toast && (
-        <button className="toast" onClick={() => setToast(null)}>
+        <button className={`toast ${toast.anchor === 'modal' ? 'toast-modal' : ''}`} onClick={() => setToast(null)}>
           {toast.text}
         </button>
       )}
@@ -1614,9 +2094,11 @@ function PresenceSelector({
   onError: (message: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
-  const currentIndex = Math.max(0, PRESENCE_OPTIONS.findIndex((option) => option.id === status))
+  const effectiveStatus: PresenceStatus = status || 'online'
+  const currentIndex = Math.max(0, PRESENCE_OPTIONS.findIndex((option) => option.id === effectiveStatus))
   const current = PRESENCE_OPTIONS[currentIndex]
 
   useEffect(() => {
@@ -1636,15 +2118,18 @@ function PresenceSelector({
   }, [open])
 
   const select = async (next: PresenceStatus) => {
-    if (next === status) {
+    if (next === effectiveStatus || busy) {
       setOpen(false)
       return
     }
+    setBusy(true)
     try {
       await onChange(next)
       setOpen(false)
     } catch {
       onError('Não foi possível atualizar seu status')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -1656,9 +2141,10 @@ function PresenceSelector({
     <div className="presence-selector" ref={menuRef}>
       <button
         type="button"
-        className={`presence-pill presence-${status}`}
+        className={`presence-pill presence-${effectiveStatus}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={busy}
         onClick={() => {
           setHighlightedIndex(currentIndex)
           setOpen((value) => !value)
@@ -1690,11 +2176,11 @@ function PresenceSelector({
               type="button"
               role="menuitem"
               key={option.id}
-              className={`presence-option presence-${option.id} ${option.id === status ? 'selected' : ''} ${PRESENCE_OPTIONS.indexOf(option) === highlightedIndex ? 'highlighted' : ''}`}
+              className={`presence-option presence-${option.id} ${option.id === effectiveStatus ? 'selected' : ''} ${PRESENCE_OPTIONS.indexOf(option) === highlightedIndex ? 'highlighted' : ''}`}
               onMouseEnter={() => setHighlightedIndex(PRESENCE_OPTIONS.indexOf(option))}
               onClick={() => void select(option.id)}
             >
-              <span className="presence-check">{option.id === status ? '✓' : ''}</span>
+              <span className="presence-check">{option.id === effectiveStatus ? '✓' : ''}</span>
               <span className="presence-dot" aria-hidden="true" />
               <span>{option.label}</span>
             </button>
@@ -1705,14 +2191,105 @@ function PresenceSelector({
   )
 }
 
+function UserSettingsMenuContent({
+  me,
+  onTheme,
+  onEditProfile,
+  onReportIssue,
+  onAbout,
+  onLogout,
+  onClose,
+}: {
+  me: User
+  onTheme: () => void
+  onEditProfile: () => void
+  onReportIssue: () => void
+  onAbout: () => void
+  onLogout: () => void
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div className="menu-label">Configurações</div>
+      <NotificationButton />
+      <AutostartButton />
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onTheme()
+        }}
+      >
+        <PaletteIcon />
+        <span>Tema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onEditProfile()
+        }}
+      >
+        <PersonIcon size={16} />
+        <span>Editar meu perfil</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onReportIssue()
+        }}
+      >
+        <IconAlertTriangle size={16} />
+        <span>Relatar Problema</span>
+      </button>
+      <button
+        type="button"
+        className="user-menu-item user-menu-action"
+        onClick={() => {
+          onClose()
+          onAbout()
+        }}
+      >
+        <IconInfo size={16} />
+        <span>Sobre</span>
+      </button>
+      {me.roles.includes('ADMIN') && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            window.history.pushState({}, '', '/admin')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          }}
+        >
+          <IconShield size={16} />
+          <span>Administração</span>
+        </button>
+      )}
+      <button
+        type="button"
+        className="user-menu-item user-menu-action user-menu-logout"
+        onClick={() => onLogout()}
+      >
+        <IconLogout size={16} />
+        <span>Sair</span>
+      </button>
+    </>
+  )
+}
+
 const Sidebar = memo(function Sidebar({
   me,
   theme,
   channels,
-  favoriteConversations,
+  favoriteRooms,
   regularConversations,
   activeRoomId,
-  unread,
   search,
   userResults,
   onSearch,
@@ -1724,21 +2301,21 @@ const Sidebar = memo(function Sidebar({
   onTheme,
   onEditProfile,
   onAbout,
+  onReportIssue,
   myAvatarVersion,
   canInstall,
   onInstall,
   onPresenceChange,
   onPresenceError,
-  messageNotificationsEnabled,
-  onMessageNotificationsChange,
+  typingByRoom,
+  onClose,
 }: {
   me: User
   theme: Theme
   channels: Room[]
-  favoriteConversations: Room[]
+  favoriteRooms: Room[]
   regularConversations: Room[]
   activeRoomId: string | null
-  unread: Record<string, number>
   search: string
   userResults: DirectoryUser[]
   onSearch: (q: string) => void
@@ -1750,154 +2327,452 @@ const Sidebar = memo(function Sidebar({
   onTheme: () => void
   onEditProfile: () => void
   onAbout: () => void
+  onReportIssue: () => void
   myAvatarVersion: string
   canInstall: boolean
   onInstall: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
-  messageNotificationsEnabled: boolean
-  onMessageNotificationsChange: (enabled: boolean) => void
+  typingByRoom: Record<string, Record<string, TypingUser>>
+  onClose?: () => void
 }) {
-  const sidebarLogo = isDarkTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
+  const sidebarLogo = isWhiteSidebarLogoTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [footerMenuOpen, setFooterMenuOpen] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
+  const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const headerMenuRef = useRef<HTMLDivElement>(null)
+  const footerUserRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const isAdmin = me.roles.includes('ADMIN')
+  const SYSTEM_CHANNEL_NAMES = ['bug-reports']
+  const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
+  const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
+  const query = search.trim().toLowerCase()
+  const showResults = query.length > 0
+  const matchesQuery = (room: Room) => {
+    if (!query) return true
+    return (room.displayName || room.name || '').toLowerCase().includes(query)
+  }
+  const filteredFavorites = favoriteRooms.filter(matchesQuery)
+  const filteredRegularChannels = regularChannels.filter(matchesQuery)
+  const filteredConversations = regularConversations.filter(matchesQuery)
+  const hasSearchResults = userResults.length > 0 || filteredFavorites.length > 0 || filteredRegularChannels.length > 0 || filteredConversations.length > 0
 
   useEffect(() => {
-    if (!menuOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    if (!headerMenuOpen && !footerMenuOpen) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (headerMenuOpen && headerMenuRef.current && !headerMenuRef.current.contains(target)) {
+        setHeaderMenuOpen(false)
+      }
+      if (footerMenuOpen && footerUserRef.current && !footerUserRef.current.contains(target)) {
+        setFooterMenuOpen(false)
+      }
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setHeaderMenuOpen(false)
+        setFooterMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [menuOpen])
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [headerMenuOpen, footerMenuOpen])
+
+  const handleSelectRoom = (roomId: string) => {
+    onSearch('')
+    onOpenRoom(roomId)
+  }
+
+  const handleSelectUser = async (userId: string) => {
+    onSearch('')
+    await onStartUserDm(userId)
+  }
 
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
-        <div className="sidebar-brand-content">
+        <button
+          type="button"
+          className="sidebar-brand-btn"
+          onClick={onClose}
+          aria-label="Voltar para tela de descanso"
+        >
+          <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
           <div className="sidebar-wordmark">
             <strong>Konnix</strong>
             <span>Chat</span>
           </div>
+        </button>
+
+        <div className="sidebar-header-actions" ref={headerMenuRef}>
+          <button
+            type="button"
+            className={`icon-btn sidebar-settings-toggle ${headerMenuOpen ? 'active' : ''}`}
+            onClick={() => {
+              setFooterMenuOpen(false)
+              setHeaderMenuOpen((open) => !open)
+            }}
+            title="Configurações"
+            aria-label="Configurações"
+            aria-expanded={headerMenuOpen}
+          >
+            <IconSettings size={18} />
+          </button>
+          <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
+          {headerMenuOpen && (
+            <div className="user-menu sidebar-header-dropdown">
+              <UserSettingsMenuContent
+                me={me}
+                onTheme={onTheme}
+                onEditProfile={onEditProfile}
+                onReportIssue={onReportIssue}
+                onAbout={onAbout}
+                onLogout={onLogout}
+                onClose={() => setHeaderMenuOpen(false)}
+              />
+            </div>
+          )}
         </div>
-        <PresenceSelector status={me.presenceStatus} onChange={onPresenceChange} onError={onPresenceError} />
       </div>
 
-      <div className="sidebar-search">
-        <span className="search-icon">⌕</span>
-        <input
-          className="search-input"
-          placeholder="Buscar…"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-        />
-        {search && (
-          <button className="search-clear" onClick={() => onSearch('')} aria-label="Limpar busca">
-            ×
-          </button>
-        )}
+      <div className="sidebar-persistent-search">
+        <div className="sidebar-search-input-wrap">
+          <IconSearch size={15} />
+          <input
+            ref={searchInputRef}
+            className="sidebar-search-page-input"
+            placeholder="Buscar conversas e usuários…"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onSearch('')
+            }}
+          />
+          {search.trim().length > 0 && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => {
+                onSearch('')
+                searchInputRef.current?.focus()
+              }}
+              aria-label="Limpar busca"
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="sidebar-nav">
-        {search.trim() && <div className="nav-section search-users-section"><div className="nav-section-head"><span className="nav-section-title">Usuários</span></div><div className="nav-list">{userResults.length === 0 && <span className="nav-empty">Nenhum usuário encontrado</span>}{userResults.map((user) => <button key={user.id} className="room-item search-user-item" onClick={() => void onStartUserDm(user.id)}><span className="sidebar-avatar-wrap"><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />{user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}</span><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small></span></button>)}</div></div>}
-        {favoriteConversations.length > 0 && <div className="nav-section">
-            <div className="nav-section-head">
-              <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
-                <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span><span className="nav-section-title">Favoritos</span>
-              </button>
+        {showResults ? (
+          !hasSearchResults ? (
+            <div className="sidebar-search-empty">
+              <p>Nenhum resultado encontrado para &ldquo;{search}&rdquo;</p>
             </div>
-            {favoritesOpen && <div className="nav-list" id="favorites-list">
-              {favoriteConversations.map((room) => <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => onOpenRoom(room.id)}>
-                <span className="room-icon direct"><span className="sidebar-avatar-wrap"><AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span></span>
-                <span className="room-name">{roomDisplayName(room)}</span>{!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
-              </button>)}
-            </div>}
-        </div>}
+          ) : (
+            <>
+              {userResults.length > 0 && (
+                <div className="nav-section search-users-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Usuários ({userResults.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {userResults.map((user) => (
+                      <button key={user.id} className="room-item search-user-item" onClick={() => void handleSelectUser(user.id)}>
+                        <span className="sidebar-avatar-wrap">
+                          <AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} />
+                          {user.presenceStatus && <span className={`sidebar-presence-dot presence-${user.presenceStatus}`} title={presenceLabel(user.presenceStatus)} aria-label={`Status: ${presenceLabel(user.presenceStatus)}`} />}
+                        </span>
+                        <span className="picker-item-text">
+                          <strong>{user.name || user.username}</strong>
+                          <small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-        <div className="nav-section">
-          <div className="nav-section-head">
-            <button
-              type="button"
-              className="nav-section-toggle"
-              onClick={() => setChannelsOpen((open) => !open)}
-              aria-expanded={channelsOpen}
-              aria-controls="channels-list"
-            >
-              <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
-               <span className="nav-section-title">Grupos</span>
-            </button>
-             <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
-              +
-            </button>
-          </div>
-          {channelsOpen && <div className="nav-list" id="channels-list">
-             {channels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-            {channels.map((room) => (
-              <button
-                key={room.id}
-                className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                onClick={() => onOpenRoom(room.id)}
-              >
-                <AvatarImage
-                   path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                  className="room-thumb"
-                  fallback={
-                    <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                      {ROOM_ICON[room.type] ?? '#'}
-                    </span>
-                  }
-                  alt={roomDisplayName(room)}
-                />
-                <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
-              </button>
-            ))}
-          </div>}
-        </div>
+              {filteredFavorites.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Favoritos ({filteredFavorites.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {filteredFavorites.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-        <div className="nav-section">
-          <div className="nav-section-head">
-            <button
-              type="button"
-              className="nav-section-toggle"
-              onClick={() => setConversationsOpen((open) => !open)}
-              aria-expanded={conversationsOpen}
-              aria-controls="conversations-list"
-            >
-              <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
-              <span className="nav-section-title">Conversas</span>
-            </button>
-            <button className="nav-add" onClick={onNewDm} title="Nova conversa">
-              +
-            </button>
-          </div>
-          {conversationsOpen && <div className="nav-list" id="conversations-list">
-             {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
-             {regularConversations.map((room) => (
-              <button
-                key={room.id}
-                className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                onClick={() => onOpenRoom(room.id)}
-              >
-                <span className="room-icon direct">
-                  <span className="sidebar-avatar-wrap"><AvatarImage
-                    path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                    className="mini-avatar"
-                    fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
-                    alt={roomDisplayName(room)}
-                  />{room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}</span>
-                </span>
-                <span className="room-name">{roomDisplayName(room)}</span>
-                {!!unread[room.id] && <span className="badge">{unread[room.id]}</span>}
-              </button>
-            ))}
-          </div>}
-        </div>
+              {filteredRegularChannels.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Grupos & Canais ({filteredRegularChannels.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {filteredRegularChannels.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={<span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {filteredConversations.length > 0 && (
+                <div className="nav-section">
+                  <div className="nav-section-head">
+                    <span className="nav-section-title">Conversas ({filteredConversations.length})</span>
+                  </div>
+                  <div className="nav-list">
+                    {filteredConversations.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        ) : (
+          <>
+            {favoriteRooms.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
+                    <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Favoritos</span>
+                  </button>
+                </div>
+                {favoritesOpen && (
+                  <div className="nav-list" id="favorites-list">
+                    {favoriteRooms.map((room) => (
+                      <button key={room.id} className={`room-item ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => handleSelectRoom(room.id)}>
+                        {room.type === 'DIRECT' ? (
+                          <span className="room-icon direct">
+                            <span className="sidebar-avatar-wrap">
+                              <AvatarImage path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null} className="mini-avatar" fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>} alt={roomDisplayName(room)} />
+                              {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>
+                        )}
+                        <span className="room-name">{roomDisplayName(room)}</span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isAdmin && systemChannels.length > 0 && (
+              <div className="nav-section">
+                <div className="nav-section-head">
+                  <button
+                    type="button"
+                    className="nav-section-toggle admin-section-toggle"
+                    onClick={() => setAdminOpen((open) => !open)}
+                    aria-expanded={adminOpen}
+                    aria-controls="admin-channels-list"
+                  >
+                    <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                    <span className="nav-section-title">Administração</span>
+                  </button>
+                </div>
+                {adminOpen && (
+                  <div className="nav-list" id="admin-channels-list">
+                    {systemChannels.map((room) => {
+                      const typingText = formatTypingText(typingByRoom[room.id], false)
+                      return (
+                        <button
+                          key={room.id}
+                          className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                          onClick={() => handleSelectRoom(room.id)}
+                        >
+                          <AvatarImage
+                            path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                            className="room-thumb"
+                            fallback={
+                              <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                                {getRoomIcon(room)}
+                              </span>
+                            }
+                            alt={roomDisplayName(room)}
+                          />
+                          <span className="room-name">
+                            {roomDisplayName(room)}
+                            {typingText && (
+                              <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                                {typingText}
+                              </span>
+                            )}
+                          </span>
+                          {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="nav-section">
+              <div className="nav-section-head">
+                <button
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setChannelsOpen((open) => !open)}
+                  aria-expanded={channelsOpen}
+                  aria-controls="channels-list"
+                >
+                  <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Canais e grupos</span>
+                </button>
+                <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
+                  +
+                </button>
+              </div>
+              {channelsOpen && (
+                <div className="nav-list" id="channels-list">
+                  {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
+                  {regularChannels.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], false)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={
+                            <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                              {getRoomIcon(room)}
+                            </span>
+                          }
+                          alt={roomDisplayName(room)}
+                        />
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="nav-section">
+              <div className="nav-section-head">
+                <button
+                  type="button"
+                  className="nav-section-toggle"
+                  onClick={() => setConversationsOpen((open) => !open)}
+                  aria-expanded={conversationsOpen}
+                  aria-controls="conversations-list"
+                >
+                  <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
+                  <span className="nav-section-title">Conversas</span>
+                </button>
+                <button className="nav-add" onClick={onNewDm} title="Nova conversa">
+                  +
+                </button>
+              </div>
+              {conversationsOpen && (
+                <div className="nav-list" id="conversations-list">
+                  {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
+                  {regularConversations.map((room) => {
+                    const typingText = formatTypingText(typingByRoom[room.id], true)
+                    return (
+                      <button
+                        key={room.id}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        onClick={() => handleSelectRoom(room.id)}
+                      >
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />}
+                          </span>
+                        </span>
+                        <span className="room-name">
+                          {roomDisplayName(room)}
+                          {typingText && (
+                            <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>
+                              {typingText}
+                            </span>
+                          )}
+                        </span>
+                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </nav>
 
       {canInstall && (
@@ -1906,18 +2781,22 @@ const Sidebar = memo(function Sidebar({
         </button>
       )}
 
-      <div className="sidebar-footer" ref={menuRef}>
+      <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
           role="button"
           tabIndex={0}
-          aria-expanded={menuOpen}
+          aria-expanded={footerMenuOpen}
           aria-label="Abrir configurações do usuário"
-          onClick={() => setMenuOpen((o) => !o)}
+          onClick={() => {
+            setHeaderMenuOpen(false)
+            setFooterMenuOpen((o) => !o)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
-              setMenuOpen((o) => !o)
+              setHeaderMenuOpen(false)
+              setFooterMenuOpen((o) => !o)
             }
           }}
         >
@@ -1933,24 +2812,17 @@ const Sidebar = memo(function Sidebar({
           </span>
           <span className="settings-btn" aria-hidden="true">⚙</span>
         </div>
-        {menuOpen && (
+        {footerMenuOpen && (
           <div className="user-menu">
-            <div className="menu-label">Configurações</div>
-              <NotificationButton />
-              <AutostartButton />
-             <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => onMessageNotificationsChange(!messageNotificationsEnabled)}>
-               <IconBell />
-               <span>Alertas de novas mensagens</span>
-               <small>{messageNotificationsEnabled ? 'Ativo' : 'Desativado'}</small>
-             </button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onTheme() }}><PaletteIcon />Tema</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onEditProfile() }}><PersonIcon size={16} />Editar meu perfil</button>
-              <button className="user-menu-item user-menu-action" onClick={() => { setMenuOpen(false); onAbout() }}><span aria-hidden="true">ⓘ</span>Sobre</button>
-              {me.roles.includes('ADMIN') && <button className="user-menu-item user-menu-action" onClick={() => { window.history.pushState({}, '', '/admin'); window.dispatchEvent(new PopStateEvent('popstate')) }}><IconShield />Administração</button>}
-             <button className="user-menu-item user-menu-action" onClick={() => onLogout()}>
-               <IconLogout />
-               Sair
-             </button>
+            <UserSettingsMenuContent
+              me={me}
+              onTheme={onTheme}
+              onEditProfile={onEditProfile}
+              onReportIssue={onReportIssue}
+              onAbout={onAbout}
+              onLogout={onLogout}
+              onClose={() => setFooterMenuOpen(false)}
+            />
           </div>
         )}
       </div>
@@ -1974,7 +2846,6 @@ function NewRoomModal({
   const [type, setType] = useState<'PRIVATE_GROUP' | 'CHANNEL'>('PRIVATE_GROUP')
   const [members, setMembers] = useState<DirectoryUser[]>([])
   const [busy, setBusy] = useState(false)
-  const isAdmin = me.roles.includes('ADMIN')
 
   const create = async () => {
     if (!name.trim() || busy) return
@@ -1990,15 +2861,23 @@ function NewRoomModal({
       }
       onCreated(room.id)
     } catch (err) {
-       showToast(err instanceof ApiError ? err.message : 'Falha ao criar grupo')
+      showToast(err instanceof ApiError ? err.message : 'Falha ao criar sala')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Modal title="Criar grupo" onClose={onClose}>
+    <Modal title={type === 'CHANNEL' ? 'Criar canal' : 'Criar grupo'} onClose={onClose}>
       <div className="modal-fields">
+        <label className="field-label">
+          Tipo
+          <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
+            <option value="PRIVATE_GROUP">🔒 Grupo</option>
+            <option value="CHANNEL"># Canal</option>
+          </select>
+          <small className="field-hint">{type === 'CHANNEL' ? 'Somente você (proprietário) e administradores podem escrever. Demais membros leem.' : 'Todos os membros podem escrever.'}</small>
+        </label>
         <label className="field-label">
           Nome
           <input
@@ -2019,18 +2898,6 @@ function NewRoomModal({
             placeholder="ex.: Financeiro"
           />
         </label>
-        {isAdmin && (
-          <label className="field-label">
-            Tipo
-            <select className="input" value={type} onChange={(e) => setType(e.target.value as 'PRIVATE_GROUP' | 'CHANNEL')}>
-              <option value="PRIVATE_GROUP">Grupo privado</option>
-               <option value="CHANNEL">Grupo público</option>
-            </select>
-          </label>
-        )}
-        {!isAdmin && (
-          <p className="modal-hint">Você pode criar grupos privados. Canais públicos são criados pelo administrador.</p>
-        )}
         <label className="field-label">
           Adicionar membros (opcional)
           <MemberPicker selected={members} onChange={setMembers} excludeId={me.id} />
@@ -2225,6 +3092,14 @@ function MemberPicker({
   )
 }
 
+let modalToastDismiss: (() => void) | null = null
+function registerModalToastDismiss(fn: (() => void) | null) {
+  modalToastDismiss = fn
+}
+function dismissModalToast() {
+  if (modalToastDismiss) modalToastDismiss()
+}
+
 function Modal({
   title,
   onClose,
@@ -2238,6 +3113,8 @@ function Modal({
   className?: string
   overlayClassName?: string
 }) {
+  const titleId = `modal-title-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+  const closeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -2245,13 +3122,15 @@ function Modal({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+  useEffect(() => { closeRef.current?.focus() }, [])
+  useEffect(() => () => dismissModalToast(), [])
 
   return (
     <div className={`modal-overlay ${overlayClassName}`} onMouseDown={onClose}>
-      <div className={`modal ${className}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Fechar">
+          <h3 id={titleId}>{title}</h3>
+          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Fechar">
             ×
           </button>
         </div>
@@ -2259,6 +3138,13 @@ function Modal({
       </div>
     </div>
   )
+}
+
+function ConfirmModal({ title, message, onClose, onConfirm }: { title: string; message: string; onClose: () => void; onConfirm: () => void }) {
+  return <Modal title={title} onClose={onClose} className="confirm-modal">
+    <p className="confirm-message">{message}</p>
+    <div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="danger-action confirm-danger" onClick={onConfirm}>Excluir</button></div>
+  </Modal>
 }
 
 function useEscapeClose(onClose: () => void) {
@@ -2274,12 +3160,13 @@ function useEscapeClose(onClose: () => void) {
 function EmptyState({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   return (
     <div className="empty-state">
-      <button className="empty-back btn-ghost" onClick={onOpenSidebar}>
-        ☰ Conversas
-      </button>
       <img src="/icons/icon-192.png" alt="Konnix" className="empty-logo" />
       <h2>Konnix Chat</h2>
-      <p>Selecione uma conversa ou grupo para começar.</p>
+      <p>Comunicação corporativa segura e em tempo real.</p>
+      <button type="button" className="btn-primary empty-chat-action" onClick={onOpenSidebar}>
+        <IconMessage size={18} />
+        <span>Conversar</span>
+      </button>
       <AboutDetails className="empty-about-details" />
     </div>
   )
@@ -2307,7 +3194,7 @@ function AboutDetails({ className = '' }: { className?: string }) {
   </dl>
 }
 
-function ThemeModal({ theme, onClose, onPreview, onSaved, notify }: {
+export function ThemeModal({ theme, onClose, onPreview, onSaved, notify }: {
   theme: Theme
   onClose: () => void
   onPreview: (theme: Theme) => void
@@ -2453,6 +3340,7 @@ function AddMembersModal({
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyOwnerId, setBusyOwnerId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(true)
 
   useEffect(() => {
@@ -2498,13 +3386,28 @@ function AddMembersModal({
     onClose()
   }
 
+  const toggleOwner = async (member: RoomMember) => {
+    if (busyOwnerId) return
+    setBusyOwnerId(member.userId)
+    try {
+      const role = member.role === 'OWNER' ? 'MEMBER' : 'OWNER'
+      const updated = await api.updateMemberRole(room.id, member.userId, role)
+      setCurrentMembers((prev) => prev.map((x) => (x.userId === updated.userId ? updated : x)))
+      notify(role === 'OWNER' ? `${member.name || member.username} agora é proprietário` : `${member.name || member.username} deixou de ser proprietário`)
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Falha ao alterar proprietário')
+    } finally {
+      setBusyOwnerId(null)
+    }
+  }
+
   return (
     <Modal title={`Adicionar membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
       <div className="members-modal-body">
       <div className="modal-fields">
         <input autoComplete="off" className="input" placeholder="Pesquisar usuário" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
-        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
         <div className="room-people-section"><button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}><span className="nav-chevron">{inviteOpen ? '⌄' : '›'}</span><span>Pessoas para convidar</span></button>{inviteOpen && <div className="picker-list small">{available.length === 0 && <span className="nav-empty">Nenhuma pessoa encontrada</span>}{available.map((user) => <button key={user.id} className={`picker-item ${selected.some((item) => item.id === user.id) ? 'active' : ''}`} onClick={() => setSelected((prev) => prev.some((item) => item.id === user.id) ? prev.filter((item) => item.id !== user.id) : [...prev, user])}><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} /><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}</small></span><span className="room-person-badge invite-badge">Convidar</span></button>)}</div>}</div>
       </div>
       </div>
@@ -2520,9 +3423,36 @@ function AddMembersModal({
   )
 }
 
-function RoomPeopleSection({ title, tone, members }: { title: string; tone: 'owner' | 'member'; members: RoomMember[] }) {
+function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
+  const [currentMembers, setCurrentMembers] = useState<RoomMember[]>([])
+
+  useEffect(() => {
+    api.members(room.id).then(setCurrentMembers).catch(() => setCurrentMembers([]))
+  }, [room.id])
+
+  const owners = currentMembers.filter((member) => member.role === 'OWNER')
+  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER')
+
+  return (
+    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
+      <div className="modal-fields">
+        <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
+        <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
+      </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+function RoomPeopleSection({ title, tone, members, onToggleOwner, busyId }: { title: string; tone: 'owner' | 'member'; members: RoomMember[]; onToggleOwner?: (member: RoomMember) => void; busyId?: string | null }) {
   const [open, setOpen] = useState(true)
-  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span></div>)}</div>}</div>
+  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span>{onToggleOwner && <button type="button" className={`owner-action ${member.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`} onClick={() => onToggleOwner(member)} disabled={busyId !== null} title={member.role === 'OWNER' ? `Remover ${member.name || member.username} de proprietário` : `Tornar ${member.name || member.username} proprietário`}>{member.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}</button>}</div>)}</div>}</div>
 }
 
 function RemoveMembersModal({
@@ -2564,7 +3494,8 @@ function RemoveMembersModal({
   }
 
   return (
-    <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose}>
+    <Modal title={`Remover membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
+      <div className="members-modal-body">
       <div className="picker-list small">
         {members.length === 0 && <span className="nav-empty">Nenhum membro</span>}
         {members.map((m) => (
@@ -2592,6 +3523,7 @@ function RemoveMembersModal({
           </div>
         ))}
       </div>
+      </div>
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>
           Fechar
@@ -2600,6 +3532,8 @@ function RemoveMembersModal({
     </Modal>
   )
 }
+
+const SEARCH_DEBOUNCE_MS = 400
 
 function RoomView({
   room,
@@ -2613,6 +3547,8 @@ function RoomView({
   online,
   me,
   myAvatarVersion,
+  typingUsers,
+  onTyping,
   onBack,
   onSend,
   onInitialPositioned,
@@ -2625,6 +3561,7 @@ function RoomView({
   onSearchResult,
   onPollUpdated,
   onRoomUpdated,
+  onOpenRoom,
 }: {
   room: Room
   rooms: Room[]
@@ -2637,6 +3574,8 @@ function RoomView({
   online: boolean
   me: User
   myAvatarVersion: string
+  typingUsers?: Record<string, TypingUser>
+  onTyping?: (isTyping: boolean) => void
   onBack: () => void
    onSend: (content: string, parentMessageId?: string, attachments?: File[]) => Promise<boolean>
   onInitialPositioned: () => void
@@ -2644,12 +3583,62 @@ function RoomView({
   onMessageUpdated: (message: Message) => void
   onReaction: (message: Message, emoji: string) => void
   onStartDm: (userId: string) => Promise<void>
-  notify: (text: string) => void
+  notify: (text: string, anchor?: 'content' | 'modal') => void
   readReceiptsEnabled: boolean
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
+  onOpenRoom: (roomId: string) => void
 }) {
+  const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
+  const modalNotify = useCallback((text: string) => notify(text, 'modal'), [notify])
+  const lastTypingSentRef = useRef(0)
+  const typingTimeoutRef = useRef<number | null>(null)
+  const stopTypingTimeoutRef = useRef<number | null>(null)
+
+  const stopTyping = useCallback((immediate: boolean = false) => {
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
+    if (stopTypingTimeoutRef.current !== null) {
+      window.clearTimeout(stopTypingTimeoutRef.current)
+      stopTypingTimeoutRef.current = null
+    }
+    lastTypingSentRef.current = 0
+    if (immediate) {
+      onTyping?.(false)
+    } else {
+      stopTypingTimeoutRef.current = window.setTimeout(() => {
+        onTyping?.(false)
+      }, 1500)
+    }
+  }, [onTyping])
+
+  const notifyTyping = useCallback(() => {
+    if (stopTypingTimeoutRef.current !== null) {
+      window.clearTimeout(stopTypingTimeoutRef.current)
+      stopTypingTimeoutRef.current = null
+    }
+    const now = Date.now()
+    if (now - lastTypingSentRef.current > 1800) {
+      lastTypingSentRef.current = now
+      onTyping?.(true)
+    }
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current)
+    }
+    typingTimeoutRef.current = window.setTimeout(() => {
+      stopTyping(false)
+    }, 4000)
+  }, [onTyping, stopTyping])
+
+  useEffect(() => {
+    return () => {
+      stopTyping(true)
+    }
+  }, [room.id, stopTyping])
+
   const [draft, setDraft] = useState('')
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
@@ -2657,13 +3646,17 @@ function RoomView({
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [readMessageId, setReadMessageId] = useState<string | null>(null)
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null)
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null)
+  const [respondMessage, setRespondMessage] = useState<Message | null>(null)
   const [pinnedActionId, setPinnedActionId] = useState<string | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
+  const [profileCommonRooms, setProfileCommonRooms] = useState<Room[]>([])
+  const [profileCommonRoomsLoading, setProfileCommonRoomsLoading] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profilePosition, setProfilePosition] = useState({ top: 80, left: 24 })
   const [roomInfoOpen, setRoomInfoOpen] = useState(false)
@@ -2677,6 +3670,11 @@ function RoomView({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Message[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchedQuery, setSearchedQuery] = useState<string | null>(null)
+  const searchTimeoutRef = useRef<number | null>(null)
+  const searchRequestIdRef = useRef(0)
+  const isSearchLoadingRef = useRef(false)
+  const inFlightSearchQueryRef = useRef<string | null>(null)
   const [filesOpen, setFilesOpen] = useState(false)
   const [roomFiles, setRoomFiles] = useState<RoomFile[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
@@ -2684,14 +3682,10 @@ function RoomView({
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
   const messageListRef = useRef<HTMLDivElement>(null)
-  const olderScrollAnchorRef = useRef<{ id: string | null; offset: number; height: number; top: number } | null>(null)
+  const pendingOlderScrollRef = useRef<{ oldScrollHeight: number; oldScrollTop: number } | null>(null)
   const scrollToBottomOnLoadRef = useRef(true)
   const forceScrollToBottomRef = useRef(false)
-  const mustStayAtBottomRef = useRef(false)
   const wasNearBottomRef = useRef(true)
-  const forceBottomIntervalRef = useRef<number | null>(null)
-  const forceBottomTimeoutRef = useRef<number | null>(null)
-  const forcedBottomRoomRef = useRef<string | null>(null)
   const [loadingPrevious, setLoadingPrevious] = useState(false)
   const [audioResetKey, setAudioResetKey] = useState(0)
   const [audioMode, setAudioMode] = useState(false)
@@ -2701,13 +3695,45 @@ function RoomView({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
+  const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
   const readOnlyAccount = me.accountStatus === 'READ_ONLY'
-  const muted = readOnlyAccount || room.readOnly || !online
-  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
-  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
   const isRoomOwner = room.type !== 'DIRECT' && roomMembers.some((member) =>
     member.userId === me.id && member.active && member.role === 'OWNER',
   )
+  const isAdmin = me.roles.includes('ADMIN')
+  const muted = readOnlyAccount || (room.readOnly && !isAdmin && !isRoomOwner) || !online
+  const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
+  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
+  const isBugReportsRoom = room.name === 'bug-reports'
+  const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
+  const canRespondToReport = isBugReportsRoom && isAdmin
+  const canManageRoom = room.type !== 'DIRECT' && (isRoomOwner || isAdmin)
+  const isMember = roomMembers.some((member) => member.userId === me.id)
+
+  useEffect(() => {
+    const handlePresence = (e: Event) => {
+      const detail = (e as CustomEvent<{ userId: string; status: PresenceStatus }>).detail
+      if (detail?.userId) {
+        setProfile((current) => current && current.id === detail.userId ? { ...current, presenceStatus: detail.status } : current)
+      }
+    }
+    window.addEventListener('konnix:presence', handlePresence)
+    return () => window.removeEventListener('konnix:presence', handlePresence)
+  }, [])
+
+  useEffect(() => {
+    if (!roomHeaderMenuOpen) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (roomHeaderMenuRef.current && !roomHeaderMenuRef.current.contains(e.target as Node)) setRoomHeaderMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
+  }, [roomHeaderMenuOpen])
 
   const onRecordingChange = useCallback((recording: boolean, elapsedSeconds: number) => {
     setAudioMode(recording)
@@ -2756,11 +3782,10 @@ function RoomView({
   }, [mention, room.type, roomMembers, me.id])
 
   useLayoutEffect(() => {
-    olderScrollAnchorRef.current = null
     scrollToBottomOnLoadRef.current = true
     forceScrollToBottomRef.current = false
-    mustStayAtBottomRef.current = false
     wasNearBottomRef.current = true
+    pendingOlderScrollRef.current = null
     setConversationReady(false)
   }, [room.id])
 
@@ -2769,44 +3794,15 @@ function RoomView({
     return () => cancelAnimationFrame(frame)
   }, [room.id])
 
-  const forceBottomFor500ms = useCallback(() => {
-    if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-    if (forceBottomTimeoutRef.current !== null) window.clearTimeout(forceBottomTimeoutRef.current)
-    const forceBottom = () => {
-      const list = messageListRef.current
-      if (list) list.scrollTop = list.scrollHeight
-    }
-    forceBottom()
-    forceBottomIntervalRef.current = window.setInterval(forceBottom, 100)
-    forceBottomTimeoutRef.current = window.setTimeout(() => {
-      if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-      forceBottomIntervalRef.current = null
-      forceBottomTimeoutRef.current = null
-    }, 500)
-  }, [])
-
-  useEffect(() => () => {
-    if (forceBottomIntervalRef.current !== null) window.clearInterval(forceBottomIntervalRef.current)
-    if (forceBottomTimeoutRef.current !== null) window.clearTimeout(forceBottomTimeoutRef.current)
-  }, [])
-
   useEffect(() => {
-    if (loading || messages.length === 0 || forcedBottomRoomRef.current === room.id) return
-    forcedBottomRoomRef.current = room.id
-    const frame = requestAnimationFrame(forceBottomFor500ms)
-    return () => cancelAnimationFrame(frame)
-  }, [forceBottomFor500ms, loading, messages.length, room.id])
-
-  useEffect(() => {
-    if (loading || messages.length === 0 || forceScrollRequest === 0) return
-    const frame = requestAnimationFrame(forceBottomFor500ms)
-    return () => cancelAnimationFrame(frame)
-  }, [forceBottomFor500ms, forceScrollRequest, loading, messages.length])
+    if (forceScrollRequest > 0) forceScrollToBottomRef.current = true
+  }, [forceScrollRequest])
 
   useLayoutEffect(() => {
     if (loading) return
     const container = messageListRef.current
     if (!container) return
+
     if (messages.length === 0) {
       if (scrollToBottomOnLoadRef.current) {
         scrollToBottomOnLoadRef.current = false
@@ -2816,98 +3812,108 @@ function RoomView({
       return
     }
 
-    const observeLayout = (onResize: () => void) => {
-      const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
-      const observed = [container, ...Array.from(container.querySelectorAll('.message'))]
-      observed.forEach((element) => observer?.observe(element))
-      const media = Array.from(container.querySelectorAll('img, video, audio'))
-      media.forEach((element) => {
-        element.addEventListener('load', onResize)
-        element.addEventListener('error', onResize)
-        element.addEventListener('loadeddata', onResize)
-      })
-      return () => {
-        observer?.disconnect()
-        media.forEach((element) => {
-          element.removeEventListener('load', onResize)
-          element.removeEventListener('error', onResize)
-          element.removeEventListener('loadeddata', onResize)
+    if (pendingOlderScrollRef.current) {
+      const { oldScrollHeight, oldScrollTop } = pendingOlderScrollRef.current
+      pendingOlderScrollRef.current = null
+      container.scrollTop = container.scrollHeight - oldScrollHeight + oldScrollTop
+      setLoadingPrevious(false)
+      return
+    }
+
+    const scrollToBottom = () => {
+      if (container) container.scrollTop = container.scrollHeight
+    }
+
+    const observeMediaAndLayout = () => {
+      let active = true
+      let lastScrollHeight = container.scrollHeight
+      const boundMedia = new Set<HTMLElement>()
+
+      const wasAtBottomBeforeGrowth = () => {
+        return container.scrollTop + container.clientHeight >= lastScrollHeight - 150
+      }
+
+      const adjustIfNeeded = () => {
+        if (!active || !container) return
+        const newScrollHeight = container.scrollHeight
+        if (newScrollHeight > lastScrollHeight && wasAtBottomBeforeGrowth()) {
+          container.scrollTop = newScrollHeight
+          wasNearBottomRef.current = true
+        }
+        lastScrollHeight = newScrollHeight
+      }
+
+      const onMediaLoad = () => adjustIfNeeded()
+
+      const bindMedia = (elements: HTMLElement[]) => {
+        elements.forEach((el) => {
+          if (!boundMedia.has(el)) {
+            boundMedia.add(el)
+            el.addEventListener('load', onMediaLoad)
+            el.addEventListener('error', onMediaLoad)
+            el.addEventListener('loadeddata', onMediaLoad)
+          }
         })
       }
-    }
 
-    const anchor = olderScrollAnchorRef.current
-    if (anchor) {
-      const containerRect = container.getBoundingClientRect()
-      const restore = () => {
-        const anchored = anchor.id
-          ? container.querySelector<HTMLElement>(`[data-message-id="${anchor.id}"]`)
-          : null
-        if (anchored) {
-          const anchoredRect = anchored.getBoundingClientRect()
-          container.scrollTop += anchoredRect.top - containerRect.top - anchor.offset
-        } else {
-          container.scrollTop = anchor.top + (container.scrollHeight - anchor.height)
-        }
+      const scanAndBindMedia = () => {
+        const elements = Array.from(container.querySelectorAll<HTMLElement>('img, video, audio'))
+        bindMedia(elements)
       }
-      restore()
-      olderScrollAnchorRef.current = null
-      setLoadingPrevious(false)
-      return observeLayout(restore)
+
+      scanAndBindMedia()
+
+      const mutationObserver = typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(() => {
+            if (!active) return
+            scanAndBindMedia()
+            adjustIfNeeded()
+          })
+        : null
+      mutationObserver?.observe(container, { childList: true, subtree: true })
+
+      const resizeObserver = typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => adjustIfNeeded())
+        : null
+      resizeObserver?.observe(container)
+      const content = container.querySelector('.message-list-content')
+      if (content) resizeObserver?.observe(content)
+
+      return () => {
+        active = false
+        mutationObserver?.disconnect()
+        resizeObserver?.disconnect()
+        boundMedia.forEach((el) => {
+          el.removeEventListener('load', onMediaLoad)
+          el.removeEventListener('error', onMediaLoad)
+          el.removeEventListener('loadeddata', onMediaLoad)
+        })
+        boundMedia.clear()
+      }
     }
 
-    const scrollToBottom = () => { container.scrollTop = container.scrollHeight }
-    const shouldFollow = scrollToBottomOnLoadRef.current || forceScrollToBottomRef.current || wasNearBottomRef.current
-    if (!shouldFollow) return
-    const openingConversation = scrollToBottomOnLoadRef.current
-    const initialOrForced = openingConversation || forceScrollToBottomRef.current
-    if (initialOrForced) {
+    if (scrollToBottomOnLoadRef.current) {
       scrollToBottomOnLoadRef.current = false
       forceScrollToBottomRef.current = false
-    }
-    let active = true
-    if (openingConversation) {
-      scrollToBottomOnLoadRef.current = false
-      forceScrollToBottomRef.current = false
-      const frame = requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight
-        setConversationReady(true)
-        onInitialPositioned()
-      })
-      return () => cancelAnimationFrame(frame)
-    }
-    const media = Array.from(container.querySelectorAll('img, video, audio'))
-    mustStayAtBottomRef.current = true
-    scrollToBottom()
-    const hasPendingMedia = () => media.some((element) => {
-      if (element instanceof HTMLImageElement) return !element.complete
-      if (element instanceof HTMLMediaElement) return element.readyState < 2
-      return false
-    })
-    let fontsReady = !document.fonts
-    const settle = () => {
-      if (!mustStayAtBottomRef.current) return
+      wasNearBottomRef.current = true
       scrollToBottom()
-      if (fontsReady && !hasPendingMedia()) {
-        mustStayAtBottomRef.current = false
-      }
+      setConversationReady(true)
+      onInitialPositioned()
+      return observeMediaAndLayout()
     }
-    const cleanup = observeLayout(settle)
-    if (document.fonts) {
-      void document.fonts.ready.then(() => {
-        if (!active) return
-        fontsReady = true
-        settle()
-      })
+
+    if (forceScrollToBottomRef.current) {
+      forceScrollToBottomRef.current = false
+      wasNearBottomRef.current = true
+      scrollToBottom()
+      return observeMediaAndLayout()
     }
-    settle()
-    const frame = initialOrForced ? requestAnimationFrame(() => { if (active) settle() }) : null
-    return () => {
-      active = false
-      if (frame !== null) cancelAnimationFrame(frame)
-      cleanup()
+
+    if (wasNearBottomRef.current) {
+      scrollToBottom()
+      return observeMediaAndLayout()
     }
-  }, [loading, messages.length, room.id])
+  }, [loading, messages, room.id])
 
   useEffect(() => {
     setDraft('')
@@ -2919,6 +3925,14 @@ function RoomView({
     setSearchOpen(false)
     setSearchQuery('')
     setSearchResults([])
+    setSearchedQuery(null)
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+      searchTimeoutRef.current = null
+    }
+    searchRequestIdRef.current++
+    isSearchLoadingRef.current = false
+    inFlightSearchQueryRef.current = null
     setFilesOpen(false)
     setRoomFiles([])
     setFilesError(null)
@@ -2963,25 +3977,129 @@ function RoomView({
     window.setTimeout(() => setHighlightedMessageId(null), 2200)
   }
 
-  const searchConversation = async () => {
-    const query = searchQuery.trim()
-    if (!query || searchLoading) return
+  const executeSearch = useCallback(async (rawQuery: string) => {
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+      searchTimeoutRef.current = null
+    }
+    const query = rawQuery.trim()
+    if (!query) {
+      setSearchResults([])
+      setSearchedQuery(null)
+      isSearchLoadingRef.current = false
+      setSearchLoading(false)
+      inFlightSearchQueryRef.current = null
+      return
+    }
+    if (isSearchLoadingRef.current && inFlightSearchQueryRef.current === query) {
+      return
+    }
+    const requestId = ++searchRequestIdRef.current
+    inFlightSearchQueryRef.current = query
+    isSearchLoadingRef.current = true
     setSearchLoading(true)
     try {
-      setSearchResults(await api.searchMessages(room.id, query))
+      const results = await api.searchMessages(room.id, query)
+      if (searchRequestIdRef.current === requestId) {
+        setSearchResults(results)
+        setSearchedQuery(query)
+      }
     } catch {
-      notify('Não foi possível pesquisar nesta conversa')
-      setSearchResults([])
+      if (searchRequestIdRef.current === requestId) {
+        notify('Não foi possível pesquisar nesta conversa')
+        setSearchResults([])
+        setSearchedQuery(query)
+      }
     } finally {
-      setSearchLoading(false)
+      if (searchRequestIdRef.current === requestId) {
+        inFlightSearchQueryRef.current = null
+        isSearchLoadingRef.current = false
+        setSearchLoading(false)
+      }
     }
-  }
+  }, [room.id, notify])
+
+  useEffect(() => {
+    if (!searchOpen) {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+      return
+    }
+
+    const query = searchQuery.trim()
+    if (!query) {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+      setSearchResults([])
+      setSearchedQuery(null)
+      isSearchLoadingRef.current = false
+      setSearchLoading(false)
+      inFlightSearchQueryRef.current = null
+      return
+    }
+
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+    }
+
+    searchTimeoutRef.current = window.setTimeout(() => {
+      searchTimeoutRef.current = null
+      void executeSearch(query)
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
+      }
+    }
+  }, [searchQuery, searchOpen, executeSearch])
+
+  const searchConversation = useCallback(() => {
+    void executeSearch(searchQuery)
+  }, [executeSearch, searchQuery])
 
   const openSearchResult = (result: Message) => {
     onSearchResult(result)
     setSearchOpen(false)
     setSearchResults([])
+    setSearchedQuery(null)
     requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessage(result.id)))
+  }
+
+  const canManagePin = room.type !== 'DIRECT' && (isRoomOwner || me.roles.includes('ADMIN'))
+
+  const handlePin = async (message: Message) => {
+    try {
+      const updated = await api.pinMessage(room.id, message.id)
+      onRoomUpdated(updated)
+      notify('Mensagem fixada')
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Não foi possível fixar a mensagem')
+    }
+  }
+
+  const handleUnpin = async () => {
+    try {
+      const updated = await api.unpinMessage(room.id)
+      onRoomUpdated(updated)
+      notify('Mensagem desafixada')
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Não foi possível desafixar a mensagem')
+    }
+  }
+
+  const handleJumpToPinned = () => {
+    if (!room.pinnedMessage) return
+    const msg = room.pinnedMessage
+    if (!messages.some((m) => m.id === msg.id)) {
+      onSearchResult(msg)
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessage(msg.id)))
   }
 
   const grouped = useMemo(() => {
@@ -3008,6 +4126,7 @@ function RoomView({
   }
 
   const submit = async () => {
+    stopTyping(true)
     if ((!draft.trim() && pendingAttachments.length === 0) || muted || composing) return
     const sendingAttachments = pendingAttachments.length > 0
     if (editingMessage) {
@@ -3034,7 +4153,7 @@ function RoomView({
     setCodeBlock(null)
     setQuotedMessage(null)
     setComposerExpanded(false)
-    if (sendingAttachments) requestAnimationFrame(forceBottomFor500ms)
+    if (sendingAttachments) forceScrollToBottomRef.current = true
   }
 
   const startEditing = (message: Message) => {
@@ -3047,6 +4166,7 @@ function RoomView({
   }
 
   const cancelEditing = () => {
+    stopTyping()
     setEditingMessage(null)
     setDraft('')
     setComposerExpanded(false)
@@ -3064,9 +4184,19 @@ function RoomView({
       })
     }
     setProfileLoading(true)
-    try { setProfile(await api.userProfile(userId)) }
-    catch { notify('Não foi possível carregar o perfil') }
-    finally { setProfileLoading(false) }
+    setProfileCommonRoomsLoading(true)
+    const currentRoomIsCommon = room.type !== 'DIRECT' && roomMembers.some((member) => member.userId === userId && member.active)
+    setProfileCommonRooms(currentRoomIsCommon ? [room] : [])
+    const [profileResult, commonRoomsResult] = await Promise.allSettled([api.userProfile(userId), api.commonRooms(userId)])
+    if (profileResult.status === 'fulfilled') setProfile(profileResult.value)
+    else { setProfile(null); notify('Não foi possível carregar o perfil') }
+    setProfileLoading(false)
+    if (commonRoomsResult.status === 'fulfilled') {
+      const roomsById = new Map(commonRoomsResult.value.map((commonRoom) => [commonRoom.id, commonRoom]))
+      if (currentRoomIsCommon) roomsById.set(room.id, room)
+      setProfileCommonRooms([...roomsById.values()])
+    }
+    setProfileCommonRoomsLoading(false)
   }
 
   const showRoomInfo = (event: React.MouseEvent) => {
@@ -3081,12 +4211,19 @@ function RoomView({
     setRoomInfoOpen(true)
   }
 
-  const updateDraft = (value: string, cursor: number) => {
+  const updateDraft = (value: string, cursor: number | null = null) => {
     setDraft(value)
+    if (value.trim().length > 0) {
+      notifyTyping()
+    } else {
+      stopTyping()
+      setComposerExpanded(false)
+    }
     if (room.type === 'DIRECT') {
       setMention(null)
       return
     }
+    if (cursor === null) return
     const beforeCursor = value.slice(0, cursor)
     const match = beforeCursor.match(/(^|\s)@([a-zA-Z0-9._-]*)$/)
     if (!match) {
@@ -3096,6 +4233,14 @@ function RoomView({
     setMention({ start: cursor - match[2].length - 1, end: cursor, query: match[2] })
     setMentionIndex(0)
   }
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = codeBlock ? 420 : composerExpanded ? 280 : 140
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`
+  }, [draft, composerExpanded, codeBlock, room.id])
 
   const chooseMention = (member: RoomMember) => {
     if (!mention) return
@@ -3134,14 +4279,31 @@ function RoomView({
     const start = el?.selectionStart ?? draft.length
     const sel = el?.selectionEnd ?? start
     const selected = draft.slice(start, sel)
-    const block = '```\n' + (selected || ' ') + '\n```'
+
+    let content = selected
+    let langTag = ''
+
+    if (selected.trim().length > 0) {
+      const detected = detectLanguage(selected)
+      if (detected.lang === 'markup') {
+        content = formatHtml(selected)
+        langTag = 'html'
+      } else if (detected.lang === 'json') {
+        content = formatJson(selected)
+        langTag = 'json'
+      } else if (detected.lang !== 'plaintext') {
+        langTag = detected.lang === 'javascript' ? 'js' : (detected.lang === 'typescript' ? 'ts' : detected.lang)
+      }
+    }
+
+    const block = '```' + (langTag ? langTag + '\n' : '\n') + (content || ' ') + '\n```'
     const next = draft.slice(0, start) + block + draft.slice(sel)
     setDraft(next)
     setCodeBlock({ start, end: start + block.length, text: block })
     requestAnimationFrame(() => {
       el?.focus()
-      const pos = start + 4
-      el?.setSelectionRange(pos, pos + selected.length)
+      const pos = start + 3 + (langTag ? langTag.length + 1 : 1)
+      el?.setSelectionRange(pos, pos + (content || ' ').length)
     })
   }
 
@@ -3180,110 +4342,242 @@ function RoomView({
 
   return (
     <div className={`room-view ${filesOpen ? 'files-open' : ''}`}>
-      <div className="room-header">
-        <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
-          ‹
-        </button>
-        {room.type === 'DIRECT' ? (
-          <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
-            <span className="room-header-avatar-wrap">
-              <AvatarImage
-                path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
-                className="room-header-avatar"
-                fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
-                alt={roomDisplayName(room)}
+      <div className={`room-header ${searchOpen ? 'room-header-search-mode' : ''}`}>
+        {searchOpen ? (
+          /* ── Mobile Search Mode: full-bar search ── */
+          <div className="room-header-search-bar">
+            <button type="button" className="icon-btn room-search-back" onClick={() => { setSearchOpen(false); setSearchResults([]); setSearchedQuery(null) }} aria-label="Fechar pesquisa">
+              <IconArrowLeft size={20} />
+            </button>
+            <div className="room-search-input-wrap">
+              <span className="room-search-icon"><IconSearch size={15} /></span>
+              <input
+                ref={searchInputRef}
+                className="room-search-input"
+                value={searchQuery}
+                placeholder="Pesquisar nesta conversa…"
+                aria-label="Pesquisar nesta conversa"
+                autoFocus
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); searchConversation() }
+                  if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]); setSearchedQuery(null) }
+                }}
               />
-              {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
-            </span>
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              <span className="room-type">{roomSubtitle(room)}</span>
+              {searchQuery.trim().length > 0 && (
+                <button type="button" className="search-clear room-search-clear" onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchedQuery(null); searchInputRef.current?.focus() }} aria-label="Limpar busca">×</button>
+              )}
             </div>
-          </button>
-        ) : (
-          <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
-            <AvatarImage
-              path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-              className="room-header-avatar"
-              fallback={<div className="room-header-icon">{ROOM_ICON[room.type] ?? '#'}</div>}
-              alt={roomDisplayName(room)}
-            />
-            <div className="room-header-text">
-              <h2>{roomDisplayName(room)}</h2>
-              <span className="room-type">{roomSubtitle(room)}</span>
-            </div>
-          </button>
-        )}
-        {room.readOnly && <span className="chip-chip">Somente leitura</span>}
-          <div className="room-header-actions">
-            {room.type !== 'DIRECT' && (isRoomOwner || me.roles.includes('ADMIN')) && (
-            <>
-             {(isRoomOwner || me.roles.includes('ADMIN')) && <button
-              className="icon-btn header-edit"
-              onClick={() => setEditOpen(true)}
-              title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-              aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
-            >
-              <IconPencil size={18} />
-            </button>}
-            <button
-              className="icon-btn header-add"
-              onClick={() => setAddOpen(true)}
-              title="Adicionar membros"
-              aria-label="Adicionar membros"
-            >
-              <PersonIcon size={20} />
-            </button>
-            <button
-              className="icon-btn header-remove"
-              onClick={() => setRemoveOpen(true)}
-              title="Remover membros"
-              aria-label="Remover membros"
-            >
-              <NoEntryIcon size={24} />
-            </button>
-            </>
-          )}
-          {room.type === 'DIRECT' && <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar usuário'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar usuário'} aria-pressed={room.favorite}>
-            {room.favorite ? '★' : '☆'}
-          </button>}
-          <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
-            <IconClip size={18} />
-          </button>
-          <div className="room-header-search">
-          {searchOpen ? <>
-            <input
-              ref={searchInputRef}
-              className="room-search-input"
-              value={searchQuery}
-              placeholder="Pesquisar nesta conversa"
-              aria-label="Pesquisar nesta conversa"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') { event.preventDefault(); void searchConversation() }
-                if (event.key === 'Escape') { setSearchOpen(false); setSearchResults([]) }
-              }}
-            />
-            <button type="button" className="icon-btn room-search-submit" onClick={() => void searchConversation()} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
-            <button type="button" className="icon-btn room-search-close" onClick={() => { setSearchOpen(false); setSearchResults([]) }} aria-label="Fechar pesquisa">×</button>
-          </> : <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">⌕</button>}
-          {searchOpen && searchResults.length > 0 && <div className="room-search-results">
-            {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
-              <strong>{result.username}</strong>
-              <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
-              <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
-            </button>)}
-           </div>}
-          {searchOpen && searchQuery.trim() && !searchLoading && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
+            <button type="button" className="icon-btn room-search-submit" onClick={searchConversation} disabled={searchLoading} aria-label="Pesquisar">⌕</button>
+            {searchResults.length > 0 && <div className="room-search-results">
+              {searchResults.map((result) => <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
+                <strong>{result.username}</strong>
+                <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
+                <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
+              </button>)}
+            </div>}
+            {searchQuery.trim() && !searchLoading && searchedQuery === searchQuery.trim() && searchResults.length === 0 && <div className="room-search-results room-search-empty">Nenhuma mensagem encontrada.</div>}
           </div>
-        </div>
+        ) : (
+          /* ── Normal Mode: ← | Title (center) | 🔍 | + ── */
+          <>
+            <button className="room-back icon-btn" onClick={onBack} aria-label="Voltar à lista">
+              ‹
+            </button>
+            {room.type === 'DIRECT' ? (
+              <button type="button" className="direct-header-contact" onClick={(event) => room.directPartner && void showProfile(room.directPartner.userId, event)}>
+                <span className="room-header-avatar-wrap">
+                  <AvatarImage
+                    path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                    className="room-header-avatar"
+                    fallback={<div className="room-header-icon">{ROOM_ICON.DIRECT}</div>}
+                    alt={roomDisplayName(room)}
+                  />
+                  {room.directPartner && <span className={`direct-presence-dot presence-${room.directPartner.presenceStatus}`} aria-label={`Status: ${room.directPartner.presenceStatus}`} />}
+                </span>
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            ) : (
+              <button type="button" className="room-header-room-contact" onClick={showRoomInfo} aria-label={`Informações de ${roomDisplayName(room)}`}>
+                <AvatarImage
+                  path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                  className="room-header-avatar"
+                  fallback={<div className="room-header-icon">{getRoomIcon(room)}</div>}
+                  alt={roomDisplayName(room)}
+                />
+                <div className="room-header-text">
+                  <h2>{roomDisplayName(room)}</h2>
+                  {typingText ? (
+                    <span className="room-type typing-active">
+                      {typingText}
+                      <TypingDots />
+                    </span>
+                  ) : (
+                    <span className="room-type">{roomSubtitle(room)}</span>
+                  )}
+                </div>
+              </button>
+            )}
+            {room.readOnly && <span className="chip-chip">Somente leitura</span>}
+            <div className="room-header-actions">
+              {/* Desktop-only: individual action buttons */}
+              <div className="room-header-desktop-actions">
+                {canManageRoom && (
+                  <>
+                    <button
+                      className="icon-btn header-edit"
+                      onClick={() => setEditOpen(true)}
+                      title={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                      aria-label={`Editar ${room.type === 'CHANNEL' ? 'canal' : 'grupo'}`}
+                    >
+                      <IconPencil size={18} />
+                    </button>
+                    <button
+                      className="icon-btn header-add"
+                      onClick={() => setAddOpen(true)}
+                      title="Adicionar membros"
+                      aria-label="Adicionar membros"
+                    >
+                      <PersonIcon size={20} />
+                    </button>
+                    <button
+                      className="icon-btn header-remove"
+                      onClick={() => setRemoveOpen(true)}
+                      title="Remover membros"
+                      aria-label="Remover membros"
+                    >
+                      <NoEntryIcon size={24} />
+                    </button>
+                  </>
+                )}
+                {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                  <button
+                    className="icon-btn header-add"
+                    onClick={() => setMembersOpen(true)}
+                    title="Ver membros"
+                    aria-label="Ver membros"
+                  >
+                    <PersonIcon size={20} />
+                  </button>
+                )}
+                <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
+                  {room.favorite ? '★' : '☆'}
+                </button>
+                <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
+                  <IconClip size={18} />
+                </button>
+              </div>
+
+              {/* Search trigger */}
+              <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">
+                <IconSearch size={17} />
+              </button>
+
+              {/* Mobile-only: + dropdown menu with all actions */}
+              <div className="room-header-mobile-menu" ref={roomHeaderMenuRef}>
+                <button
+                  type="button"
+                  className={`icon-btn room-header-plus-btn ${roomHeaderMenuOpen ? 'active' : ''}`}
+                  onClick={() => setRoomHeaderMenuOpen((v) => !v)}
+                  title="Mais opções"
+                  aria-label="Mais opções"
+                  aria-expanded={roomHeaderMenuOpen}
+                >
+                  <IconPlus size={18} />
+                </button>
+                {roomHeaderMenuOpen && (
+                  <div className="room-header-dropdown">
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setEditOpen(true) }}>
+                        <IconPencil size={16} />
+                        <span>Editar {room.type === 'CHANNEL' ? 'canal' : 'grupo'}</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setAddOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Adicionar membros</span>
+                      </button>
+                    )}
+                    {canManageRoom && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setRemoveOpen(true) }}>
+                        <NoEntryIcon size={18} />
+                        <span>Remover membros</span>
+                      </button>
+                    )}
+                    {room.type !== 'DIRECT' && !canManageRoom && isMember && (
+                      <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); setMembersOpen(true) }}>
+                        <PersonIcon size={16} />
+                        <span>Ver membros</span>
+                      </button>
+                    )}
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito')) }}>
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>{room.favorite ? '★' : '☆'}</span>
+                      <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
+                    </button>
+                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); toggleFiles() }}>
+                      <IconClip size={16} />
+                      <span>Arquivos da conversa</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {room.pinnedMessage && !room.pinnedMessage.deletedAt && (
+        <div className="pinned-message-banner" role="region" aria-label="Mensagem fixada">
+          <button type="button" className="pinned-message-content" onClick={handleJumpToPinned} title="Ir para a mensagem fixada">
+            <span className="pinned-icon" aria-hidden="true">📌</span>
+            <div className="pinned-text-wrap">
+              <span className="pinned-label">
+                Mensagem fixada {room.pinnedMessage.username ? `• ${room.pinnedMessage.username}` : ''}
+              </span>
+              <span className="pinned-snippet">
+                {room.pinnedMessage.content
+                  ? room.pinnedMessage.content.replace(/\s+/g, ' ').trim()
+                  : room.pinnedMessage.attachment
+                  ? (room.pinnedMessage.attachment.originalName || 'Anexo')
+                  : room.pinnedMessage.poll
+                  ? `📊 Enquete: ${room.pinnedMessage.poll.question}`
+                  : 'Mensagem fixada'}
+              </span>
+            </div>
+          </button>
+          {canManagePin && (
+            <button
+              type="button"
+              className="pinned-unpin-btn"
+              onClick={(e) => { e.stopPropagation(); void handleUnpin() }}
+              title="Desafixar mensagem"
+              aria-label="Desafixar mensagem"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
        <div className={`message-list ${conversationReady ? '' : 'message-list-initializing'}`} data-message-list ref={messageListRef} onScroll={(event) => {
         const container = event.currentTarget
-        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+        if (!conversationReady || scrollToBottomOnLoadRef.current) {
+          wasNearBottomRef.current = true
+          return
+        }
+        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
         wasNearBottomRef.current = nearBottom
-        if (!nearBottom) mustStayAtBottomRef.current = false
       }}>
          <div className="message-list-content">
          {loading && <div className="loading-row">Carregando…</div>}
@@ -3292,27 +4586,15 @@ function RoomView({
             if (loadingPrevious) return
             event.currentTarget.blur()
             const container = messageListRef.current
-            const containerRect = container?.getBoundingClientRect()
-            const visibleMessage = container && containerRect
-              ? Array.from(container.querySelectorAll<HTMLElement>('[data-message-id]')).find((element) => element.getBoundingClientRect().bottom > containerRect.top)
-              : null
-            const visibleRect = visibleMessage?.getBoundingClientRect()
-            olderScrollAnchorRef.current = {
-              id: visibleMessage?.dataset.messageId ?? null,
-              offset: visibleRect && containerRect ? visibleRect.top - containerRect.top : 0,
-              height: container?.scrollHeight ?? 0,
-              top: container?.scrollTop ?? 0,
+            if (container) {
+              pendingOlderScrollRef.current = {
+                oldScrollHeight: container.scrollHeight,
+                oldScrollTop: container.scrollTop,
+              }
             }
             setLoadingPrevious(true)
             await loadMore()
-            requestAnimationFrame(() => {
-              if (olderScrollAnchorRef.current && container) {
-                const anchor = olderScrollAnchorRef.current
-                container.scrollTop = container.scrollHeight - anchor.height + anchor.top
-                olderScrollAnchorRef.current = null
-              }
-              setLoadingPrevious(false)
-            })
+            setLoadingPrevious(false)
           }}>
             {loadingPrevious ? 'Carregando mensagens anteriores…' : 'Carregar mensagens anteriores'}
           </button>
@@ -3338,6 +4620,7 @@ function RoomView({
                   requestAnimationFrame(() => inputRef.current?.focus())
                 }}
                 onForward={() => setForwardMessage(m)}
+                onRespond={canRespondToReport && m.userId !== me.id ? () => setRespondMessage(m) : undefined}
                 onReaction={(emoji) => onReaction(m, emoji)}
                 actionPinned={pinnedActionId === m.id}
                 onPinAction={(pinned) => setPinnedActionId(pinned ? m.id : null)}
@@ -3346,6 +4629,15 @@ function RoomView({
                 readReceiptsEnabled={readReceiptsEnabled}
                 onShowReads={() => setReadMessageId(m.id)}
                 onVotePoll={(optionId) => void (m.poll && onPollUpdated && api.votePoll(m.poll.id, optionId).then(onPollUpdated).catch(() => notify('Não foi possível registrar o voto')))}
+                canPin={canManagePin}
+                isPinned={room.pinnedMessage?.id === m.id}
+                onTogglePin={() => {
+                  if (room.pinnedMessage?.id === m.id) {
+                    void handleUnpin()
+                  } else {
+                    void handlePin(m)
+                  }
+                }}
               />
          ))}
           </div>
@@ -3353,7 +4645,8 @@ function RoomView({
          </div>
        </div>
 
-       <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
+       {canWriteInRoom ? (
+        <div className={`composer ${readOnlyAccount ? 'account-read-only' : ''}`} data-composer>
          {readOnlyAccount && <div className="account-read-only-message"><strong>Modo somente leitura</strong><span>Você pode consultar esta conversa, mas não enviar mensagens.</span></div>}
          <ComposerPendingAttachments files={pendingAttachments} urls={pendingAttachmentUrls} onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
         {quotedMessage && <div className="quote-preview"><div><strong>Respondendo a {quotedMessage.username || 'usuário'}</strong><span>{quotedMessage.content || 'Anexo'}</span></div><button type="button" onClick={() => setQuotedMessage(null)} aria-label="Desvincular citação">×</button></div>}
@@ -3364,6 +4657,12 @@ function RoomView({
              <IconStop size={15} /> <span>Parar</span>
            </button>
          </div>}
+         {typingText && (
+            <div className="typing-indicator-bar" role="status" aria-live="polite">
+              <TypingDots />
+              <span>{typingText}</span>
+            </div>
+          )}
          <div className="composer-top">
           <EmojiButton disabled={muted} onPick={insertText} />
           <input
@@ -3381,7 +4680,7 @@ function RoomView({
           />
            <textarea
              ref={inputRef}
-             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''}`}
+             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''}`}
             value={draft}
             onChange={(e) => updateDraft(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
@@ -3405,12 +4704,93 @@ function RoomView({
                 setMention(null)
                 return
               }
-               if (e.key === 'Enter' && !e.shiftKey) {
-                 e.preventDefault()
-                 submit()
-               } else if (e.key === 'Enter' && e.shiftKey) {
-                 setComposerExpanded(true)
-               }
+              if (e.key === 'Tab') {
+                e.preventDefault()
+                const el = inputRef.current
+                if (!el) return
+                const start = el.selectionStart
+                const end = el.selectionEnd
+                const val = draft
+
+                if (start !== end && val.slice(start, end).includes('\n')) {
+                  const lineStart = val.lastIndexOf('\n', start - 1) + 1
+                  const lineEnd = val.indexOf('\n', end) === -1 ? val.length : val.indexOf('\n', end)
+                  const selectedText = val.slice(lineStart, lineEnd)
+                  const lines = selectedText.split('\n')
+
+                  if (e.shiftKey) {
+                    const newLines = lines.map((l) => (l.startsWith('  ') ? l.slice(2) : l.startsWith(' ') ? l.slice(1) : l))
+                    const newBlock = newLines.join('\n')
+                    const next = val.slice(0, lineStart) + newBlock + val.slice(lineEnd)
+                    updateDraft(next, start)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(lineStart, lineStart + newBlock.length)
+                    })
+                  } else {
+                    const newLines = lines.map((l) => '  ' + l)
+                    const newBlock = newLines.join('\n')
+                    const next = val.slice(0, lineStart) + newBlock + val.slice(lineEnd)
+                    updateDraft(next, start + 2)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(lineStart, lineStart + newBlock.length)
+                    })
+                  }
+                } else {
+                  if (e.shiftKey) {
+                    const lineStart = val.lastIndexOf('\n', start - 1) + 1
+                    const beforeInLine = val.slice(lineStart, start)
+                    if (beforeInLine.endsWith('  ')) {
+                      const next = val.slice(0, start - 2) + val.slice(start)
+                      updateDraft(next, start - 2)
+                      requestAnimationFrame(() => {
+                        el.setSelectionRange(start - 2, start - 2)
+                      })
+                    } else if (beforeInLine.endsWith(' ')) {
+                      const next = val.slice(0, start - 1) + val.slice(start)
+                      updateDraft(next, start - 1)
+                      requestAnimationFrame(() => {
+                        el.setSelectionRange(start - 1, start - 1)
+                      })
+                    }
+                  } else {
+                    const indent = '  '
+                    const next = val.slice(0, start) + indent + val.slice(end)
+                    updateDraft(next, start + indent.length)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(start + indent.length, start + indent.length)
+                    })
+                  }
+                }
+                return
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit()
+              } else if (e.key === 'Enter' && e.shiftKey) {
+                setComposerExpanded(true)
+                const el = inputRef.current
+                if (el) {
+                  const start = el.selectionStart
+                  const end = el.selectionEnd
+                  const lineStart = draft.lastIndexOf('\n', start - 1) + 1
+                  const currentLine = draft.slice(lineStart, start)
+                  const indentMatch = currentLine.match(/^[ \t]+/)
+                  if (indentMatch && indentMatch[0].length > 0) {
+                    e.preventDefault()
+                    const indent = indentMatch[0]
+                    const next = draft.slice(0, start) + '\n' + indent + draft.slice(end)
+                    updateDraft(next, start + 1 + indent.length)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(start + 1 + indent.length, start + 1 + indent.length)
+                    })
+                  }
+                }
+              }
+            }}
+            onFocus={() => {
+              if (window.visualViewport) {
+                window.scrollTo(0, 0)
+              }
             }}
             onPaste={handlePaste}
             placeholder={muted ? 'Sem conexão — envio desabilitado' : 'Escreva sua mensagem…'}
@@ -3440,6 +4820,19 @@ function RoomView({
               ))}
             </div>
           )}
+          <ComposerActionBox
+            roomType={room.type}
+            readOnlyAccount={readOnlyAccount}
+            roomReadOnly={room.readOnly}
+            muted={muted}
+            clearDisabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+            editing={Boolean(editingMessage)}
+            onAttach={() => fileInputRef.current?.click()}
+            onCode={toggleCode}
+            onPoll={() => setPollOpen(true)}
+            onClear={clearDraft}
+            onCancelEdit={cancelEditing}
+          />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
             <span>{editingMessage ? 'Editar' : 'Enviar'}</span>
@@ -3466,8 +4859,8 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} disabled={muted} />
-          {room.type === 'PRIVATE_GROUP' && !readOnlyAccount && !room.readOnly && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
+            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} onError={notify} disabled={muted} />
+          {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
@@ -3481,31 +4874,43 @@ function RoomView({
           {editingMessage && <button type="button" className="composer-action" onClick={cancelEditing} disabled={muted} title="Cancelar edição">Cancelar edição</button>}
         </div>
       </div>
+      ) : (
+        <div className="composer account-read-only" data-composer>
+          <div className="account-read-only-message">
+            <strong>Canal de comunicação</strong>
+            <span>Este canal é somente leitura. Apenas usuários com permissão podem enviar mensagens.</span>
+          </div>
+        </div>
+      )}
 
       {filesOpen && <RoomFilesPanel files={visibleFiles} loading={filesLoading} error={filesError} query={filesQuery} type={filesType} onQueryChange={setFilesQuery} onTypeChange={setFilesType} onClose={() => setFilesOpen(false)} onRetry={() => void loadRoomFiles()} />}
 
       {addOpen && (
-        <AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={notify} />
+<AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={modalNotify} />
       )}
       {removeOpen && (
-        <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={notify} />
+        <RemoveMembersModal room={room} onClose={() => setRemoveOpen(false)} notify={modalNotify} />
       )}
-      {editOpen && (
+      {membersOpen && (
+        <MembersModal room={room} onClose={() => setMembersOpen(false)} />
+      )}
+{editOpen && (
         <RoomEditModal
           room={room}
           onClose={() => setEditOpen(false)}
           onSaved={(updated) => { onRoomUpdated(updated); setEditOpen(false) }}
-          notify={notify}
+          notify={modalNotify}
         />
       )}
       {readMessageId && (() => {
         const readMessage = messages.find((message) => message.id === readMessageId)
         return readMessage ? <ReadReceiptsModal message={readMessage} onClose={() => setReadMessageId(null)} /> : null
       })()}
-      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} />}
+      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
-      {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={notify} />}
-      {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={notify} />}
+      {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={modalNotify} />}
+      {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={modalNotify} />}
+      {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={modalNotify} />}
     </div>
   )
 }
@@ -3563,7 +4968,7 @@ function RoomEditModal({ room, onClose, onSaved, notify }: {
           <AvatarImage
             path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
             className="edit-room-avatar"
-            fallback={<span className="edit-room-avatar room-header-icon">{ROOM_ICON[room.type] ?? '#'}</span>}
+            fallback={<span className="edit-room-avatar room-header-icon">{getRoomIcon(room)}</span>}
             alt={roomDisplayName(room)}
           />
           {preview && <img src={preview} className="edit-room-avatar" alt="Prévia da nova imagem" />}
@@ -3621,6 +5026,7 @@ function MessageRow({
   onQuote,
   onForward,
   onReaction,
+  onRespond,
   actionPinned,
   onPinAction,
   highlighted,
@@ -3628,6 +5034,9 @@ function MessageRow({
   readReceiptsEnabled,
   onShowReads,
   onVotePoll,
+  canPin,
+  isPinned,
+  onTogglePin,
 }: {
   msg: Message
   isMine: boolean
@@ -3640,6 +5049,7 @@ function MessageRow({
   onQuote: () => void
   onForward: () => void
   onReaction: (emoji: string) => void
+  onRespond?: () => void
   actionPinned: boolean
   onPinAction: (pinned: boolean) => void
   highlighted: boolean
@@ -3647,6 +5057,9 @@ function MessageRow({
   readReceiptsEnabled: boolean
   onShowReads: () => void
   onVotePoll: (optionId: string) => void
+  canPin?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
 }) {
   const deleted = !!msg.deletedAt
   const [actionDismissed, setActionDismissed] = useState(false)
@@ -3669,8 +5082,10 @@ function MessageRow({
       <div className="message-body">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
-          {deleted ? <span className="message-author">Mensagem excluída</span> : msg.forwardedFromUsername ? <span className="message-author forwarded-author">{msg.forwardedFromUsername}</span> : <button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>}
-          <span className="message-time">{formatTime(msg.createdAt)}</span>
+          {isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {deleted ? <span className="message-author">Mensagem excluída</span> : <span className={`message-author-wrap ${msg.forwardedFromUsername ? 'forwarded-author' : ''}`}>{isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}<button type="button" className="message-author message-author-button" onClick={onShowProfile}>{msg.username || 'sistema'}</button>{!isMine && <>{msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}{msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}</>}</span>}
+          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
           {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
           {isMine && readReceiptsEnabled && !deleted && (
             <button type="button" className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`} onClick={onShowReads}>
@@ -3678,7 +5093,20 @@ function MessageRow({
             </button>
           )}
         </div>
-        {!deleted && canWrite && <MessageActionBar pinned={actionPinned} onPin={onPinAction} onQuote={onQuote} onForward={onForward} onEdit={isMine && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined} onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }} />}
+        {!deleted && canWrite && (
+          <MessageActionBar
+            pinned={actionPinned}
+            onPin={onPinAction}
+            onQuote={onQuote}
+            onForward={onForward}
+            onEdit={isMine && !msg.forwardedFromUsername && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEmoji={(emoji) => { setActionDismissed(true); onReaction(emoji) }}
+            onRespond={onRespond}
+            canPin={canPin}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+          />
+        )}
         {!deleted && (
           <>
             {msg.quotedMessage && <button type="button" className="quoted-message" onClick={() => onJumpToQuoted(msg.quotedMessage!.id)}><strong>{msg.quotedMessage.username}</strong><span>{msg.quotedMessage.content || 'Anexo'}</span></button>}
@@ -3699,7 +5127,29 @@ function MessageRow({
   )
 }
 
-function MessageActionBar({ pinned, onPin, onQuote, onForward, onEdit, onEmoji }: { pinned: boolean; onPin: (pinned: boolean) => void; onQuote: () => void; onForward: () => void; onEdit?: () => void; onEmoji: (emoji: string) => void }) {
+function MessageActionBar({
+  pinned,
+  onPin,
+  onQuote,
+  onForward,
+  onEdit,
+  onEmoji,
+  onRespond,
+  canPin,
+  isPinned,
+  onTogglePin,
+}: {
+  pinned: boolean
+  onPin: (pinned: boolean) => void
+  onQuote: () => void
+  onForward: () => void
+  onEdit?: () => void
+  onEmoji: (emoji: string) => void
+  onRespond?: () => void
+  canPin?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -3722,7 +5172,17 @@ function MessageActionBar({ pinned, onPin, onQuote, onForward, onEdit, onEmoji }
     const update = () => {
       if (!btnRef.current) return
       const r = btnRef.current.getBoundingClientRect()
-      setPos({ left: r.right + 8, top: r.top })
+      const pickerH = 420
+      const pickerW = 352
+      let top = r.top
+      if (top + pickerH > window.innerHeight) {
+        top = Math.max(8, r.bottom - pickerH)
+      }
+      let left = r.right + 8
+      if (left + pickerW > window.innerWidth) {
+        left = Math.max(8, r.left - pickerW)
+      }
+      setPos({ left, top })
     }
     update()
     const onScroll = () => update()
@@ -3730,7 +5190,34 @@ function MessageActionBar({ pinned, onPin, onQuote, onForward, onEdit, onEmoji }
     window.addEventListener('resize', onScroll)
     return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll) }
   }, [open])
-  return <div className="message-actions" ref={ref}><div className="message-emoji-action"><button ref={btnRef} type="button" title="Emoji" onClick={() => { onPin(true); setOpen((value) => !value) }}>😊</button>{open && pos && createPortal(<div ref={menuRef} className="message-emoji-menu message-emoji-menu-portal" style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 10000 }}><Picker data={data} onEmojiSelect={(emoji: EmojiSelection) => { if (emoji.native) onEmoji(emoji.native); setOpen(false); setPos(null); onPin(false) }} previewPosition="none" skinTonePosition="none" /></div>, document.body)}</div>{onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}<button type="button" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>↩</button><button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button></div>
+  return (
+    <div className="message-actions" ref={ref}>
+      <div className="message-emoji-action">
+        <button ref={btnRef} type="button" title="Emoji" onClick={() => { onPin(true); setOpen((value) => !value) }}>😊</button>
+        {open && pos && createPortal(
+          <div ref={menuRef} className="message-emoji-menu message-emoji-menu-portal" style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 10000 }}>
+            <Picker data={data} onEmojiSelect={(emoji: EmojiSelection) => { if (emoji.native) onEmoji(emoji.native); setOpen(false); setPos(null); onPin(false) }} previewPosition="none" skinTonePosition="none" />
+          </div>,
+          document.body,
+        )}
+      </div>
+      {canPin && onTogglePin && (
+        <button
+          type="button"
+          className={`message-action-pin ${isPinned ? 'active' : ''}`}
+          title={isPinned ? 'Desafixar mensagem' : 'Fixar mensagem'}
+          aria-label={isPinned ? 'Desafixar mensagem' : 'Fixar mensagem'}
+          onClick={() => { onPin(false); onTogglePin() }}
+        >
+          📌
+        </button>
+      )}
+      {onRespond && <button type="button" className="message-action-respond" title="Responder ao usuário" onClick={() => { onPin(false); onRespond() }}>🗪</button>}
+      {onEdit && <button type="button" title="Editar mensagem" onClick={() => { onPin(false); onEdit() }}>✎</button>}
+      <button type="button" className="message-action-quote" title="Citar mensagem" onClick={() => { onPin(false); onQuote() }}>❝</button>
+      <button type="button" title="Encaminhar mensagem" onClick={() => { onPin(false); onForward() }}>➜</button>
+    </div>
+  )
 }
 
 function CreatePollModal({ roomId, onClose, onCreated, notify }: { roomId: string; onClose: () => void; onCreated: (message: Message) => void; notify: (text: string) => void }) {
@@ -3811,7 +5298,7 @@ function usePopoverDismiss(cardRef: React.RefObject<HTMLDivElement | null>, onCl
   }, [cardRef, onClose])
 }
 
-function UserProfileCard({ profile, loading, position, onClose, onContact }: { profile: PublicProfile | null; loading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void }) {
+function UserProfileCard({ profile, loading, commonRooms, commonRoomsLoading, position, onClose, onContact, onOpenRoom }: { profile: PublicProfile | null; loading: boolean; commonRooms: Room[]; commonRoomsLoading: boolean; position: { top: number; left: number }; onClose: () => void; onContact?: () => void; onOpenRoom?: (roomId: string) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   usePopoverDismiss(cardRef, onClose)
 
@@ -3825,8 +5312,14 @@ function UserProfileCard({ profile, loading, position, onClose, onContact }: { p
         <div className="profile-info-table">
           <div className="profile-info-row"><span>Username</span><strong>@{profile.username}</strong></div>
           <div className="profile-info-row"><span>Email</span><strong>{profile.email || 'E-mail não informado'}</strong></div>
-          <div className="profile-info-row"><span>Status</span><strong>{presenceLabel(profile.presenceStatus)}</strong></div>
+          <div className="profile-info-row"><span>Status</span><strong className={`profile-status presence-${profile.presenceStatus}`}>{presenceLabel(profile.presenceStatus)}</strong></div>
         </div>
+        <section className="profile-common-rooms" aria-label="Grupos e canais em comum">
+          <strong>Grupos e canais em comum</strong>
+          {commonRoomsLoading && <span className="profile-common-rooms-empty">Carregando...</span>}
+          {!commonRoomsLoading && commonRooms.length === 0 && <span className="profile-common-rooms-empty">Nenhum grupo ou canal em comum.</span>}
+          {!commonRoomsLoading && commonRooms.length > 0 && <div className="profile-common-rooms-list">{commonRooms.map((room) => <button type="button" key={room.id} className="profile-common-room" title={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} aria-label={`Abrir ${room.type === 'CHANNEL' ? 'canal' : 'grupo'} ${room.displayName || room.name}`} disabled={!onOpenRoom} onClick={() => onOpenRoom && onOpenRoom(room.id)}><b>{room.type === 'CHANNEL' ? '#' : '🔒'}</b>{room.displayName || room.name}</button>)}</div>}
+        </section>
         {onContact && <button type="button" className="profile-contact-button" onClick={onContact} title="Conversar com este usuário" aria-label="Conversar com este usuário"><MessageCircleIcon /></button>}
       </div>
     </div>}
@@ -3851,7 +5344,7 @@ function RoomInfoCard({ room, members, position, onClose }: {
       <AvatarImage
         path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
         className="profile-avatar"
-        fallback={<span className="profile-avatar room-info-fallback">{ROOM_ICON[room.type] ?? '#'}</span>}
+        fallback={<span className="profile-avatar room-info-fallback">{getRoomIcon(room)}</span>}
         alt={name}
       />
       <div className="profile-details">
@@ -3891,7 +5384,7 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
       .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(normalizedQuery))
       .map((user) => ({ type: 'user' as const, id: user.id, name: user.name || user.username, subtitle: `@${user.username}`, user })),
     ...rooms
-      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP')
+      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP')
       .filter((room) => `${roomDisplayName(room)} ${room.name}`.toLowerCase().includes(normalizedQuery))
       .map((room) => ({ type: 'room' as const, id: room.id, name: roomDisplayName(room), subtitle: room.type === 'CHANNEL' ? 'Canal' : 'Grupo', room })),
   ].slice(0, 20)
@@ -3906,6 +5399,111 @@ function ForwardMessageModal({ message, rooms, onClose, notify }: { message: Mes
     finally { setBusy(false) }
   }
   return <div className="admin-modal-overlay"><div className="admin-modal"><div className="modal-head"><h3>Encaminhar mensagem</h3><button className="modal-close" onClick={onClose}>×</button></div><input autoComplete="off" className="input" placeholder="Pesquisar pessoa, grupo ou canal" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="forward-list">{candidates.map((destination) => <button type="button" className="forward-user" disabled={busy} key={`${destination.type}-${destination.id}`} onClick={() => void forward(destination)}>{destination.type === 'user' ? <AvatarImage path={userAvatarPath(destination.id)} className="admin-member-avatar" fallback={<span className="admin-member-avatar">{initials(destination.name)}</span>} alt={destination.name} /> : <span className="admin-member-avatar forward-room-icon" aria-hidden="true">{ROOM_ICON[destination.room.type] ?? '#'}</span>}<span><strong>{destination.name}</strong><small>{destination.subtitle}</small></span></button>)}</div></div></div>
+}
+
+function RespondToReportModal({ message, onClose, onResponded, notify }: { message: Message; onClose: () => void; onResponded: () => void; notify: (text: string) => void }) {
+  useEscapeClose(onClose)
+  const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const submit = async () => {
+    if (busy || (!content.trim() && files.length === 0)) return
+    setBusy(true)
+    try {
+      await api.respondToReport(message.id, content.trim(), files.length > 0 ? files : undefined)
+      notify('Resposta enviada por mensagem direta ao usuário')
+      onResponded()
+      onClose()
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao enviar resposta')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay">
+      <div className="admin-modal">
+        <div className="modal-head">
+          <h3>Responder ao relato</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+        <div className="modal-fields">
+          <div className="report-original-message">
+            <strong>Relato original de {message.username || 'usuário'}:</strong>
+            <span>{message.content || 'Anexo'}</span>
+          </div>
+          <label className="admin-label">
+            Sua resposta (será enviada por DM)
+            <textarea
+              className="input"
+              style={{ minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', padding: '8px' }}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Digite a resposta ao relato..."
+              maxLength={2000}
+            />
+          </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn-primary" disabled={busy || (!content.trim() && files.length === 0)} onClick={submit}>
+            {busy ? 'Enviando...' : 'Enviar resposta'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RoomFilesPanel({ files, loading, error, query, type, onQueryChange, onTypeChange, onClose, onRetry }: {
@@ -4189,6 +5787,9 @@ function NotificationButton() {
     () => !isTauri && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator,
   )
   const [subscribed, setSubscribed] = useState(false)
+  const [nativeOn, setNativeOn] = useState(() => {
+    try { return localStorage.getItem('konnix-system-notifications') === 'true' } catch { return false }
+  })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -4206,16 +5807,18 @@ function NotificationButton() {
     }
   }, [supported])
 
-  if (!supported) return null
-
   const enable = async () => {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
+      if (!supported) {
+        setError('Seu navegador não suporta notificações do sistema.')
+        return
+      }
       const perm = await Notification.requestPermission()
       if (perm !== 'granted') {
-        setError('Permissão de notificação negada no navegador')
+        setError('Permissão de notificação negada no navegador. Desbloqueie as notificações do site nas configurações do navegador para ativar esta opção.')
         return
       }
       const reg = await navigator.serviceWorker.ready
@@ -4229,27 +5832,72 @@ function NotificationButton() {
         p256dh: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('p256dh') ?? new ArrayBuffer(0))),
         auth: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('auth') ?? new ArrayBuffer(0))),
       })
+      try { localStorage.setItem('konnix-system-notifications', 'true') } catch { /* preferência opcional */ }
       setSubscribed(true)
+      setNativeOn(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Falha ao ativar notificações')
+      setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
     } finally {
       setBusy(false)
     }
   }
 
+  const disable = async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        try {
+          await api.pushUnsubscribe(sub.endpoint)
+        } catch {
+          /* best-effort */
+        }
+        await sub.unsubscribe().catch(() => undefined)
+      }
+      try { localStorage.setItem('konnix-system-notifications', 'false') } catch { /* preferência opcional */ }
+      setSubscribed(false)
+      setNativeOn(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleNative = async () => {
+    if (busy) return
+    const next = !nativeOn
+    setBusy(true)
+    setError(null)
+    try {
+      try { localStorage.setItem('konnix-system-notifications', String(next)) } catch { /* preferência opcional */ }
+      setNativeOn(next)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const on = isTauri ? nativeOn : subscribed
+
   return (
-    <div className="user-menu-item user-menu-notifications">
+    <div className="user-menu-item notification-row">
       <IconBell />
-      <span className="notif-wrap">
-      {error && <span className="notif-error">{error}</span>}
-      {subscribed ? (
-        <span className="chip-ok">Notificações ativadas</span>
+      <span className="notification-label">Notificações</span>
+      {busy ? (
+        <span className="status-pill">Processando…</span>
       ) : (
-        <button className="user-menu-item-btn" onClick={enable} disabled={busy}>
-          {busy ? 'Ativando…' : 'Ativar notificações'}
+        <button
+          type="button"
+          className={`status-pill message-notification-toggle ${on ? 'notification-toggle-off' : 'notification-toggle-on'}`}
+          onClick={isTauri ? toggleNative : on ? disable : enable}
+          aria-pressed={on}
+          title={on ? 'Desativar notificações' : 'Ativar notificações'}
+        >
+          {on ? 'Desativar' : 'Ativar'}
         </button>
-        )}
-      </span>
+      )}
+      {error && <span className="notif-error">{error}</span>}
     </div>
   )
 }
@@ -4277,10 +5925,121 @@ function AutostartButton() {
   }
 
   return (
-    <button className="user-menu-item user-menu-action message-notifications-toggle" onClick={() => void toggle()} disabled={busy}>
-      <span aria-hidden="true">▣</span>
+    <button
+      type="button"
+      className="user-menu-item user-menu-action message-notifications-toggle"
+      onClick={() => void toggle()}
+      disabled={busy}
+    >
+      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
       <span>Iniciar com o Windows</span>
       <small>{enabled ? 'Ativo' : 'Desativado'}</small>
     </button>
+  )
+}
+
+function ReportIssueModal({
+  onClose,
+  notify,
+}: {
+  onClose: () => void
+  notify: (text: string) => void
+}) {
+  useEscapeClose(onClose)
+  const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    setFiles((prev) => [...prev, ...selectedFiles])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const submit = async () => {
+    if (!content.trim() || busy) return
+    setBusy(true)
+    try {
+      await api.reportIssue(content.trim(), files.length > 0 ? files : undefined)
+      notify('Relato enviado com sucesso aos administradores!')
+      onClose()
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao enviar relato')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay">
+      <div className="admin-modal">
+        <div className="modal-head">
+          <h3>Relatar Problema</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+        <div className="modal-fields">
+          <label className="admin-label">
+            Descreva a sugestão ou bug
+            <textarea
+              className="input"
+              style={{ minHeight: '120px', resize: 'vertical', fontFamily: 'inherit', padding: '8px' }}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Digite detalhadamente o problema ou sugestão..."
+              maxLength={2000}
+            />
+          </label>
+          <div className="report-attachments">
+            <input
+              type="file"
+              ref={fileInputRef}
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
+            <button
+              type="button"
+              className="btn-ghost report-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              Anexar arquivo
+            </button>
+            {files.length > 0 && (
+              <div className="report-file-list">
+                {files.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="report-file-item">
+                    <span className="report-file-name">{file.name}</span>
+                    <button
+                      type="button"
+                      className="report-file-remove"
+                      onClick={() => removeFile(index)}
+                      disabled={busy}
+                      aria-label={`Remover ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn-primary" disabled={busy || !content.trim()} onClick={submit}>
+            {busy ? 'Enviando...' : 'Enviar relato'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
