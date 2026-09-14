@@ -65,7 +65,7 @@ Todas as respostas REST da plataforma seguem rigorosamente a estrutura de envelo
 - `GET /`: Lista as salas do usuário com contador de mensagens não lidas.
 - `POST /`: Cria um novo canal público ou grupo privado.
 - `GET /{id}`: Detalhes da sala e lista de membros.
-- `GET /{id}/messages`: Histórico paginado por cursor (`?before=<msgId>&limit=50`).
+- `GET /{id}/messages`: Histórico paginado por cursor (`?before=<ISO-8601-Instant>&limit=50`).
 - `POST /{id}/messages`: Envia nova mensagem de texto ou inicia thread.
 - `POST /{id}/files`: Upload multipart de anexos.
 - `POST /{id}/read`: Marca todas as mensagens da sala como lidas.
@@ -82,7 +82,9 @@ As respostas de mensagem (`GET /{id}/messages`, `POST /{id}/messages`, eventos W
 - `roles`: lista de tags do autor, podendo conter `"OWNER"` (proprietário do grupo/canal na sala) e `"ADMIN"` (papel global de administrador). Pode ser uma lista vazia `[]`.
 
 ### 3.4. Administração (`/api/v1/admin`) — Requer papel `ADMIN`
-- `GET|POST|PUT /users`: Gestão completa de usuários, papéis e status.
+- `GET|POST /users`: Gestão de usuários. `POST /users/batch` aceita lista de até 500 usuários para criação em lote.
+- `PATCH /users/{id}/roles`: Atualiza papéis de um usuário.
+- `PATCH /users/{id}/status`: Define status: `ACTIVE`, `READ_ONLY` ou `DISABLED`.
 - `GET /audit`: Consulta de logs de auditoria com filtros avançados.
 - `GET /monitoring/metrics`: Métricas de armazenamento, conexões e uso do banco de dados.
 - `GET|POST|DELETE /api-tokens`: Gestão de tokens de integração de longa duração.
