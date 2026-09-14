@@ -66,6 +66,7 @@ export const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
 const THEME_CACHE_KEY = 'konnix-theme-cache'
 const THEME_COOKIE_KEY = 'konnix_theme'
 const MANUAL_PRESENCE_KEY = 'konnix-manual-presence'
+const attachmentBlobCache = new Map<string, string>()
 
 function readManualPresence(): PresenceStatus | null {
   try {
@@ -1841,9 +1842,21 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY') return false
     setComposing(true)
     try {
-      const createdMessages = attachments.length === 0
-        ? [await api.sendMessage(roomId, content.trim(), parentMessageId)]
-        : await Promise.all(attachments.map((file, index) => api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)))
+      let createdMessages: Message[]
+      if (attachments.length === 0) {
+        createdMessages = [await api.sendMessage(roomId, content.trim(), parentMessageId)]
+      } else {
+        createdMessages = await Promise.all(
+          attachments.map(async (file, index) => {
+            const created = await api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)
+            if (created.attachment?.id) {
+              const localUrl = URL.createObjectURL(file)
+              attachmentBlobCache.set(created.attachment.id, localUrl)
+            }
+            return created
+          })
+        )
+      }
       for (const created of createdMessages) {
         setRooms((prev) => prev.map((room) =>
           room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room,
@@ -5594,22 +5607,24 @@ function RoomFileItem({ file }: { file: RoomFile }) {
 }
 
 function FileThumbnail({ file }: { file: RoomFile }) {
-  const [url, setUrl] = useState<string | null>(null)
   const isImage = file.mimeType?.startsWith('image/')
+  const cached = isImage ? attachmentBlobCache.get(file.id) : undefined
+  const [url, setUrl] = useState<string | null>(cached ?? null)
   useEffect(() => {
     if (!isImage) return
+    const cachedUrl = attachmentBlobCache.get(file.id)
+    if (cachedUrl) {
+      setUrl(cachedUrl)
+      return
+    }
     let active = true
     api.downloadFile(file.id).then((blob) => {
       const objectUrl = URL.createObjectURL(blob)
+      attachmentBlobCache.set(file.id, objectUrl)
       if (active) setUrl(objectUrl)
-      else URL.revokeObjectURL(objectUrl)
     }).catch(() => setUrl(null))
     return () => {
       active = false
-      setUrl((current) => {
-        if (current) URL.revokeObjectURL(current)
-        return null
-      })
     }
   }, [file.id, isImage])
   if (isImage && url) return <img className="room-file-thumb" src={url} alt="" />
@@ -5626,16 +5641,23 @@ function AttachmentView({ msg }: { msg: Message }) {
   const att = msg.attachment
   const isImage = !!att && att.mimeType.startsWith('image/')
   const isAudio = !!att && att.mimeType.startsWith('audio/')
+  const cachedUrl = att ? attachmentBlobCache.get(att.id) : undefined
   const [state, setState] = useState<{ status: 'loading' } | { status: 'ready'; url: string } | { status: 'error'; error: string }>(
-    { status: 'loading' },
+    cachedUrl ? { status: 'ready', url: cachedUrl } : { status: 'loading' },
   )
 
   const load = useCallback(async () => {
     if (!att) return
+    const cached = attachmentBlobCache.get(att.id)
+    if (cached) {
+      setState({ status: 'ready', url: cached })
+      return
+    }
     setState({ status: 'loading' })
     try {
       const blob = await api.downloadFile(att.id)
       const url = URL.createObjectURL(blob)
+      attachmentBlobCache.set(att.id, url)
       setState({ status: 'ready', url })
     } catch (err) {
       setState({
@@ -5646,14 +5668,13 @@ function AttachmentView({ msg }: { msg: Message }) {
   }, [att])
 
   useEffect(() => {
-    load()
-    return () => {
-      setState((s) => {
-        if (s.status === 'ready') URL.revokeObjectURL(s.url)
-        return s
-      })
+    if (att && !attachmentBlobCache.has(att.id)) {
+      load()
+    } else if (att && attachmentBlobCache.has(att.id)) {
+      const cached = attachmentBlobCache.get(att.id)!
+      setState((prev) => (prev.status === 'ready' && prev.url === cached ? prev : { status: 'ready', url: cached }))
     }
-  }, [load])
+  }, [att, load])
 
   if (!att) return null
 
