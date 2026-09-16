@@ -1119,7 +1119,14 @@ export default function App() {
 
   if (pathname === '/admin') {
       if (!session.user.roles.includes('ADMIN')) return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} /></DesktopShell>
-      return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><AdminView me={session.user} onBack={() => { window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) }} /></DesktopShell>
+      return (
+        <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}>
+          <div style={{ display: 'none' }} aria-hidden="true">
+            <ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} />
+          </div>
+          <AdminView me={session.user} onBack={() => { window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) }} />
+        </DesktopShell>
+      )
    }
   return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} /></DesktopShell>
 }
@@ -5098,14 +5105,24 @@ function MessageRow({
   const [longPressed, setLongPressed] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
-  const beginLongPress = () => {
+  const longPressStart = useRef<{ x: number; y: number } | null>(null)
+  const beginLongPress = (x: number, y: number) => {
+    longPressStart.current = { x, y }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
     longPressTimer.current = window.setTimeout(() => setLongPressed(true), 500)
   }
   const cancelLongPress = () => {
+    longPressStart.current = null
     if (longPressTimer.current !== null) {
       window.clearTimeout(longPressTimer.current)
       longPressTimer.current = null
+    }
+  }
+  const moveLongPress = (event: React.PointerEvent) => {
+    const start = longPressStart.current
+    if (!start) return
+    if (Math.abs(event.clientX - start.x) > 8 || Math.abs(event.clientY - start.y) > 8) {
+      cancelLongPress()
     }
   }
   useEffect(() => {
@@ -5124,7 +5141,7 @@ function MessageRow({
     return <div data-message-id={msg.id} className="system-line">{renderMarkdown(msg.content)}</div>
   }
   return (
-    <div ref={rowRef} data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} onTouchStart={beginLongPress} onTouchMove={cancelLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
+    <div ref={rowRef} data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} onPointerDown={(e) => beginLongPress(e.clientX, e.clientY)} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress} onContextMenu={(e) => e.preventDefault()} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
       {!deleted && (
         <button type="button" className="message-avatar-button" onClick={onShowProfile} aria-label={`Abrir contato de ${msg.username || 'usuário'}`}>
           <AvatarImage
@@ -5796,12 +5813,12 @@ function attachmentIcon(att: Attachment, isImage: boolean, isAudio: boolean): st
 function ReadReceiptsModal({ message, onClose }: { message: Message; onClose: () => void }) {
   const readers = message.readBy ?? []
   return (
-    <Modal title="Confirmação de leitura" onClose={onClose}>
+    <Modal title="Confirmação de leitura" onClose={onClose} className="read-receipts-modal">
       <div className="read-receipts-list">
         {readers.length === 0 && <span className="nav-empty">Ainda não lida por outra pessoa.</span>}
         {readers.map((reader) => (
           <div className="read-receipt-row" key={`${reader.userId}-${reader.readAt}`}>
-            <span className="mini-avatar">{initials(reader.name || reader.username)}</span>
+            <AvatarImage path={userAvatarPath(reader.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(reader.name || reader.username)}</span>} alt={reader.name || reader.username} />
             <span className="picker-item-text">
               <strong>{reader.name || reader.username}</strong>
               <small>@{reader.username}</small>
@@ -5819,7 +5836,7 @@ function ReadReceiptsModal({ message, onClose }: { message: Message; onClose: ()
 
 function ReactionUsersModal({ emoji, reactions, onClose }: { emoji: string; reactions: MessageReaction[]; onClose: () => void }) {
   return (
-    <Modal title={`Quem reagiu com ${emoji}`} onClose={onClose}>
+    <Modal title={`Quem reagiu com ${emoji}`} onClose={onClose} className="reaction-users-modal">
       <div className="reaction-users-list">
         {reactions.map((reaction) => (
           <div className="read-receipt-row" key={`${reaction.userId}-${reaction.createdAt ?? reaction.id ?? reaction.emoji}`}>
