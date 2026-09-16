@@ -1947,7 +1947,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         (r) =>
           r.type !== 'DIRECT' &&
           (!q || `${roomDisplayName(r)} ${r.name ?? ''}`.toLowerCase().includes(q)),
-      ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
+      ).sort((a, b) => roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
   const conversations = useMemo(
@@ -1958,7 +1958,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           r.directPartner?.accountStatus !== 'DISABLED' &&
           (!q ||
             `${roomDisplayName(r)} ${r.directPartner?.username ?? ''}`.toLowerCase().includes(q)),
-      ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
+      ).sort((a, b) => roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
   const favoriteRooms = useMemo(() => rooms.filter((room) => room.favorite && room.directPartner?.accountStatus !== 'DISABLED'), [rooms])
