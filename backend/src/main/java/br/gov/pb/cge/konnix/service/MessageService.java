@@ -320,6 +320,15 @@ public class MessageService {
 
     public MessageResponse responseFor(Message message, UUID actorId) {
         Attachment attachment = attachmentRepository.findByMessageId(message.getId()).orElse(null);
+        List<MessageReactionResponse> reactions = reactionRepository.findByMessageIdIn(List.of(message.getId())).stream()
+                .map(MessageReactionResponse::from)
+                .toList();
+        boolean enabled = systemSettingService.readReceiptsEnabled();
+        List<ReadReceiptResponse> readBy = enabled && message.getUser() != null && message.getUser().getId().equals(actorId)
+                ? messageReadRepository.findByMessageIdIn(List.of(message.getId())).stream()
+                        .map(ReadReceiptResponse::from)
+                        .toList()
+                : List.of();
         List<String> roles = List.of();
         if (message.getUser() != null) {
             String roomMemberRole = roomMemberRepository
@@ -330,7 +339,7 @@ public class MessageService {
                     .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
             roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
         }
-        return MessageResponse.from(message, attachment, List.of(), List.of(), pollFor(message, actorId), roles);
+        return MessageResponse.from(message, attachment, readBy, reactions, pollFor(message, actorId), roles);
     }
 
     private List<MessageResponse> toResponses(List<Message> messages, UUID actorId) {

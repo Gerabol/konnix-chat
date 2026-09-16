@@ -8,12 +8,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.client.HttpResponseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 
 @Service
 public class PushNotificationService {
@@ -23,13 +26,23 @@ public class PushNotificationService {
     private final PushSubscriptionRepository subscriptionRepository;
     private final PushSender pushSender;
     private final ObjectMapper objectMapper;
+    private final Executor executor;
 
+    @Autowired
     public PushNotificationService(PushSubscriptionRepository subscriptionRepository,
                                    PushSender pushSender,
                                    ObjectMapper objectMapper) {
+        this(subscriptionRepository, pushSender, objectMapper, ForkJoinPool.commonPool());
+    }
+
+    public PushNotificationService(PushSubscriptionRepository subscriptionRepository,
+                                   PushSender pushSender,
+                                   ObjectMapper objectMapper,
+                                   Executor executor) {
         this.subscriptionRepository = subscriptionRepository;
         this.pushSender = pushSender;
         this.objectMapper = objectMapper;
+        this.executor = executor != null ? executor : ForkJoinPool.commonPool();
     }
 
     public void notifyNewMessage(UUID roomId, MessageResponse message, String roomDisplayName) {
@@ -38,27 +51,33 @@ public class PushNotificationService {
             return;
         }
         String author = message.username() == null || message.username().isBlank() ? "Alguém" : message.username();
-        for (PushSubscription subscription : subscriptionRepository.findByRoomId(roomId)) {
-            if (senderId.equals(subscription.getUser().getId())) {
-                continue;
-            }
-            if (Set.of("busy", "vacation").contains(subscription.getUser().getPresenceStatus())) {
-                continue;
-            }
-            String payload = buildPayload(message.id(), roomId, roomDisplayName, author);
+        executor.execute(() -> {
             try {
-                pushSender.send(subscription, payload);
-            } catch (HttpResponseException e) {
-                if (e.getStatusCode() == 404 || e.getStatusCode() == 410) {
-                    log.info("Subscription inválida/expirada removida: {}", subscription.getEndpoint());
-                    subscriptionRepository.delete(subscription);
-                } else {
-                    log.warn("Push recusado (status {}) para {}", e.getStatusCode(), subscription.getEndpoint());
+                for (PushSubscription subscription : subscriptionRepository.findByRoomId(roomId)) {
+                    if (senderId.equals(subscription.getUser().getId())) {
+                        continue;
+                    }
+                    if (Set.of("busy", "vacation").contains(subscription.getUser().getPresenceStatus())) {
+                        continue;
+                    }
+                    String payload = buildPayload(message.id(), roomId, roomDisplayName, author);
+                    try {
+                        pushSender.send(subscription, payload);
+                    } catch (HttpResponseException e) {
+                        if (e.getStatusCode() == 404 || e.getStatusCode() == 410) {
+                            log.info("Subscription inválida/expirada removida: {}", subscription.getEndpoint());
+                            subscriptionRepository.delete(subscription);
+                        } else {
+                            log.warn("Push recusado (status {}) para {}", e.getStatusCode(), subscription.getEndpoint());
+                        }
+                    } catch (Exception e) {
+                        log.warn("Falha ao enviar push para {}", subscription.getEndpoint(), e);
+                    }
                 }
             } catch (Exception e) {
-                log.warn("Falha ao enviar push para {}", subscription.getEndpoint(), e);
+                log.warn("Falha ao processar notificações push da sala {}", roomId, e);
             }
-        }
+        });
     }
 
     public String buildPayload(UUID messageId, UUID roomId, String roomDisplayName, String author) {

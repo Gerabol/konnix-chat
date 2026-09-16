@@ -1,5 +1,8 @@
 package br.gov.pb.cge.konnix.service;
 
+import br.gov.pb.cge.konnix.api.admin.dto.BatchUserCreateResponse;
+import br.gov.pb.cge.konnix.api.admin.dto.CreateUsersBatchRequest;
+import br.gov.pb.cge.konnix.api.exception.ApiException;
 import br.gov.pb.cge.konnix.api.exception.ApiExceptions;
 import br.gov.pb.cge.konnix.api.user.dto.CreateUserRequest;
 import br.gov.pb.cge.konnix.api.user.dto.UpdateUserRequest;
@@ -17,9 +20,12 @@ import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.domain.session.SessionRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.data.domain.PageRequest;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -38,17 +44,20 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
     private final SessionRepository sessionRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public UserService(UserRepository userRepository,
                        RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
                        AuditService auditService,
-                       SessionRepository sessionRepository) {
+                       SessionRepository sessionRepository,
+                       PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
         this.sessionRepository = sessionRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -171,6 +180,63 @@ public class UserService {
 
         auditService.record("USER_CREATED", actor(actorId), "user", user.getId().toString(), ipAddress);
         return UserResponse.from(user);
+    }
+
+    public BatchUserCreateResponse createBatch(CreateUsersBatchRequest request, UUID actorId, String ipAddress) {
+        Set<String> roleNames = request.effectiveRoles().stream()
+                .map(String::trim).map(String::toUpperCase).collect(Collectors.toSet());
+        if (roleNames.stream().anyMatch(name -> !Set.of("ADMIN", "USER", "BOT").contains(name))) {
+            throw ApiExceptions.conflict("ROLE_INVALID", "Somente ADMIN, USER e BOT são permitidas");
+        }
+        Set<Role> roles = new HashSet<>();
+        for (String name : roleNames) {
+            roles.add(roleRepository.findByName(name)
+                    .orElseThrow(() -> ApiExceptions.conflict("ROLE_MISSING", "Role não configurada: " + name)));
+        }
+
+        List<BatchUserCreateResponse.Error> errors = new ArrayList<>();
+        int created = 0;
+        List<CreateUserRequest> items = request.users();
+        for (int i = 0; i < items.size(); i++) {
+            CreateUserRequest item = items.get(i);
+            try {
+                transactionTemplate.executeWithoutResult(status -> createSingleUser(item, roles));
+                created++;
+            } catch (ApiException ex) {
+                errors.add(new BatchUserCreateResponse.Error(i, item.username(), ex.getCode(), ex.getMessage()));
+            } catch (RuntimeException ex) {
+                errors.add(new BatchUserCreateResponse.Error(i, item.username(), "INTERNAL_ERROR", ex.getMessage()));
+            }
+        }
+        if (!errors.isEmpty() && created == 0) {
+            throw ApiExceptions.conflict("BATCH_FAILED", "Todos os usuários falharam na criação");
+        }
+        auditService.record("USERS_BATCH_CREATED", actor(actorId), "user",
+                created + "/" + items.size(), ipAddress);
+        return new BatchUserCreateResponse(items.size(), created, errors);
+    }
+
+    private void createSingleUser(CreateUserRequest request, Set<Role> roles) {
+        String username = request.username().trim();
+        String email = normalize(request.email());
+        if (userRepository.existsByUsername(username)) {
+            throw ApiExceptions.conflict("USERNAME_TAKEN", "Nome de usuário já existe: " + username);
+        }
+        if (email != null && userRepository.existsByEmail(email)) {
+            throw ApiExceptions.conflict("EMAIL_TAKEN", "E-mail já cadastrado: " + email);
+        }
+        User user = new User();
+        user.setUsername(username);
+        user.setName(request.name().trim());
+        user.setEmail(email);
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setPasswordChangeRequired(true);
+        user.setActive(true);
+        user.setAccountStatus("ACTIVE");
+        user.setUserType("USER");
+        user.setPasswordMigrationRequired(false);
+        user.getRoles().addAll(roles);
+        userRepository.save(user);
     }
 
     @Transactional

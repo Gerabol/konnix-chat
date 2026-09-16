@@ -1,5 +1,11 @@
 export type AccountStatus = 'ACTIVE' | 'READ_ONLY' | 'DISABLED'
 
+export type BatchUserCreateResult = {
+  total: number
+  created: number
+  errors: { index: number; username: string; code: string; message: string }[]
+}
+
 export type User = {
   id: string
   username: string
@@ -340,6 +346,11 @@ export const api = {
   createUser(input: { username: string; name: string; email: string; password: string }) {
     return request<User>('/api/v1/users', { method: 'POST', body: JSON.stringify(input) })
   },
+  createUsersBatch(users: { username: string; name: string; email?: string; password: string }[], roles?: string[]) {
+    return request<BatchUserCreateResult>('/api/v1/admin/users/batch', {
+      method: 'POST', body: JSON.stringify({ users, roles: roles ?? ['USER'] }),
+    })
+  },
   adminUsers(q = '', page = 0, size = 25) {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
     if (q.trim()) params.set('q', q.trim())
@@ -576,7 +587,23 @@ export const api = {
     })
   },
   async downloadFile(fileId: string): Promise<Blob> {
-    return fetchBlob(`/api/v1/files/${fileId}`)
+    const maxRetries = 3
+    const delays = [300, 700, 1500]
+    let lastError: unknown
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fetchBlob(`/api/v1/files/${fileId}`)
+      } catch (err) {
+        lastError = err
+        const isTransient = err instanceof ApiError && (err.status === 404 || err.status >= 500)
+        if (attempt < maxRetries && isTransient) {
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt] ?? 1000))
+          continue
+        }
+        throw err
+      }
+    }
+    throw lastError
   },
   async fetchBlob(path: string): Promise<Blob> {
     return fetchBlob(path)

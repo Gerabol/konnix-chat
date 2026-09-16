@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -104,49 +106,68 @@ public class ChatEventPublisher {
         publishPayload(roomId, "message.reaction", data);
     }
 
-    private void publishToAll(String eventType, Object data) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", eventType);
-        payload.put("data", data);
-        try {
-            String json = objectMapper.writeValueAsString(payload);
-            sessionRegistry.allSessions().forEach(session -> send(session, json));
-        } catch (JsonProcessingException e) {
-            log.error("Falha ao serializar evento WebSocket {}", eventType, e);
+    private void executeAfterCommitOrNow(Runnable action) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
         }
+    }
+
+    private void publishToAll(String eventType, Object data) {
+        executeAfterCommitOrNow(() -> {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("type", eventType);
+            payload.put("data", data);
+            try {
+                String json = objectMapper.writeValueAsString(payload);
+                sessionRegistry.allSessions().forEach(session -> send(session, json));
+            } catch (JsonProcessingException e) {
+                log.error("Falha ao serializar evento WebSocket {}", eventType, e);
+            }
+        });
     }
 
     private void publishToUser(UUID userId, String eventType, UUID roomId, Object data) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", eventType);
-        payload.put("roomId", roomId);
-        payload.put("data", data);
-        try {
-            String json = objectMapper.writeValueAsString(payload);
-            sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json));
-        } catch (JsonProcessingException e) {
-            log.error("Falha ao serializar evento WebSocket {}", eventType, e);
-        }
+        executeAfterCommitOrNow(() -> {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("type", eventType);
+            payload.put("roomId", roomId);
+            payload.put("data", data);
+            try {
+                String json = objectMapper.writeValueAsString(payload);
+                sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json));
+            } catch (JsonProcessingException e) {
+                log.error("Falha ao serializar evento WebSocket {}", eventType, e);
+            }
+        });
     }
 
     private void publishPayload(UUID roomId, String eventType, Object data) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", eventType);
-        payload.put("roomId", roomId);
-        payload.put("data", data);
+        executeAfterCommitOrNow(() -> {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("type", eventType);
+            payload.put("roomId", roomId);
+            payload.put("data", data);
 
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(payload);
-        } catch (JsonProcessingException e) {
-            log.error("Falha ao serializar evento WebSocket {}", eventType, e);
-            return;
-        }
+            String json;
+            try {
+                json = objectMapper.writeValueAsString(payload);
+            } catch (JsonProcessingException e) {
+                log.error("Falha ao serializar evento WebSocket {}", eventType, e);
+                return;
+            }
 
-        roomMemberRepository.findByRoomId(roomId).stream()
-                .map(member -> member.getUser().getId())
-                .distinct()
-                .forEach(userId -> sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json)));
+            roomMemberRepository.findByRoomId(roomId).stream()
+                    .map(member -> member.getUser().getId())
+                    .distinct()
+                    .forEach(userId -> sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json)));
+        });
     }
 
     private void send(WebSocketSession session, String json) {

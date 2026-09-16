@@ -12,4 +12,7 @@ target/
 dist/
 *.log
 .DS_Store
-
+# Dados locais e migrações sensíveis (Zero PII Leakage)
+backend/data/
+*.csv
+migracao/
