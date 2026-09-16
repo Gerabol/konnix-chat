@@ -1900,6 +1900,42 @@ button:disabled {
   min-height: 0;
 }
 
+.room-drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--konnix-ink) 12%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.room-drag-overlay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.75rem 2.5rem;
+  border-radius: 12px;
+  border: 2px dashed color-mix(in srgb, var(--konnix-accent) 70%, transparent);
+  background: var(--konnix-surface);
+  color: var(--konnix-ink);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--konnix-ink) 20%, transparent);
+}
+
+.room-drag-overlay-box strong {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.room-drag-overlay-box span {
+  font-size: 0.82rem;
+  color: var(--konnix-ink-soft);
+  text-align: center;
+}
+
 .room-header {
   display: flex;
   align-items: center;
