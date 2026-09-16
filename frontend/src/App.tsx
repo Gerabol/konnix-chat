@@ -976,6 +976,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const setTouch = () => document.body.classList.add('touch-device')
+    if (window.matchMedia('(hover: none)').matches || window.matchMedia('(pointer: coarse)').matches) {
+      setTouch()
+    }
+    document.addEventListener('touchstart', setTouch, { passive: true })
+    return () => document.removeEventListener('touchstart', setTouch)
+  }, [])
+
+  useEffect(() => {
     if (!session) {
       meRequestRef.current = null
       setAuthInitializing(false)
@@ -5086,11 +5095,36 @@ function MessageRow({
   const deleted = !!msg.deletedAt
   const [actionDismissed, setActionDismissed] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
+  const [longPressed, setLongPressed] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+  const longPressTimer = useRef<number | null>(null)
+  const beginLongPress = () => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
+    longPressTimer.current = window.setTimeout(() => setLongPressed(true), 500)
+  }
+  const cancelLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+  useEffect(() => {
+    if (!longPressed) return
+    const dismiss = (event: MouseEvent | TouchEvent) => {
+      if (rowRef.current && !rowRef.current.contains(event.target as Node)) setLongPressed(false)
+    }
+    document.addEventListener('mousedown', dismiss)
+    document.addEventListener('touchstart', dismiss, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', dismiss)
+      document.removeEventListener('touchstart', dismiss)
+    }
+  }, [longPressed])
   if (msg.messageType === 'SYSTEM') {
     return <div data-message-id={msg.id} className="system-line">{renderMarkdown(msg.content)}</div>
   }
   return (
-    <div data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
+    <div ref={rowRef} data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} onTouchStart={beginLongPress} onTouchMove={cancelLongPress} onTouchEnd={cancelLongPress} onTouchCancel={cancelLongPress} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
       {!deleted && (
         <button type="button" className="message-avatar-button" onClick={onShowProfile} aria-label={`Abrir contato de ${msg.username || 'usuário'}`}>
           <AvatarImage

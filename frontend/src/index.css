@@ -2408,6 +2408,10 @@ button:disabled {
 .message:hover .message-actions { display: inline-flex; }
 .message.action-pinned .message-actions { display: inline-flex; }
 .message.action-dismissed:hover .message-actions { display: none; }
+.message.long-pressed .message-actions { display: inline-flex; }
+@media (hover: none) { .message:hover .message-actions { display: none; } }
+.touch-device .message:hover .message-actions { display: none; }
+@media (max-width: 600px) { .message:hover .message-actions { display: none; } }
 .message-actions > button, .message-emoji-action > button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--konnix-ink-soft); font-size: 1rem; line-height: 1; }
 .message-actions > button:hover, .message-emoji-action > button:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
