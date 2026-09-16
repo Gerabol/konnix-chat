@@ -72,7 +72,7 @@ class AuthServiceTest {
         user.setPresenceStatus("offline");
 
         when(loginAttemptService.isBlocked("joao")).thenReturn(false);
-        when(userRepository.findByUsername("joao")).thenReturn(Optional.of(user));
+        when(userRepository.findByUsernameIgnoreCase("joao")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("senha123", "hash123")).thenReturn(true);
         when(tokenService.issue(user)).thenReturn(new TokenService.IssuedToken("knx_dummy_token", new Session()));
 

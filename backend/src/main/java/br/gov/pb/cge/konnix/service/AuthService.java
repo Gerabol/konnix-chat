@@ -47,13 +47,14 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, String ipAddress) {
-        String username = request.username().trim();
+        String raw = request.username().trim();
+        String username = raw.startsWith("@") ? raw.substring(1).trim() : raw;
         if (loginAttemptService.isBlocked(username)) {
             throw ApiExceptions.tooManyAttempts();
         }
 
-        User user = userRepository.findByUsername(username)
-                .or(() -> userRepository.findByEmail(username))
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .or(() -> userRepository.findByEmailIgnoreCase(username))
                 .orElse(null);
 
         if (user == null) {
