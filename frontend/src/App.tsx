@@ -1497,6 +1497,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const openRoom = useCallback(
     async (roomId: string) => {
+      setPendingDm(null)
       const requestId = ++roomLoadRequestRef.current
       isInitializingConversationRef.current = true
       setActiveRoomId(roomId)
