@@ -242,6 +242,31 @@ class ChatCoreIntegrationTest {
     }
 
     @Test
+    void dmSemMensagemNaoApareceNaListaDeSalasAtePrimeiroEnvio() throws Exception {
+        createUser("dm-sem-msg-1");
+        String otherId = createUser("dm-sem-msg-2");
+        String token1 = login("dm-sem-msg-1", PASSWORD);
+
+        String roomId = createDm(token1, otherId);
+
+        mockMvc.perform(get("/api/v1/rooms")
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + roomId + "')]").doesNotExist());
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/messages", roomId)
+                        .header("Authorization", "Bearer " + token1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"primeira mensagem\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/rooms")
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id == '" + roomId + "')]").exists());
+    }
+
+    @Test
     void enviarMensagem() throws Exception {
         String roomId = createRoom(adminToken, "canal-msg", "CHANNEL");
         String memberId = createUser("msg-enviador");
