@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ClipboardEvent, ReactNode } from 'react'
+import type { ClipboardEvent, DragEvent as ReactDragEvent, ReactNode } from 'react'
 import data from '@emoji-mart/data'
 import Picker from '@emoji-mart/react'
 import {
@@ -26,6 +26,8 @@ import { setActiveServer } from './api'
 import { validatePassword } from './passwordValidation'
 import { RoleBadge } from './RoleBadge'
 import { CodeBlock, detectLanguage, formatHtml, formatJson } from './CodeBlock'
+
+type DmPartner = { userId: string; username: string; name: string; presenceStatus?: PresenceStatus }
 
 type EmojiSelection = { native?: string }
 
@@ -432,20 +434,21 @@ function AudioRecordButton({
   }
 
   return (
-<span className="audio-record-wrap">
-        <button
-          type="button"
-          className={`composer-action ${recording ? 'recording' : ''}`}
-          title={recording ? 'Parar gravação' : 'Gravar áudio'}
-          disabled={disabled}
-          onClick={toggle}
-        >
-          {recording ? <IconStop size={15} /> : <IconMic size={15} />}
-          <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
-        </button>
-      </span>
-    )
-  }
+    <span className="audio-record-wrap">
+      <button
+        type="button"
+        className={`composer-action ${recording ? 'recording' : ''}`}
+        title={recording ? 'Parar gravação' : 'Gravar áudio'}
+        aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
+        disabled={disabled}
+        onClick={toggle}
+      >
+        {recording ? <IconStop size={15} /> : <IconMic size={15} />}
+        <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+      </button>
+    </span>
+  )
+}
 
 function IconX({ size = 18 }: { size?: number }) {
   return (
@@ -977,6 +980,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const setTouch = () => document.body.classList.add('touch-device')
+    if (window.matchMedia('(hover: none)').matches || window.matchMedia('(pointer: coarse)').matches) {
+      setTouch()
+    }
+    document.addEventListener('touchstart', setTouch, { passive: true })
+    return () => document.removeEventListener('touchstart', setTouch)
+  }, [])
+
+  useEffect(() => {
     if (!session) {
       meRequestRef.current = null
       setAuthInitializing(false)
@@ -1111,7 +1123,14 @@ export default function App() {
 
   if (pathname === '/admin') {
       if (!session.user.roles.includes('ADMIN')) return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} /></DesktopShell>
-      return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><AdminView me={session.user} onBack={() => { window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) }} /></DesktopShell>
+      return (
+        <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}>
+          <div style={{ display: 'none' }} aria-hidden="true">
+            <ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} />
+          </div>
+          <AdminView me={session.user} onBack={() => { window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) }} />
+        </DesktopShell>
+      )
    }
   return <DesktopShell servers={desktopServers} activeId={activeDesktopId} onChange={connectDesktopServer} onServersChange={setDesktopServers}><ChatView session={session} avatarRevision={profileRevision} onLogout={handleLogout} onPresenceChange={handlePresenceChange} onProfileUpdated={handleProfileUpdated} onThemeUpdated={handleThemeUpdated} /></DesktopShell>
 }
@@ -1257,6 +1276,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const online = useOnline()
   const [rooms, setRooms] = useState<Room[]>([])
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
+  const [pendingDm, setPendingDm] = useState<DmPartner | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
@@ -1286,6 +1306,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const activeRoomIdRef = useRef(activeRoomId)
   activeRoomIdRef.current = activeRoomId
+  const pendingDmRef = useRef(pendingDm)
+  pendingDmRef.current = pendingDm
   const roomsRef = useRef(rooms)
   roomsRef.current = rooms
   const onlineRef = useRef(online)
@@ -1365,10 +1387,35 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const myAvatarVersion = `${me.updatedAt}|r${avatarRevision}`
 
-  const activeRoom = useMemo(
-    () => rooms.find((r) => r.id === activeRoomId) ?? null,
-    [rooms, activeRoomId],
-  )
+  const activeRoom = useMemo(() => {
+    const found = rooms.find((r) => r.id === activeRoomId)
+    if (found) return found
+    if (activeRoomId?.startsWith('pending:') && pendingDm) {
+      return {
+        id: `pending:${pendingDm.userId}`,
+        name: pendingDm.username,
+        displayName: pendingDm.name,
+        type: 'DIRECT' as const,
+        createdBy: null,
+        readOnly: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastActivityAt: null,
+        unreadCount: 0,
+        favorite: false,
+        directPartner: {
+          userId: pendingDm.userId,
+          username: pendingDm.username,
+          name: pendingDm.name,
+          email: null,
+          accountStatus: 'ACTIVE',
+          presenceStatus: pendingDm.presenceStatus ?? 'offline',
+        },
+        pinnedMessage: null,
+      } as Room
+    }
+    return null
+  }, [rooms, activeRoomId, pendingDm])
 
   const showToast = useCallback((text: string, anchor: 'content' | 'modal' = 'content') => {
     setToast({ id: Date.now(), text, anchor })
@@ -1384,6 +1431,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [])
 
   const sendTypingStatus = useCallback((roomId: string, isTyping: boolean) => {
+    if (roomId.startsWith('pending:')) return
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       try {
@@ -1451,6 +1499,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
 
   const openRoom = useCallback(
     async (roomId: string) => {
+      setPendingDm(null)
       const requestId = ++roomLoadRequestRef.current
       isInitializingConversationRef.current = true
       setActiveRoomId(roomId)
@@ -1728,7 +1777,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           connect()
         }
         const activeRoom = activeRoomIdRef.current
-        if (activeRoom) {
+        if (activeRoom && !activeRoom.startsWith('pending:')) {
           void api.markRoomRead(activeRoom).catch(() => undefined)
         }
       }
@@ -1761,7 +1810,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return
       const activeRoom = activeRoomIdRef.current
-      if (activeRoom) {
+      if (activeRoom && !activeRoom.startsWith('pending:')) {
         void api.markRoomRead(activeRoom).catch(() => undefined)
       }
     }, 10_000)
@@ -1838,8 +1887,28 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [installEvent])
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
-    const roomId = activeRoomId
+    let roomId = activeRoomId
     if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY') return false
+    if (roomId.startsWith('pending:')) {
+      const user = pendingDmRef.current
+      if (!user) return false
+      try {
+        setComposing(true)
+        const room = await api.createDm(user.userId)
+        roomId = room.id
+        setPendingDm(null)
+        setActiveRoomId(room.id)
+        setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [room, ...previous])
+        setMessages([])
+        setHasMore(false)
+        setNextBefore(null)
+        void api.markRoomRead(room.id).catch(() => undefined)
+      } catch (err) {
+        showToast(err instanceof ApiError ? err.message : 'Não foi possível iniciar a conversa')
+        setComposing(false)
+        return false
+      }
+    }
     setComposing(true)
     try {
       let createdMessages: Message[]
@@ -1887,19 +1956,33 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     } catch (error) { showToast(error instanceof ApiError ? error.message : 'Falha ao reagir à mensagem') }
   }
 
-  const startDirectConversation = useCallback(async (userId: string) => {
-    try {
-      const room = await api.createDm(userId)
-      setRooms((previous) => previous.some((item) => item.id === room.id) ? previous : [room, ...previous])
-      await openRoom(room.id)
-    } catch (error) { showToast(error instanceof ApiError ? error.message : 'Não foi possível abrir a conversa') }
-  }, [openRoom, showToast])
+  const startDirectConversation = useCallback((userId: string, partner?: Omit<DmPartner, 'userId'>) => {
+    const existing = rooms.find((room) => room.type === 'DIRECT' && room.directPartner?.userId === userId)
+    if (existing) {
+      void openRoom(existing.id)
+      return
+    }
+    setPendingDm({
+      userId,
+      username: partner?.username ?? 'usuário',
+      name: partner?.name ?? 'Usuário',
+      presenceStatus: partner?.presenceStatus,
+    })
+    setActiveRoomId(`pending:${userId}`)
+    setMessages([])
+    setHasMore(false)
+    setNextBefore(null)
+    setSidebarOpen(false)
+    setLoadingRoom(false)
+    isInitializingConversationRef.current = false
+  }, [rooms, openRoom])
 
-  const startUserDmFromSearch = useCallback(async (userId: string) => {
-    await startDirectConversation(userId)
+  const startUserDmFromSearch = useCallback((userId: string, partner?: Omit<DmPartner, 'userId'>) => {
+    const user = searchUsers.find((item) => item.id === userId)
+    startDirectConversation(userId, partner ?? (user ? { username: user.username, name: user.name || user.username, presenceStatus: user.presenceStatus } : undefined))
     setForceScrollRequest((request) => request + 1)
     setSearch('')
-  }, [startDirectConversation])
+  }, [startDirectConversation, searchUsers])
   const openTheme = useCallback(() => { setPreviewTheme(me.theme); setThemeOpen(true) }, [me.theme])
   const openProfileEdit = useCallback(() => setProfileEditOpen(true), [])
   const openAbout = useCallback(() => setAboutOpen(true), [])
@@ -1944,7 +2027,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         (r) =>
           r.type !== 'DIRECT' &&
           (!q || `${roomDisplayName(r)} ${r.name ?? ''}`.toLowerCase().includes(q)),
-      ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
+      ).sort((a, b) => roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
   const conversations = useMemo(
@@ -1955,7 +2038,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           r.directPartner?.accountStatus !== 'DISABLED' &&
           (!q ||
             `${roomDisplayName(r)} ${r.directPartner?.username ?? ''}`.toLowerCase().includes(q)),
-      ).sort((a, b) => (Number(b.unreadCount > 0) - Number(a.unreadCount > 0)) || roomActivityTime(b) - roomActivityTime(a)),
+      ).sort((a, b) => roomActivityTime(b) - roomActivityTime(a)),
     [rooms, q],
   )
   const favoriteRooms = useMemo(() => rooms.filter((room) => room.favorite && room.directPartner?.accountStatus !== 'DISABLED'), [rooms])
@@ -2041,7 +2124,14 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         />
       )}
       {newDmOpen && (
-        <NewDmModal me={me} onClose={() => setNewDmOpen(false)} onCreated={handleRoomCreated} showToast={modalNotify} />
+        <NewDmModal
+          me={me}
+          onClose={() => setNewDmOpen(false)}
+          onSelect={(user) => {
+            setNewDmOpen(false)
+            startDirectConversation(user.id, { username: user.username, name: user.name || user.username, presenceStatus: user.presenceStatus })
+          }}
+        />
       )}
 
       {profileEditOpen && (
@@ -2351,7 +2441,7 @@ const Sidebar = memo(function Sidebar({
   onOpenRoom: (roomId: string) => void
   onNewRoom: () => void
   onNewDm: () => void
-  onStartUserDm: (userId: string) => void | Promise<void>
+  onStartUserDm: (userId: string, partner?: Omit<DmPartner, 'userId'>) => void | Promise<void>
   onLogout: () => void
   onTheme: () => void
   onEditProfile: () => void
@@ -2425,7 +2515,8 @@ const Sidebar = memo(function Sidebar({
 
   const handleSelectUser = async (userId: string) => {
     onSearch('')
-    await onStartUserDm(userId)
+    const user = userResults.find((item) => item.id === userId)
+    await onStartUserDm(userId, user ? { username: user.username, name: user.name || user.username, presenceStatus: user.presenceStatus } : undefined)
   }
 
   return (
@@ -2947,18 +3038,15 @@ function NewRoomModal({
 function NewDmModal({
   me,
   onClose,
-  onCreated,
-  showToast,
+  onSelect,
 }: {
   me: User
   onClose: () => void
-  onCreated: (roomId: string) => void
-  showToast: (text: string) => void
+  onSelect: (user: DirectoryUser) => void
 }) {
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [selected, setSelected] = useState<DirectoryUser | null>(null)
   const [search, setSearch] = useState('')
-  const [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
     try {
       setUsers(await api.userDirectory())
@@ -2980,17 +3068,9 @@ function NewDmModal({
     )
   }, [users, search, me.id])
 
-  const start = async () => {
-    if (!selected || busy) return
-    setBusy(true)
-    try {
-      const room = await api.createDm(selected.id)
-      onCreated(room.id)
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Falha ao iniciar conversa')
-    } finally {
-      setBusy(false)
-    }
+  const start = () => {
+    if (!selected) return
+    onSelect(selected)
   }
 
   return (
@@ -3029,8 +3109,8 @@ function NewDmModal({
         <button className="btn-ghost" onClick={onClose}>
           Cancelar
         </button>
-        <button className="btn-primary" onClick={start} disabled={busy || !selected}>
-          {busy ? 'Abrindo…' : 'Iniciar conversa'}
+        <button className="btn-primary" onClick={start} disabled={!selected}>
+          Iniciar conversa
         </button>
       </div>
     </Modal>
@@ -3611,7 +3691,7 @@ function RoomView({
   onDelete: (msg: Message) => void
   onMessageUpdated: (message: Message) => void
   onReaction: (message: Message, emoji: string) => void
-  onStartDm: (userId: string) => Promise<void>
+  onStartDm: (userId: string, partner?: Omit<DmPartner, 'userId'>) => void
   notify: (text: string, anchor?: 'content' | 'modal') => void
   readReceiptsEnabled: boolean
   onSearchResult: (message: Message) => void
@@ -3619,6 +3699,7 @@ function RoomView({
   onRoomUpdated: (room: Room) => void
   onOpenRoom: (roomId: string) => void
 }) {
+  const isPendingDm = room.id.startsWith('pending:')
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
   const modalNotify = useCallback((text: string) => notify(text, 'modal'), [notify])
   const lastTypingSentRef = useRef(0)
@@ -3720,6 +3801,8 @@ function RoomView({
   const [audioMode, setAudioMode] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [conversationReady, setConversationReady] = useState(false)
+  const [dragDepth, setDragDepth] = useState(0)
+  const isDragActive = dragDepth > 0
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const audioStopRef = useRef<(() => void) | null>(null)
@@ -4151,7 +4234,31 @@ function RoomView({
         if (!next.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) next.push(file)
       }
       return next
-    })
+      })
+  }
+
+  const hasDragFiles = (e: ReactDragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+  const handleDragEnter = (e: ReactDragEvent) => {
+    if (!hasDragFiles(e)) return
+    e.preventDefault()
+    setDragDepth((depth) => depth + 1)
+  }
+
+  const handleDragOver = (e: ReactDragEvent) => {
+    if (hasDragFiles(e)) e.preventDefault()
+  }
+
+  const handleDragLeave = (e: ReactDragEvent) => {
+    if (!hasDragFiles(e)) return
+    setDragDepth((depth) => Math.max(0, depth - 1))
+  }
+
+  const handleDrop = (e: ReactDragEvent) => {
+    setDragDepth(0)
+    if (!hasDragFiles(e)) return
+    e.preventDefault()
+    addPendingAttachments(Array.from(e.dataTransfer?.files ?? []).slice(0, 10))
   }
 
   const submit = async () => {
@@ -4376,7 +4483,13 @@ function RoomView({
   })
 
   return (
-    <div className={`room-view ${filesOpen ? 'files-open' : ''}`}>
+    <div
+      className={`room-view ${filesOpen ? 'files-open' : ''} ${isDragActive ? 'room-drag-active' : ''}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className={`room-header ${searchOpen ? 'room-header-search-mode' : ''}`}>
         {searchOpen ? (
           /* ── Mobile Search Mode: full-bar search ── */
@@ -4505,16 +4618,16 @@ function RoomView({
                     <PersonIcon size={20} />
                   </button>
                 )}
-                <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} onClick={() => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
+                <button type="button" className={`icon-btn favorite-room-trigger ${room.favorite ? 'active' : ''}`} disabled={isPendingDm} onClick={isPendingDm ? undefined : () => void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito'))} title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'} aria-pressed={room.favorite}>
                   {room.favorite ? '★' : '☆'}
                 </button>
-                <button type="button" className="icon-btn room-files-trigger" onClick={toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
+                <button type="button" className="icon-btn room-files-trigger" disabled={isPendingDm} onClick={isPendingDm ? undefined : toggleFiles} title="Arquivos da conversa" aria-label="Arquivos da conversa" aria-pressed={filesOpen}>
                   <IconClip size={18} />
                 </button>
               </div>
 
               {/* Search trigger */}
-              <button type="button" className="icon-btn room-search-trigger" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">
+              <button type="button" className="icon-btn room-search-trigger" disabled={isPendingDm} onClick={isPendingDm ? undefined : () => { setSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()) }} title="Pesquisar na conversa" aria-label="Pesquisar na conversa">
                 <IconSearch size={17} />
               </button>
 
@@ -4523,6 +4636,7 @@ function RoomView({
                 <button
                   type="button"
                   className={`icon-btn room-header-plus-btn ${roomHeaderMenuOpen ? 'active' : ''}`}
+                  disabled={isPendingDm}
                   onClick={() => setRoomHeaderMenuOpen((v) => !v)}
                   title="Mais opções"
                   aria-label="Mais opções"
@@ -4556,11 +4670,11 @@ function RoomView({
                         <span>Ver membros</span>
                       </button>
                     )}
-                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito')) }}>
+                    <button className="room-header-dropdown-item" disabled={isPendingDm} onClick={() => { setRoomHeaderMenuOpen(false); void api.toggleRoomFavorite(room.id).then((updated) => onRoomUpdated({ ...room, favorite: updated.favorite, directPartner: updated.directPartner ?? room.directPartner })).catch(() => notify('Não foi possível atualizar o favorito')) }}>
                       <span aria-hidden="true" style={{ fontSize: '1rem' }}>{room.favorite ? '★' : '☆'}</span>
                       <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
                     </button>
-                    <button className="room-header-dropdown-item" onClick={() => { setRoomHeaderMenuOpen(false); toggleFiles() }}>
+                    <button className="room-header-dropdown-item" disabled={isPendingDm} onClick={() => { if (isPendingDm) return; setRoomHeaderMenuOpen(false); toggleFiles() }}>
                       <IconClip size={16} />
                       <span>Arquivos da conversa</span>
                     </button>
@@ -4868,6 +4982,14 @@ function RoomView({
             onClear={clearDraft}
             onCancelEdit={cancelEditing}
           />
+          <AudioRecordButton
+            resetKey={audioResetKey}
+            onStopReady={(stop) => { audioStopRef.current = stop }}
+            onRecordingChange={onRecordingChange}
+            onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }}
+            onError={notify}
+            disabled={muted}
+          />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
             <span>{editingMessage ? 'Editar' : 'Enviar'}</span>
@@ -4894,13 +5016,12 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} onError={notify} disabled={muted} />
           {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
-             onClick={clearDraft}
-              disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+              onClick={clearDraft}
+               disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
             title="Limpar mensagem"
           >
             <IconTrash size={15} />
@@ -4941,11 +5062,20 @@ function RoomView({
         const readMessage = messages.find((message) => message.id === readMessageId)
         return readMessage ? <ReadReceiptsModal message={readMessage} onClose={() => setReadMessageId(null)} /> : null
       })()}
-      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
+      {(profileLoading || profile) && <UserProfileCard profile={profile} loading={profileLoading} commonRooms={profileCommonRooms} commonRoomsLoading={profileCommonRoomsLoading} position={profilePosition} onClose={() => setProfile(null)} onContact={profile ? () => { setProfile(null); void onStartDm(profile.id, { username: profile.username, name: profile.name, presenceStatus: profile.presenceStatus }) } : undefined} onOpenRoom={(roomId) => { setProfile(null); void onOpenRoom(roomId) }} />}
       {roomInfoOpen && room.type !== 'DIRECT' && <RoomInfoCard room={room} members={roomMembers} position={roomInfoPosition} onClose={() => setRoomInfoOpen(false)} />}
       {forwardMessage && <ForwardMessageModal message={forwardMessage} rooms={rooms} onClose={() => setForwardMessage(null)} notify={modalNotify} />}
       {respondMessage && <RespondToReportModal message={respondMessage} onClose={() => setRespondMessage(null)} onResponded={() => setRespondMessage(null)} notify={modalNotify} />}
       {pollOpen && <CreatePollModal roomId={room.id} onClose={() => setPollOpen(false)} onCreated={(message) => { onPollUpdated(message); setPollOpen(false) }} notify={modalNotify} />}
+      {isDragActive && (
+        <div className="room-drag-overlay" role="presentation">
+          <div className="room-drag-overlay-box">
+            <IconClip size={26} />
+            <strong>Solte para anexar</strong>
+            <span>O arquivo será adicionado ao envio desta conversa</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -5099,11 +5229,46 @@ function MessageRow({
   const deleted = !!msg.deletedAt
   const [actionDismissed, setActionDismissed] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
+  const [longPressed, setLongPressed] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+  const longPressTimer = useRef<number | null>(null)
+  const longPressStart = useRef<{ x: number; y: number } | null>(null)
+  const beginLongPress = (x: number, y: number) => {
+    longPressStart.current = { x, y }
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
+    longPressTimer.current = window.setTimeout(() => setLongPressed(true), 500)
+  }
+  const cancelLongPress = () => {
+    longPressStart.current = null
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+  const moveLongPress = (event: React.PointerEvent) => {
+    const start = longPressStart.current
+    if (!start) return
+    if (Math.abs(event.clientX - start.x) > 8 || Math.abs(event.clientY - start.y) > 8) {
+      cancelLongPress()
+    }
+  }
+  useEffect(() => {
+    if (!longPressed) return
+    const dismiss = (event: MouseEvent | TouchEvent) => {
+      if (rowRef.current && !rowRef.current.contains(event.target as Node)) setLongPressed(false)
+    }
+    document.addEventListener('mousedown', dismiss)
+    document.addEventListener('touchstart', dismiss, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', dismiss)
+      document.removeEventListener('touchstart', dismiss)
+    }
+  }, [longPressed])
   if (msg.messageType === 'SYSTEM') {
     return <div data-message-id={msg.id} className="system-line">{renderMarkdown(msg.content)}</div>
   }
   return (
-    <div data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
+    <div ref={rowRef} data-message-id={msg.id} onMouseEnter={() => setActionDismissed(false)} onPointerDown={(e) => beginLongPress(e.clientX, e.clientY)} onPointerMove={moveLongPress} onPointerUp={cancelLongPress} onPointerCancel={cancelLongPress} onPointerLeave={cancelLongPress} onContextMenu={(e) => e.preventDefault()} className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}>
       {!deleted && (
         <button type="button" className="message-avatar-button" onClick={onShowProfile} aria-label={`Abrir contato de ${msg.username || 'usuário'}`}>
           <AvatarImage
@@ -5783,12 +5948,12 @@ function attachmentIcon(att: Attachment, isImage: boolean, isAudio: boolean): st
 function ReadReceiptsModal({ message, onClose }: { message: Message; onClose: () => void }) {
   const readers = message.readBy ?? []
   return (
-    <Modal title="Confirmação de leitura" onClose={onClose}>
+    <Modal title="Confirmação de leitura" onClose={onClose} className="read-receipts-modal">
       <div className="read-receipts-list">
         {readers.length === 0 && <span className="nav-empty">Ainda não lida por outra pessoa.</span>}
         {readers.map((reader) => (
           <div className="read-receipt-row" key={`${reader.userId}-${reader.readAt}`}>
-            <span className="mini-avatar">{initials(reader.name || reader.username)}</span>
+            <AvatarImage path={userAvatarPath(reader.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(reader.name || reader.username)}</span>} alt={reader.name || reader.username} />
             <span className="picker-item-text">
               <strong>{reader.name || reader.username}</strong>
               <small>@{reader.username}</small>
@@ -5806,7 +5971,7 @@ function ReadReceiptsModal({ message, onClose }: { message: Message; onClose: ()
 
 function ReactionUsersModal({ emoji, reactions, onClose }: { emoji: string; reactions: MessageReaction[]; onClose: () => void }) {
   return (
-    <Modal title={`Quem reagiu com ${emoji}`} onClose={onClose}>
+    <Modal title={`Quem reagiu com ${emoji}`} onClose={onClose} className="reaction-users-modal">
       <div className="reaction-users-list">
         {reactions.map((reaction) => (
           <div className="read-receipt-row" key={`${reaction.userId}-${reaction.createdAt ?? reaction.id ?? reaction.emoji}`}>

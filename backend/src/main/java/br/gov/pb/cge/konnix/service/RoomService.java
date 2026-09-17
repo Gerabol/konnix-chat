@@ -82,6 +82,7 @@ public class RoomService {
                     .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()))
                 : Map.of();
         return roomRepository.findAllById(roomIds).stream()
+                .filter(room -> !TYPE_DIRECT.equals(room.getType()) || lastMessageByRoom.containsKey(room.getId()))
                 .map(room -> RoomResponse.from(room,
                         partnerOf(room, actor.id(),
                                 membersByRoom.getOrDefault(room.getId(), List.of())),
