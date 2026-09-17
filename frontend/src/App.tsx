@@ -434,20 +434,21 @@ function AudioRecordButton({
   }
 
   return (
-<span className="audio-record-wrap">
-        <button
-          type="button"
-          className={`composer-action ${recording ? 'recording' : ''}`}
-          title={recording ? 'Parar gravação' : 'Gravar áudio'}
-          disabled={disabled}
-          onClick={toggle}
-        >
-          {recording ? <IconStop size={15} /> : <IconMic size={15} />}
-          <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
-        </button>
-      </span>
-    )
-  }
+    <span className="audio-record-wrap">
+      <button
+        type="button"
+        className={`composer-action ${recording ? 'recording' : ''}`}
+        title={recording ? 'Parar gravação' : 'Gravar áudio'}
+        aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
+        disabled={disabled}
+        onClick={toggle}
+      >
+        {recording ? <IconStop size={15} /> : <IconMic size={15} />}
+        <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+      </button>
+    </span>
+  )
+}
 
 function IconX({ size = 18 }: { size?: number }) {
   return (
@@ -4981,6 +4982,14 @@ function RoomView({
             onClear={clearDraft}
             onCancelEdit={cancelEditing}
           />
+          <AudioRecordButton
+            resetKey={audioResetKey}
+            onStopReady={(stop) => { audioStopRef.current = stop }}
+            onRecordingChange={onRecordingChange}
+            onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }}
+            onError={notify}
+            disabled={muted}
+          />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
             <span>{editingMessage ? 'Editar' : 'Enviar'}</span>
@@ -5007,13 +5016,12 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} onError={notify} disabled={muted} />
           {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
-             onClick={clearDraft}
-              disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+              onClick={clearDraft}
+               disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
             title="Limpar mensagem"
           >
             <IconTrash size={15} />
