@@ -1533,6 +1533,136 @@ button:disabled {
   border-color: var(--konnix-primary);
 }
 
+/* ---- Modal de Download PWA ---- */
+.download-app-modal .modal-card {
+  max-width: 480px;
+  width: 100%;
+}
+
+.download-app-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0.2rem 0;
+}
+
+.download-app-hero {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--konnix-border);
+}
+
+.download-app-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--konnix-primary) 25%, transparent);
+}
+
+.download-app-hero-text h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--konnix-ink);
+}
+
+.download-app-hero-text p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--konnix-ink-soft);
+  line-height: 1.4;
+}
+
+.download-app-cta-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--konnix-primary) 8%, var(--konnix-surface));
+  border: 1px dashed var(--konnix-primary);
+}
+
+.download-app-install-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.download-app-cta-box small {
+  font-size: 0.74rem;
+  color: var(--konnix-ink-soft);
+}
+
+.download-app-platforms {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.download-platform-card {
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--konnix-border);
+  background: var(--konnix-surface);
+}
+
+.download-platform-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.download-platform-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--konnix-primary) 15%, transparent);
+  color: var(--konnix-primary-deep);
+}
+
+.download-platform-header strong {
+  font-size: 0.84rem;
+  color: var(--konnix-ink);
+}
+
+.download-platform-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--konnix-ink-soft);
+  line-height: 1.45;
+}
+
+.download-app-features {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--konnix-border);
+}
+
+.download-app-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--konnix-ink-soft);
+}
+
 .sidebar-footer {
   position: relative;
   display: flex;
