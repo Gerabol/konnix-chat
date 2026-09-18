@@ -1498,7 +1498,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const loadRooms = useCallback(async () => {
     try {
       const nextRooms = await api.rooms()
-      setRooms(nextRooms)
+      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0 } : room)))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -1617,8 +1617,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               })
             }
             const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
-            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && !appInBackground
-            const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
+            const isActiveRoom = msg.roomId === activeRoomIdRef.current
+            const isIncomingRelevant = msg.messageType !== 'SYSTEM' && msg.userId !== me.id
+            const shouldUnread = isIncomingRelevant && !isActiveRoom
             setRooms((prev) => {
               const exists = prev.some((room) => room.id === msg.roomId)
               if (!exists) {
@@ -1630,7 +1631,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                   ? {
                       ...room,
                       lastActivityAt: msg.createdAt,
-                      unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (activeRoomVisible ? 0 : (room.unreadCount ?? 0)),
+                      unreadCount: isActiveRoom ? 0 : shouldUnread ? (room.unreadCount ?? 0) + 1 : (room.unreadCount ?? 0),
                     }
                   : room,
               )
@@ -1638,29 +1639,29 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
-               if (activeRoomVisible && msg.messageType !== 'SYSTEM' && msg.userId !== me.id) {
-                 api.markRoomRead(msg.roomId).catch(() => undefined)
-               }
-             }
-               if (shouldUnread) {
-                const room = roomsRef.current.find((r) => r.id === msg.roomId)
-                const label = room ? roomDisplayName(room) : 'Chat'
-                const snippet = msg.content.replace(/\s+/g, ' ').trim()
-                const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-                if (appInBackground) {
-                  let enabled = false
-                  try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
-                  if (enabled) {
-                    if (isTauri) {
-                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                    }
-                  }
-                } else if (msg.roomId !== activeRoomIdRef.current) {
-                  showToast(`${label} • ${body}`)
-                }
+              if (isIncomingRelevant && !appInBackground) {
+                api.markRoomRead(msg.roomId).catch(() => undefined)
               }
+            }
+            if (isIncomingRelevant) {
+              const room = roomsRef.current.find((r) => r.id === msg.roomId)
+              const label = room ? roomDisplayName(room) : 'Chat'
+              const snippet = msg.content.replace(/\s+/g, ' ').trim()
+              const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
+              if (appInBackground) {
+                let enabled = false
+                try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
+                if (enabled) {
+                  if (isTauri) {
+                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                  } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                  }
+                }
+              } else if (!isActiveRoom) {
+                showToast(`${label} • ${body}`)
+              }
+            }
           } else if (evt.type === 'chat.typing') {
             const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
             const roomId = evt.roomId
@@ -1804,6 +1805,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         }
         const activeRoom = activeRoomIdRef.current
         if (activeRoom && !activeRoom.startsWith('pending:')) {
+          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
           void api.markRoomRead(activeRoom).catch(() => undefined)
         }
       }
@@ -1837,6 +1839,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       if (document.visibilityState !== 'visible') return
       const activeRoom = activeRoomIdRef.current
       if (activeRoom && !activeRoom.startsWith('pending:')) {
+        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
         void api.markRoomRead(activeRoom).catch(() => undefined)
       }
     }, 10_000)
@@ -2436,7 +2439,7 @@ function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
-      {!isTauri && onInstallApp && (
+      {!isTauri && !standalone && onInstallApp && (
         <button
           type="button"
           className="user-menu-item user-menu-action"
@@ -2446,8 +2449,7 @@ function UserSettingsMenuContent({
           }}
         >
           <IconDownload size={16} />
-          <span style={{ flex: 1 }}>{standalone ? 'Aplicativo instalado' : 'Instalar aplicativo'}</span>
-          {standalone && <span className="badge" style={{ fontSize: '11px', padding: '1px 6px' }}>Instalado</span>}
+          <span style={{ flex: 1 }}>Instalar aplicativo</span>
         </button>
       )}
       <button
