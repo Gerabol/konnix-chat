@@ -292,19 +292,15 @@ function EmojiButton({
   )
 }
 
-function AudioRecordButton({
+function useAudioRecorder({
   onDone,
   onRecordingChange,
-  onStopReady,
   onError,
-  disabled,
   resetKey,
 }: {
   onDone: (file: File) => void
   onRecordingChange: (recording: boolean, elapsedSeconds: number) => void
-  onStopReady: (stop: (() => void) | null) => void
   onError: (message: string) => void
-  disabled: boolean
   resetKey: number
 }) {
   const [recording, setRecording] = useState(false)
@@ -354,14 +350,15 @@ function AudioRecordButton({
     onRecordingChange(false, 0)
   }, [onRecordingChange])
 
-  useEffect(() => {
-    onStopReady(recording ? () => mediaRef.current?.stop() : null)
-    return () => onStopReady(null)
-  }, [recording, onStopReady])
+  const stop = () => {
+    if (mediaRef.current && mediaRef.current.state !== 'inactive') {
+      mediaRef.current.stop()
+    }
+  }
 
   const toggle = async () => {
     if (recording) {
-      mediaRef.current?.stop()
+      stop()
       return
     }
     if (!window.isSecureContext) {
@@ -381,7 +378,7 @@ function AudioRecordButton({
       }
       streamRef.current = stream
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate))
+        .find((candidate) => candidate && MediaRecorder.isTypeSupported(candidate))
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       chunksRef.current = []
       rec.ondataavailable = (e) => {
@@ -389,8 +386,8 @@ function AudioRecordButton({
       }
       rec.onstop = async () => {
         releaseResources()
-        const mime = rec.mimeType || 'audio/webm'
-        const blob = new Blob(chunksRef.current, { type: mime })
+        const mimeType = rec.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: mimeType })
         setRecording(false)
         onRecordingChange(false, 0)
         if (blob.size === 0) {
@@ -402,8 +399,8 @@ function AudioRecordButton({
           if (mp3.size === 0) throw new Error('empty mp3')
           onDone(new File([mp3], `gravacao-${Date.now()}.mp3`, { type: 'audio/mpeg' }))
         } catch {
-          const sourceExtension = mime.split('/')[1]?.split(';')[0] || 'webm'
-          onDone(new File([blob], `gravacao-${Date.now()}.${sourceExtension}`, { type: mime }))
+          const sourceExtension = mimeType.split('/')[1]?.split(';')[0] || 'webm'
+          onDone(new File([blob], `gravacao-${Date.now()}.${sourceExtension}`, { type: mimeType }))
         }
       }
       rec.onerror = () => {
@@ -433,20 +430,30 @@ function AudioRecordButton({
     }
   }
 
+  return { recording, toggle, stop }
+}
+
+function AudioRecordButton({
+  recording,
+  disabled,
+  onClick,
+}: {
+  recording: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
   return (
-    <span className="audio-record-wrap">
-      <button
-        type="button"
-        className={`composer-action ${recording ? 'recording' : ''}`}
-        title={recording ? 'Parar gravação' : 'Gravar áudio'}
-        aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
-        disabled={disabled}
-        onClick={toggle}
-      >
-        {recording ? <IconStop size={15} /> : <IconMic size={15} />}
-        <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
-      </button>
-    </span>
+    <button
+      type="button"
+      className={`composer-action ${recording ? 'recording' : ''}`}
+      title={recording ? 'Parar gravação' : 'Gravar áudio'}
+      aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {recording ? <IconStop size={15} /> : <IconMic size={15} />}
+      <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+    </button>
   )
 }
 
@@ -466,7 +473,9 @@ function ComposerActionBox({
   muted,
   clearDisabled,
   editing,
+  recordingAudio,
   onAttach,
+  onRecordAudio,
   onCode,
   onPoll,
   onClear,
@@ -478,7 +487,9 @@ function ComposerActionBox({
   muted: boolean
   clearDisabled: boolean
   editing: boolean
+  recordingAudio: boolean
   onAttach: () => void
+  onRecordAudio: () => void
   onCode: () => void
   onPoll: () => void
   onClear: () => void
@@ -526,6 +537,18 @@ function ComposerActionBox({
           <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
             <span className="composer-action-box-icon"><IconClip size={18} /></span>
             <span>Anexar Arquivo</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={`composer-action-box-item ${recordingAudio ? 'composer-action-box-item-recording' : ''}`}
+            onClick={() => { onRecordAudio(); setOpen(false) }}
+            disabled={muted}
+          >
+            <span className="composer-action-box-icon">
+              {recordingAudio ? <IconStop size={18} /> : <IconMic size={18} />}
+            </span>
+            <span>{recordingAudio ? 'Parar Gravação' : 'Gravar Áudio'}</span>
           </button>
           <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCode(); setOpen(false) }} disabled={muted}>
             <span className="composer-action-box-icon"><IconCode size={18} /></span>
@@ -3805,7 +3828,6 @@ function RoomView({
   const isDragActive = dragDepth > 0
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
   const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
@@ -3851,6 +3873,13 @@ function RoomView({
     setAudioMode(recording)
     setRecordingSeconds(recording ? elapsedSeconds : 0)
   }, [])
+
+  const audioRecorder = useAudioRecorder({
+    resetKey: audioResetKey,
+    onRecordingChange,
+    onDone: (file) => { addPendingAttachments([file]); setAudioMode(false) },
+    onError: notify,
+  })
 
   useEffect(() => {
     setAudioResetKey((key) => key + 1)
@@ -4458,6 +4487,7 @@ function RoomView({
     setQuotedMessage(null)
     setAudioMode(false)
     setAudioResetKey((key) => key + 1)
+    audioRecorder.stop()
     inputRef.current?.focus()
   }
 
@@ -4802,7 +4832,7 @@ function RoomView({
          {audioMode && <div className="audio-recording-bar" role="status" aria-live="polite">
            <span className="audio-recording-label"><span className="audio-recording-indicator" aria-hidden="true" />Gravando áudio</span>
            <time className="audio-recording-time" dateTime={`PT${recordingSeconds}S`}>{formatRecordingTime(recordingSeconds)}</time>
-           <button type="button" className="audio-recording-stop" onClick={() => audioStopRef.current?.()}>
+           <button type="button" className="audio-recording-stop" onClick={audioRecorder.stop}>
              <IconStop size={15} /> <span>Parar</span>
            </button>
          </div>}
@@ -4976,19 +5006,13 @@ function RoomView({
             muted={muted}
             clearDisabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
             editing={Boolean(editingMessage)}
+            recordingAudio={audioRecorder.recording}
             onAttach={() => fileInputRef.current?.click()}
+            onRecordAudio={audioRecorder.toggle}
             onCode={toggleCode}
             onPoll={() => setPollOpen(true)}
             onClear={clearDraft}
             onCancelEdit={cancelEditing}
-          />
-          <AudioRecordButton
-            resetKey={audioResetKey}
-            onStopReady={(stop) => { audioStopRef.current = stop }}
-            onRecordingChange={onRecordingChange}
-            onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }}
-            onError={notify}
-            disabled={muted}
           />
           <button className="btn-primary send-btn" onClick={submit} disabled={muted || composing || !canSubmit}>
             {editingMessage ? <IconPencil size={15} /> : <IconSend size={15} />}
@@ -5016,6 +5040,11 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
+          <AudioRecordButton
+            recording={audioRecorder.recording}
+            disabled={muted}
+            onClick={audioRecorder.toggle}
+          />
           {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
