@@ -4,6 +4,7 @@
   "description": "Chat corporativo da CGE",
   "lang": "pt-BR",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
