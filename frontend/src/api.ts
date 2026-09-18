@@ -587,7 +587,23 @@ export const api = {
     })
   },
   async downloadFile(fileId: string): Promise<Blob> {
-    return fetchBlob(`/api/v1/files/${fileId}`)
+    const maxRetries = 3
+    const delays = [300, 700, 1500]
+    let lastError: unknown
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fetchBlob(`/api/v1/files/${fileId}`)
+      } catch (err) {
+        lastError = err
+        const isTransient = err instanceof ApiError && (err.status === 404 || err.status >= 500)
+        if (attempt < maxRetries && isTransient) {
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt] ?? 1000))
+          continue
+        }
+        throw err
+      }
+    }
+    throw lastError
   },
   async fetchBlob(path: string): Promise<Blob> {
     return fetchBlob(path)

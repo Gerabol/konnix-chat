@@ -2,10 +2,13 @@ package br.gov.pb.cge.konnix.api.user;
 
 import br.gov.pb.cge.konnix.api.common.ApiResponse;
 import br.gov.pb.cge.konnix.api.user.dto.CreateUserRequest;
+import br.gov.pb.cge.konnix.api.user.dto.ImportUsersRequest;
+import br.gov.pb.cge.konnix.api.user.dto.ImportUsersResponse;
 import br.gov.pb.cge.konnix.api.user.dto.UpdateUserRequest;
 import br.gov.pb.cge.konnix.api.user.dto.UserResponse;
 import br.gov.pb.cge.konnix.api.admin.dto.RoleUpdateRequest;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
+import br.gov.pb.cge.konnix.service.UserImportService;
 import br.gov.pb.cge.konnix.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -28,9 +31,18 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final UserImportService userImportService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserImportService userImportService) {
         this.userService = userService;
+        this.userImportService = userImportService;
+    }
+
+    @PostMapping("/import")
+    public ApiResponse<ImportUsersResponse> importUsers(@Valid @RequestBody ImportUsersRequest request,
+                                                        Authentication authentication,
+                                                        HttpServletRequest http) {
+        return ApiResponse.ok(userImportService.importUsers(request, actorId(authentication), clientIp(http)));
     }
 
     @GetMapping

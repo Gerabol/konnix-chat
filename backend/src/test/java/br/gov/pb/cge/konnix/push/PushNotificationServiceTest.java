@@ -31,7 +31,7 @@ class PushNotificationServiceTest {
     private final PushSender sender = mock(PushSender.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PushNotificationService service =
-            new PushNotificationService(repository, sender, objectMapper);
+            new PushNotificationService(repository, sender, objectMapper, Runnable::run);
 
     @Test
     void naoNotificaAutor() throws Exception {

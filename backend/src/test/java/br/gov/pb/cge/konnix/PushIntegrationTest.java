@@ -2,7 +2,7 @@ package br.gov.pb.cge.konnix;
 
 import br.gov.pb.cge.konnix.domain.push.PushSubscription;
 import br.gov.pb.cge.konnix.domain.push.PushSubscriptionRepository;
-import br.gov.pb.cge.konnix.push.WebPushSender;
+import br.gov.pb.cge.konnix.push.PushSender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,7 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -25,9 +25,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -65,8 +64,8 @@ class PushIntegrationTest {
     @Autowired
     private PushSubscriptionRepository subscriptionRepository;
 
-    @MockitoSpyBean
-    private WebPushSender pushSender;
+    @MockitoBean
+    private PushSender pushSender;
 
     private static final String PASSWORD = "senha-forte-123";
 
@@ -162,8 +161,6 @@ class PushIntegrationTest {
 
         PushSubscription adminSub = subscriptionRepository.findByEndpoint(adminEndpoint).orElseThrow();
         PushSubscription memberSub = subscriptionRepository.findByEndpoint(memberEndpoint).orElseThrow();
-        doNothing().when(pushSender).send(any(), anyString());
-
         mockMvc.perform(post("/api/v1/rooms/{id}/messages", roomId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -172,7 +169,7 @@ class PushIntegrationTest {
 
         ArgumentCaptor<PushSubscription> subscriptionCaptor = ArgumentCaptor.forClass(PushSubscription.class);
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-        verify(pushSender, times(1)).send(subscriptionCaptor.capture(), payloadCaptor.capture());
+        verify(pushSender, timeout(2000).times(1)).send(subscriptionCaptor.capture(), payloadCaptor.capture());
 
         PushSubscription notified = subscriptionCaptor.getValue();
         assertThat(notified.getEndpoint()).isEqualTo(memberEndpoint);

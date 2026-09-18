@@ -68,6 +68,7 @@ export const THEME_OPTIONS: { id: Theme; label: string; colors: string[] }[] = [
 const THEME_CACHE_KEY = 'konnix-theme-cache'
 const THEME_COOKIE_KEY = 'konnix_theme'
 const MANUAL_PRESENCE_KEY = 'konnix-manual-presence'
+const attachmentBlobCache = new Map<string, string>()
 
 function readManualPresence(): PresenceStatus | null {
   try {
@@ -291,19 +292,15 @@ function EmojiButton({
   )
 }
 
-function AudioRecordButton({
+function useAudioRecorder({
   onDone,
   onRecordingChange,
-  onStopReady,
   onError,
-  disabled,
   resetKey,
 }: {
   onDone: (file: File) => void
   onRecordingChange: (recording: boolean, elapsedSeconds: number) => void
-  onStopReady: (stop: (() => void) | null) => void
   onError: (message: string) => void
-  disabled: boolean
   resetKey: number
 }) {
   const [recording, setRecording] = useState(false)
@@ -353,14 +350,15 @@ function AudioRecordButton({
     onRecordingChange(false, 0)
   }, [onRecordingChange])
 
-  useEffect(() => {
-    onStopReady(recording ? () => mediaRef.current?.stop() : null)
-    return () => onStopReady(null)
-  }, [recording, onStopReady])
+  const stop = () => {
+    if (mediaRef.current && mediaRef.current.state !== 'inactive') {
+      mediaRef.current.stop()
+    }
+  }
 
   const toggle = async () => {
     if (recording) {
-      mediaRef.current?.stop()
+      stop()
       return
     }
     if (!window.isSecureContext) {
@@ -380,7 +378,7 @@ function AudioRecordButton({
       }
       streamRef.current = stream
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate))
+        .find((candidate) => candidate && MediaRecorder.isTypeSupported(candidate))
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       chunksRef.current = []
       rec.ondataavailable = (e) => {
@@ -388,8 +386,8 @@ function AudioRecordButton({
       }
       rec.onstop = async () => {
         releaseResources()
-        const mime = rec.mimeType || 'audio/webm'
-        const blob = new Blob(chunksRef.current, { type: mime })
+        const mimeType = rec.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: mimeType })
         setRecording(false)
         onRecordingChange(false, 0)
         if (blob.size === 0) {
@@ -401,8 +399,8 @@ function AudioRecordButton({
           if (mp3.size === 0) throw new Error('empty mp3')
           onDone(new File([mp3], `gravacao-${Date.now()}.mp3`, { type: 'audio/mpeg' }))
         } catch {
-          const sourceExtension = mime.split('/')[1]?.split(';')[0] || 'webm'
-          onDone(new File([blob], `gravacao-${Date.now()}.${sourceExtension}`, { type: mime }))
+          const sourceExtension = mimeType.split('/')[1]?.split(';')[0] || 'webm'
+          onDone(new File([blob], `gravacao-${Date.now()}.${sourceExtension}`, { type: mimeType }))
         }
       }
       rec.onerror = () => {
@@ -432,21 +430,32 @@ function AudioRecordButton({
     }
   }
 
+  return { recording, toggle, stop }
+}
+
+function AudioRecordButton({
+  recording,
+  disabled,
+  onClick,
+}: {
+  recording: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
   return (
-<span className="audio-record-wrap">
-        <button
-          type="button"
-          className={`composer-action ${recording ? 'recording' : ''}`}
-          title={recording ? 'Parar gravação' : 'Gravar áudio'}
-          disabled={disabled}
-          onClick={toggle}
-        >
-          {recording ? <IconStop size={15} /> : <IconMic size={15} />}
-          <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
-        </button>
-      </span>
-    )
-  }
+    <button
+      type="button"
+      className={`composer-action ${recording ? 'recording' : ''}`}
+      title={recording ? 'Parar gravação' : 'Gravar áudio'}
+      aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {recording ? <IconStop size={15} /> : <IconMic size={15} />}
+      <span>{recording ? 'Parar' : 'Gravar áudio'}</span>
+    </button>
+  )
+}
 
 function IconX({ size = 18 }: { size?: number }) {
   return (
@@ -464,7 +473,9 @@ function ComposerActionBox({
   muted,
   clearDisabled,
   editing,
+  recordingAudio,
   onAttach,
+  onRecordAudio,
   onCode,
   onPoll,
   onClear,
@@ -476,7 +487,9 @@ function ComposerActionBox({
   muted: boolean
   clearDisabled: boolean
   editing: boolean
+  recordingAudio: boolean
   onAttach: () => void
+  onRecordAudio: () => void
   onCode: () => void
   onPoll: () => void
   onClear: () => void
@@ -524,6 +537,18 @@ function ComposerActionBox({
           <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
             <span className="composer-action-box-icon"><IconClip size={18} /></span>
             <span>Anexar Arquivo</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={`composer-action-box-item ${recordingAudio ? 'composer-action-box-item-recording' : ''}`}
+            onClick={() => { onRecordAudio(); setOpen(false) }}
+            disabled={muted}
+          >
+            <span className="composer-action-box-icon">
+              {recordingAudio ? <IconStop size={18} /> : <IconMic size={18} />}
+            </span>
+            <span>{recordingAudio ? 'Parar Gravação' : 'Gravar Áudio'}</span>
           </button>
           <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCode(); setOpen(false) }} disabled={muted}>
             <span className="composer-action-box-icon"><IconCode size={18} /></span>
@@ -1909,9 +1934,21 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     }
     setComposing(true)
     try {
-      const createdMessages = attachments.length === 0
-        ? [await api.sendMessage(roomId, content.trim(), parentMessageId)]
-        : await Promise.all(attachments.map((file, index) => api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)))
+      let createdMessages: Message[]
+      if (attachments.length === 0) {
+        createdMessages = [await api.sendMessage(roomId, content.trim(), parentMessageId)]
+      } else {
+        createdMessages = await Promise.all(
+          attachments.map(async (file, index) => {
+            const created = await api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)
+            if (created.attachment?.id) {
+              const localUrl = URL.createObjectURL(file)
+              attachmentBlobCache.set(created.attachment.id, localUrl)
+            }
+            return created
+          })
+        )
+      }
       for (const created of createdMessages) {
         setRooms((prev) => prev.map((room) =>
           room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room,
@@ -3791,7 +3828,6 @@ function RoomView({
   const isDragActive = dragDepth > 0
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const audioStopRef = useRef<(() => void) | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const roomHeaderMenuRef = useRef<HTMLDivElement>(null)
   const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false)
@@ -3837,6 +3873,13 @@ function RoomView({
     setAudioMode(recording)
     setRecordingSeconds(recording ? elapsedSeconds : 0)
   }, [])
+
+  const audioRecorder = useAudioRecorder({
+    resetKey: audioResetKey,
+    onRecordingChange,
+    onDone: (file) => { addPendingAttachments([file]); setAudioMode(false) },
+    onError: notify,
+  })
 
   useEffect(() => {
     setAudioResetKey((key) => key + 1)
@@ -4444,6 +4487,7 @@ function RoomView({
     setQuotedMessage(null)
     setAudioMode(false)
     setAudioResetKey((key) => key + 1)
+    audioRecorder.stop()
     inputRef.current?.focus()
   }
 
@@ -4788,7 +4832,7 @@ function RoomView({
          {audioMode && <div className="audio-recording-bar" role="status" aria-live="polite">
            <span className="audio-recording-label"><span className="audio-recording-indicator" aria-hidden="true" />Gravando áudio</span>
            <time className="audio-recording-time" dateTime={`PT${recordingSeconds}S`}>{formatRecordingTime(recordingSeconds)}</time>
-           <button type="button" className="audio-recording-stop" onClick={() => audioStopRef.current?.()}>
+           <button type="button" className="audio-recording-stop" onClick={audioRecorder.stop}>
              <IconStop size={15} /> <span>Parar</span>
            </button>
          </div>}
@@ -4962,7 +5006,9 @@ function RoomView({
             muted={muted}
             clearDisabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
             editing={Boolean(editingMessage)}
+            recordingAudio={audioRecorder.recording}
             onAttach={() => fileInputRef.current?.click()}
+            onRecordAudio={audioRecorder.toggle}
             onCode={toggleCode}
             onPoll={() => setPollOpen(true)}
             onClear={clearDraft}
@@ -4994,13 +5040,17 @@ function RoomView({
             <IconClip size={15} />
             <span>Anexar</span>
           </button>
-            <AudioRecordButton resetKey={audioResetKey} onStopReady={(stop) => { audioStopRef.current = stop }} onRecordingChange={onRecordingChange} onDone={(file) => { addPendingAttachments([file]); setAudioMode(false) }} onError={notify} disabled={muted} />
+          <AudioRecordButton
+            recording={audioRecorder.recording}
+            disabled={muted}
+            onClick={audioRecorder.toggle}
+          />
           {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') && canWriteInRoom && <button type="button" className="composer-action poll-action" onClick={() => setPollOpen(true)} title="Criar enquete"><span aria-hidden="true">▣</span><span>Enquete</span></button>}
           <button
             type="button"
             className="composer-action clear-draft"
-             onClick={clearDraft}
-              disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
+              onClick={clearDraft}
+               disabled={muted || (!draft && pendingAttachments.length === 0 && !audioMode)}
             title="Limpar mensagem"
           >
             <IconTrash size={15} />
@@ -5751,22 +5801,24 @@ function RoomFileItem({ file }: { file: RoomFile }) {
 }
 
 function FileThumbnail({ file }: { file: RoomFile }) {
-  const [url, setUrl] = useState<string | null>(null)
   const isImage = file.mimeType?.startsWith('image/')
+  const cached = isImage ? attachmentBlobCache.get(file.id) : undefined
+  const [url, setUrl] = useState<string | null>(cached ?? null)
   useEffect(() => {
     if (!isImage) return
+    const cachedUrl = attachmentBlobCache.get(file.id)
+    if (cachedUrl) {
+      setUrl(cachedUrl)
+      return
+    }
     let active = true
     api.downloadFile(file.id).then((blob) => {
       const objectUrl = URL.createObjectURL(blob)
+      attachmentBlobCache.set(file.id, objectUrl)
       if (active) setUrl(objectUrl)
-      else URL.revokeObjectURL(objectUrl)
     }).catch(() => setUrl(null))
     return () => {
       active = false
-      setUrl((current) => {
-        if (current) URL.revokeObjectURL(current)
-        return null
-      })
     }
   }, [file.id, isImage])
   if (isImage && url) return <img className="room-file-thumb" src={url} alt="" />
@@ -5783,16 +5835,23 @@ function AttachmentView({ msg }: { msg: Message }) {
   const att = msg.attachment
   const isImage = !!att && att.mimeType.startsWith('image/')
   const isAudio = !!att && att.mimeType.startsWith('audio/')
+  const cachedUrl = att ? attachmentBlobCache.get(att.id) : undefined
   const [state, setState] = useState<{ status: 'loading' } | { status: 'ready'; url: string } | { status: 'error'; error: string }>(
-    { status: 'loading' },
+    cachedUrl ? { status: 'ready', url: cachedUrl } : { status: 'loading' },
   )
 
   const load = useCallback(async () => {
     if (!att) return
+    const cached = attachmentBlobCache.get(att.id)
+    if (cached) {
+      setState({ status: 'ready', url: cached })
+      return
+    }
     setState({ status: 'loading' })
     try {
       const blob = await api.downloadFile(att.id)
       const url = URL.createObjectURL(blob)
+      attachmentBlobCache.set(att.id, url)
       setState({ status: 'ready', url })
     } catch (err) {
       setState({
@@ -5803,14 +5862,13 @@ function AttachmentView({ msg }: { msg: Message }) {
   }, [att])
 
   useEffect(() => {
-    load()
-    return () => {
-      setState((s) => {
-        if (s.status === 'ready') URL.revokeObjectURL(s.url)
-        return s
-      })
+    if (att && !attachmentBlobCache.has(att.id)) {
+      load()
+    } else if (att && attachmentBlobCache.has(att.id)) {
+      const cached = attachmentBlobCache.get(att.id)!
+      setState((prev) => (prev.status === 'ready' && prev.url === cached ? prev : { status: 'ready', url: cached }))
     }
-  }, [load])
+  }, [att, load])
 
   if (!att) return null
 
