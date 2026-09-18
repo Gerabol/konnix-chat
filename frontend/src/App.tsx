@@ -1321,7 +1321,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
   const [typingByRoom, setTypingByRoom] = useState<Record<string, Record<string, TypingUser>>>({})
-  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => {
+    return (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt ?? null
+  })
   const [standalone] = useState(
     window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as { standalone?: boolean }).standalone === true,
@@ -1863,10 +1865,23 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   useEffect(() => {
     const onBeforeInstall = (e: Event) => {
       e.preventDefault()
-      setInstallEvent(e as BeforeInstallPromptEvent)
+      const p = e as BeforeInstallPromptEvent
+      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt = p
+      setInstallEvent(p)
+    }
+    ;(window as unknown as { __onKonnixInstallReady?: (e: BeforeInstallPromptEvent) => void }).__onKonnixInstallReady = (e) => {
+      setInstallEvent(e)
     }
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+    const onAppInstalled = () => {
+      setInstallEvent(null)
+      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
+    }
+    window.addEventListener('appinstalled', onAppInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+      window.removeEventListener('appinstalled', onAppInstalled)
+    }
   }, [])
 
   useEffect(() => {
@@ -1904,11 +1919,31 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [waitingWorker])
 
   const installApp = useCallback(async () => {
-    if (!installEvent) return
-    await installEvent.prompt()
-    await installEvent.userChoice
-    setInstallEvent(null)
+    const prompt = installEvent || (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt
+    if (!prompt) return false
+    try {
+      await prompt.prompt()
+      const choice = await prompt.userChoice
+      if (choice.outcome === 'accepted') {
+        setInstallEvent(null)
+        ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
+      }
+      return true
+    } catch {
+      return false
+    }
   }, [installEvent])
+
+  const installAppDirectly = useCallback(async () => {
+    if (standalone) {
+      modalNotify('O Konnix Chat já está instalado neste dispositivo.')
+      return
+    }
+    const success = await installApp()
+    if (!success) {
+      setDownloadModalOpen(true)
+    }
+  }, [standalone, installApp, modalNotify])
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     let roomId = activeRoomId
@@ -2093,7 +2128,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onAbout={openAbout}
           onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
-          onOpenDownloadModal={() => setDownloadModalOpen(true)}
+          onInstallApp={installAppDirectly}
+          standalone={standalone}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
@@ -2349,7 +2385,8 @@ function UserSettingsMenuContent({
   onAbout,
   onLogout,
   onClose,
-  onOpenDownloadModal,
+  onInstallApp,
+  standalone,
 }: {
   me: User
   onTheme: () => void
@@ -2358,7 +2395,8 @@ function UserSettingsMenuContent({
   onAbout: () => void
   onLogout: () => void
   onClose: () => void
-  onOpenDownloadModal?: () => void
+  onInstallApp?: () => void
+  standalone?: boolean
 }) {
   return (
     <>
@@ -2398,17 +2436,18 @@ function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
-      {!isTauri && onOpenDownloadModal && (
+      {!isTauri && onInstallApp && (
         <button
           type="button"
           className="user-menu-item user-menu-action"
           onClick={() => {
             onClose()
-            onOpenDownloadModal()
+            onInstallApp()
           }}
         >
           <IconDownload size={16} />
-          <span>Baixar Aplicativo</span>
+          <span style={{ flex: 1 }}>{standalone ? 'Aplicativo instalado' : 'Instalar aplicativo'}</span>
+          {standalone && <span className="badge" style={{ fontSize: '11px', padding: '1px 6px' }}>Instalado</span>}
         </button>
       )}
       <button
@@ -2468,7 +2507,8 @@ const Sidebar = memo(function Sidebar({
   onAbout,
   onReportIssue,
   myAvatarVersion,
-  onOpenDownloadModal,
+  onInstallApp,
+  standalone,
   onPresenceChange,
   onPresenceError,
   typingByRoom,
@@ -2493,7 +2533,8 @@ const Sidebar = memo(function Sidebar({
   onAbout: () => void
   onReportIssue: () => void
   myAvatarVersion: string
-  onOpenDownloadModal: () => void
+  onInstallApp: () => void
+  standalone?: boolean
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
@@ -2565,7 +2606,7 @@ const Sidebar = memo(function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
+      <div className="sidebar-brand">
         <button
           type="button"
           className="sidebar-brand-btn"
@@ -2604,7 +2645,8 @@ const Sidebar = memo(function Sidebar({
                 onAbout={onAbout}
                 onLogout={onLogout}
                 onClose={() => setHeaderMenuOpen(false)}
-                onOpenDownloadModal={onOpenDownloadModal}
+                onInstallApp={onInstallApp}
+                standalone={standalone}
               />
             </div>
           )}
@@ -2981,7 +3023,8 @@ const Sidebar = memo(function Sidebar({
               onAbout={onAbout}
               onLogout={onLogout}
               onClose={() => setFooterMenuOpen(false)}
-              onOpenDownloadModal={onOpenDownloadModal}
+              onInstallApp={onInstallApp}
+              standalone={standalone}
             />
           </div>
         )}
@@ -3334,6 +3377,18 @@ function AboutModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+function detectPlatform(): 'ios' | 'android' | 'desktop' {
+  if (typeof navigator === 'undefined') return 'desktop'
+  const ua = navigator.userAgent.toLowerCase()
+  if (/iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    return 'ios'
+  }
+  if (/android/.test(ua)) {
+    return 'android'
+  }
+  return 'desktop'
+}
+
 function DownloadAppModal({
   onClose,
   installEvent,
@@ -3342,110 +3397,91 @@ function DownloadAppModal({
 }: {
   onClose: () => void
   installEvent: BeforeInstallPromptEvent | null
-  onInstall: () => void
+  onInstall: () => Promise<boolean> | void
   isInstalled?: boolean
 }) {
+  const platform = detectPlatform()
+
   return (
-    <Modal title="Baixar / Instalar Aplicativo" onClose={onClose} className="download-app-modal">
+    <Modal title="Instalar Aplicativo" onClose={onClose} className="download-app-modal">
       <div className="download-app-body">
         <div className="download-app-hero">
           <img src="/icons/icon-192.png" alt="Konnix Chat" className="download-app-logo" />
           <div className="download-app-hero-text">
-            <h3>Konnix Chat PWA</h3>
-            <p>App corporativo leve, rápido e com notificações instantâneas.</p>
+            <h3>Konnix Chat</h3>
+            <p>Instale no seu dispositivo para acesso rápido em tela cheia e notificações instantâneas.</p>
           </div>
         </div>
 
-        {isInstalled && (
+        {isInstalled ? (
           <div className="download-app-installed-notice" style={{
             background: 'var(--konnix-surface-secondary, rgba(255, 255, 255, 0.06))',
             border: '1px solid var(--konnix-border)',
             borderRadius: 'var(--konnix-radius-sm)',
-            padding: '10px 14px',
+            padding: '12px 14px',
             fontSize: '13px',
             color: 'var(--konnix-text-secondary)',
             textAlign: 'center',
-            marginBottom: '16px',
+            marginBottom: '8px',
           }}>
-            ✨ Você já está utilizando a versão instalada do Konnix Chat neste navegador.
+            ✓ O Konnix Chat já está instalado neste dispositivo.
           </div>
-        )}
-
-        {installEvent ? (
+        ) : installEvent ? (
           <div className="download-app-cta-box">
             <button
               type="button"
               className="btn-primary download-app-install-btn"
-              onClick={() => {
-                onInstall()
+              onClick={async () => {
+                await onInstall()
                 onClose()
               }}
             >
               <IconDownload size={18} />
-              <span>Instalar Aplicativo Agora</span>
+              <span>Instalar com 1 Clique</span>
             </button>
-            <small>Clique para instalar no seu dispositivo com 1 toque</small>
+            <small>Instalação nativa direta no seu dispositivo</small>
           </div>
-        ) : (
-          <div className="download-app-cta-box">
-            <button
-              type="button"
-              className="btn-primary download-app-install-btn"
-              onClick={() => {
-                if (installEvent) {
-                  onInstall()
-                  onClose()
-                } else {
-                  alert('Para instalar pelo navegador, utilize a opção "Instalar aplicativo" no menu do Chrome/Edge ou "Adicionar à Tela de Início" no Safari.')
-                }
-              }}
-            >
-              <IconDownload size={18} />
-              <span>Instalar Aplicativo (PWA)</span>
-            </button>
-            <small>Disponível para celulares (Android, iOS) e computadores</small>
-          </div>
-        )}
-
-        <div className="download-app-platforms">
-          <div className="download-platform-card">
-            <div className="download-platform-header">
-              <span className="download-platform-badge">Android</span>
-              <strong>Google Chrome / Edge</strong>
-            </div>
-            <p>Toque no menu <strong>(⋮)</strong> no canto do navegador e selecione <strong>&ldquo;Instalar aplicativo&rdquo;</strong>.</p>
-          </div>
-
+        ) : platform === 'ios' ? (
           <div className="download-platform-card">
             <div className="download-platform-header">
               <span className="download-platform-badge">iPhone / iPad</span>
-              <strong>Safari</strong>
+              <strong>Como instalar no Safari</strong>
             </div>
-            <p>Toque em <strong>Compartilhar</strong> (ícone do quadrado com seta) e selecione <strong>&ldquo;Adicionar à Tela de Início&rdquo;</strong>.</p>
+            <ol className="download-ios-steps" style={{ margin: '8px 0 0', paddingLeft: '1.2rem', fontSize: '0.82rem', lineHeight: '1.55', color: 'var(--konnix-ink-soft)' }}>
+              <li>Toque no ícone de <strong>Compartilhar</strong> (quadrado com seta ⎋ na barra inferior do Safari).</li>
+              <li>Role para baixo e selecione <strong>&ldquo;Adicionar à Tela de Início&rdquo;</strong> (⊕).</li>
+              <li>Toque em <strong>&ldquo;Adicionar&rdquo;</strong> no topo direito para confirmar.</li>
+            </ol>
           </div>
-
+        ) : platform === 'android' ? (
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">Android</span>
+              <strong>Como instalar no Chrome</strong>
+            </div>
+            <p style={{ margin: '0 0 8px', fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+              Toque no menu <strong>(⋮)</strong> no canto superior do navegador e selecione <strong>&ldquo;Instalar aplicativo&rdquo;</strong> ou <strong>&ldquo;Adicionar à tela inicial&rdquo;</strong>.
+            </p>
+            <small style={{ color: 'var(--konnix-ink-soft)', display: 'block', opacity: 0.85 }}>
+              Dica: Se abriu pelo WhatsApp, toque em (⋮) e escolha &ldquo;Abrir no Chrome&rdquo;.
+            </small>
+          </div>
+        ) : (
           <div className="download-platform-card">
             <div className="download-platform-header">
               <span className="download-platform-badge">Computador</span>
-              <strong>Windows, Mac & Linux</strong>
+              <strong>Como instalar no Navegador</strong>
             </div>
-            <p>Clique no ícone de instalar <strong>(⊕)</strong> na barra de endereços do navegador.</p>
+            <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+              Na barra de endereços do Chrome ou Edge, clique no ícone de instalar <strong>(⊕ Instalar)</strong> ou no menu <strong>(⋮) &gt; &ldquo;Instalar Konnix Chat&rdquo;</strong>.
+            </p>
           </div>
-        </div>
+        )}
 
-        <div className="download-app-features">
-          <div className="download-app-feature-item">
-            <span>⚡</span>
-            <span>Acesso Rápido</span>
-          </div>
-          <div className="download-app-feature-item">
-            <span>🔔</span>
-            <span>Push Real-Time</span>
-          </div>
-          <div className="download-app-feature-item">
-            <span>📱</span>
-            <span>Tela Cheia</span>
-          </div>
+        <div className="modal-actions" style={{ marginTop: '4px', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Fechar
+          </button>
         </div>
       </div>
     </Modal>
