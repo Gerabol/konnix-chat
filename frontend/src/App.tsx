@@ -1316,6 +1316,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
@@ -2092,8 +2093,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onAbout={openAbout}
           onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
-          canInstall={!standalone && !!installEvent}
-          onInstall={installApp}
+          onOpenDownloadModal={() => setDownloadModalOpen(true)}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
@@ -2180,6 +2180,14 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {downloadModalOpen && (
+        <DownloadAppModal
+          onClose={() => setDownloadModalOpen(false)}
+          installEvent={installEvent}
+          onInstall={installApp}
+          isInstalled={standalone}
+        />
+      )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}
       {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
@@ -2341,6 +2349,7 @@ function UserSettingsMenuContent({
   onAbout,
   onLogout,
   onClose,
+  onOpenDownloadModal,
 }: {
   me: User
   onTheme: () => void
@@ -2349,6 +2358,7 @@ function UserSettingsMenuContent({
   onAbout: () => void
   onLogout: () => void
   onClose: () => void
+  onOpenDownloadModal?: () => void
 }) {
   return (
     <>
@@ -2388,6 +2398,19 @@ function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
+      {!isTauri && onOpenDownloadModal && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            onOpenDownloadModal()
+          }}
+        >
+          <IconDownload size={16} />
+          <span>Baixar Aplicativo</span>
+        </button>
+      )}
       <button
         type="button"
         className="user-menu-item user-menu-action"
@@ -2445,8 +2468,7 @@ const Sidebar = memo(function Sidebar({
   onAbout,
   onReportIssue,
   myAvatarVersion,
-  canInstall,
-  onInstall,
+  onOpenDownloadModal,
   onPresenceChange,
   onPresenceError,
   typingByRoom,
@@ -2471,8 +2493,7 @@ const Sidebar = memo(function Sidebar({
   onAbout: () => void
   onReportIssue: () => void
   myAvatarVersion: string
-  canInstall: boolean
-  onInstall: () => void
+  onOpenDownloadModal: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
@@ -2544,7 +2565,7 @@ const Sidebar = memo(function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
+      <div className="sidebar-header">
         <button
           type="button"
           className="sidebar-brand-btn"
@@ -2583,6 +2604,7 @@ const Sidebar = memo(function Sidebar({
                 onAbout={onAbout}
                 onLogout={onLogout}
                 onClose={() => setHeaderMenuOpen(false)}
+                onOpenDownloadModal={onOpenDownloadModal}
               />
             </div>
           )}
@@ -2918,12 +2940,6 @@ const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
-      {canInstall && (
-        <button className="install-link" onClick={onInstall}>
-          Instalar app
-        </button>
-      )}
-
       <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
@@ -2965,6 +2981,7 @@ const Sidebar = memo(function Sidebar({
               onAbout={onAbout}
               onLogout={onLogout}
               onClose={() => setFooterMenuOpen(false)}
+              onOpenDownloadModal={onOpenDownloadModal}
             />
           </div>
         )}
@@ -3312,6 +3329,124 @@ function AboutModal({ onClose }: { onClose: () => void }) {
         <h2>Konnix Chat</h2>
         <p className="about-version">Versão 1.0.0</p>
         <AboutDetails />
+      </div>
+    </Modal>
+  )
+}
+
+function DownloadAppModal({
+  onClose,
+  installEvent,
+  onInstall,
+  isInstalled,
+}: {
+  onClose: () => void
+  installEvent: BeforeInstallPromptEvent | null
+  onInstall: () => void
+  isInstalled?: boolean
+}) {
+  return (
+    <Modal title="Baixar / Instalar Aplicativo" onClose={onClose} className="download-app-modal">
+      <div className="download-app-body">
+        <div className="download-app-hero">
+          <img src="/icons/icon-192.png" alt="Konnix Chat" className="download-app-logo" />
+          <div className="download-app-hero-text">
+            <h3>Konnix Chat PWA</h3>
+            <p>App corporativo leve, rápido e com notificações instantâneas.</p>
+          </div>
+        </div>
+
+        {isInstalled && (
+          <div className="download-app-installed-notice" style={{
+            background: 'var(--konnix-surface-secondary, rgba(255, 255, 255, 0.06))',
+            border: '1px solid var(--konnix-border)',
+            borderRadius: 'var(--konnix-radius-sm)',
+            padding: '10px 14px',
+            fontSize: '13px',
+            color: 'var(--konnix-text-secondary)',
+            textAlign: 'center',
+            marginBottom: '16px',
+          }}>
+            ✨ Você já está utilizando a versão instalada do Konnix Chat neste navegador.
+          </div>
+        )}
+
+        {installEvent ? (
+          <div className="download-app-cta-box">
+            <button
+              type="button"
+              className="btn-primary download-app-install-btn"
+              onClick={() => {
+                onInstall()
+                onClose()
+              }}
+            >
+              <IconDownload size={18} />
+              <span>Instalar Aplicativo Agora</span>
+            </button>
+            <small>Clique para instalar no seu dispositivo com 1 toque</small>
+          </div>
+        ) : (
+          <div className="download-app-cta-box">
+            <button
+              type="button"
+              className="btn-primary download-app-install-btn"
+              onClick={() => {
+                if (installEvent) {
+                  onInstall()
+                  onClose()
+                } else {
+                  alert('Para instalar pelo navegador, utilize a opção "Instalar aplicativo" no menu do Chrome/Edge ou "Adicionar à Tela de Início" no Safari.')
+                }
+              }}
+            >
+              <IconDownload size={18} />
+              <span>Instalar Aplicativo (PWA)</span>
+            </button>
+            <small>Disponível para celulares (Android, iOS) e computadores</small>
+          </div>
+        )}
+
+        <div className="download-app-platforms">
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">Android</span>
+              <strong>Google Chrome / Edge</strong>
+            </div>
+            <p>Toque no menu <strong>(⋮)</strong> no canto do navegador e selecione <strong>&ldquo;Instalar aplicativo&rdquo;</strong>.</p>
+          </div>
+
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">iPhone / iPad</span>
+              <strong>Safari</strong>
+            </div>
+            <p>Toque em <strong>Compartilhar</strong> (ícone do quadrado com seta) e selecione <strong>&ldquo;Adicionar à Tela de Início&rdquo;</strong>.</p>
+          </div>
+
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">Computador</span>
+              <strong>Windows, Mac & Linux</strong>
+            </div>
+            <p>Clique no ícone de instalar <strong>(⊕)</strong> na barra de endereços do navegador.</p>
+          </div>
+        </div>
+
+        <div className="download-app-features">
+          <div className="download-app-feature-item">
+            <span>⚡</span>
+            <span>Acesso Rápido</span>
+          </div>
+          <div className="download-app-feature-item">
+            <span>🔔</span>
+            <span>Push Real-Time</span>
+          </div>
+          <div className="download-app-feature-item">
+            <span>📱</span>
+            <span>Tela Cheia</span>
+          </div>
+        </div>
       </div>
     </Modal>
   )
