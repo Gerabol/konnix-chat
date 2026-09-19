@@ -1316,11 +1316,14 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
   const [typingByRoom, setTypingByRoom] = useState<Record<string, Record<string, TypingUser>>>({})
-  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => {
+    return (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt ?? null
+  })
   const [standalone] = useState(
     window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as { standalone?: boolean }).standalone === true,
@@ -1495,7 +1498,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const loadRooms = useCallback(async () => {
     try {
       const nextRooms = await api.rooms()
-      setRooms(nextRooms)
+      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0 } : room)))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -1614,8 +1617,9 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               })
             }
             const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
-            const activeRoomVisible = msg.roomId === activeRoomIdRef.current && !appInBackground
-            const shouldUnread = msg.messageType !== 'SYSTEM' && msg.userId !== me.id && !activeRoomVisible
+            const isActiveRoom = msg.roomId === activeRoomIdRef.current
+            const isIncomingRelevant = msg.messageType !== 'SYSTEM' && msg.userId !== me.id
+            const shouldUnread = isIncomingRelevant && !isActiveRoom
             setRooms((prev) => {
               const exists = prev.some((room) => room.id === msg.roomId)
               if (!exists) {
@@ -1627,7 +1631,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
                   ? {
                       ...room,
                       lastActivityAt: msg.createdAt,
-                      unreadCount: shouldUnread ? (room.unreadCount ?? 0) + 1 : (activeRoomVisible ? 0 : (room.unreadCount ?? 0)),
+                      unreadCount: isActiveRoom ? 0 : shouldUnread ? (room.unreadCount ?? 0) + 1 : (room.unreadCount ?? 0),
                     }
                   : room,
               )
@@ -1635,29 +1639,29 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
             })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
-               if (activeRoomVisible && msg.messageType !== 'SYSTEM' && msg.userId !== me.id) {
-                 api.markRoomRead(msg.roomId).catch(() => undefined)
-               }
-             }
-               if (shouldUnread) {
-                const room = roomsRef.current.find((r) => r.id === msg.roomId)
-                const label = room ? roomDisplayName(room) : 'Chat'
-                const snippet = msg.content.replace(/\s+/g, ' ').trim()
-                const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-                if (appInBackground) {
-                  let enabled = false
-                  try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
-                  if (enabled) {
-                    if (isTauri) {
-                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                      void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
-                    }
-                  }
-                } else if (msg.roomId !== activeRoomIdRef.current) {
-                  showToast(`${label} • ${body}`)
-                }
+              if (isIncomingRelevant && !appInBackground) {
+                api.markRoomRead(msg.roomId).catch(() => undefined)
               }
+            }
+            if (isIncomingRelevant) {
+              const room = roomsRef.current.find((r) => r.id === msg.roomId)
+              const label = room ? roomDisplayName(room) : 'Chat'
+              const snippet = msg.content.replace(/\s+/g, ' ').trim()
+              const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
+              if (appInBackground) {
+                let enabled = false
+                try { enabled = localStorage.getItem('konnix-system-notifications') === 'true' } catch { /* preferência opcional */ }
+                if (enabled) {
+                  if (isTauri) {
+                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                  } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                  }
+                }
+              } else if (!isActiveRoom) {
+                showToast(`${label} • ${body}`)
+              }
+            }
           } else if (evt.type === 'chat.typing') {
             const payload = evt.data as unknown as { userId: string; username: string; name: string; isTyping: boolean }
             const roomId = evt.roomId
@@ -1801,6 +1805,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         }
         const activeRoom = activeRoomIdRef.current
         if (activeRoom && !activeRoom.startsWith('pending:')) {
+          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
           void api.markRoomRead(activeRoom).catch(() => undefined)
         }
       }
@@ -1834,6 +1839,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       if (document.visibilityState !== 'visible') return
       const activeRoom = activeRoomIdRef.current
       if (activeRoom && !activeRoom.startsWith('pending:')) {
+        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
         void api.markRoomRead(activeRoom).catch(() => undefined)
       }
     }, 10_000)
@@ -1862,10 +1868,23 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   useEffect(() => {
     const onBeforeInstall = (e: Event) => {
       e.preventDefault()
-      setInstallEvent(e as BeforeInstallPromptEvent)
+      const p = e as BeforeInstallPromptEvent
+      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt = p
+      setInstallEvent(p)
+    }
+    ;(window as unknown as { __onKonnixInstallReady?: (e: BeforeInstallPromptEvent) => void }).__onKonnixInstallReady = (e) => {
+      setInstallEvent(e)
     }
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+    const onAppInstalled = () => {
+      setInstallEvent(null)
+      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
+    }
+    window.addEventListener('appinstalled', onAppInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+      window.removeEventListener('appinstalled', onAppInstalled)
+    }
   }, [])
 
   useEffect(() => {
@@ -1903,11 +1922,31 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [waitingWorker])
 
   const installApp = useCallback(async () => {
-    if (!installEvent) return
-    await installEvent.prompt()
-    await installEvent.userChoice
-    setInstallEvent(null)
+    const prompt = installEvent || (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt
+    if (!prompt) return false
+    try {
+      await prompt.prompt()
+      const choice = await prompt.userChoice
+      if (choice.outcome === 'accepted') {
+        setInstallEvent(null)
+        ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
+      }
+      return true
+    } catch {
+      return false
+    }
   }, [installEvent])
+
+  const installAppDirectly = useCallback(async () => {
+    if (standalone) {
+      modalNotify('O Konnix Chat já está instalado neste dispositivo.')
+      return
+    }
+    const success = await installApp()
+    if (!success) {
+      setDownloadModalOpen(true)
+    }
+  }, [standalone, installApp, modalNotify])
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     let roomId = activeRoomId
@@ -2092,8 +2131,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onAbout={openAbout}
           onReportIssue={openReportIssue}
           myAvatarVersion={myAvatarVersion}
-          canInstall={!standalone && !!installEvent}
-          onInstall={installApp}
+          onInstallApp={installAppDirectly}
+          standalone={standalone}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
@@ -2180,6 +2219,14 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {downloadModalOpen && (
+        <DownloadAppModal
+          onClose={() => setDownloadModalOpen(false)}
+          installEvent={installEvent}
+          onInstall={installApp}
+          isInstalled={standalone}
+        />
+      )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}
       {pendingDelete && <ConfirmModal title="Excluir mensagem" message="Esta ação não pode ser desfeita. Deseja excluir esta mensagem?" onClose={() => setPendingDelete(null)} onConfirm={() => void confirmDelete()} />}
 
@@ -2341,6 +2388,8 @@ function UserSettingsMenuContent({
   onAbout,
   onLogout,
   onClose,
+  onInstallApp,
+  standalone,
 }: {
   me: User
   onTheme: () => void
@@ -2349,6 +2398,8 @@ function UserSettingsMenuContent({
   onAbout: () => void
   onLogout: () => void
   onClose: () => void
+  onInstallApp?: () => void
+  standalone?: boolean
 }) {
   return (
     <>
@@ -2388,6 +2439,19 @@ function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
+      {!isTauri && !standalone && onInstallApp && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            onInstallApp()
+          }}
+        >
+          <IconDownload size={16} />
+          <span style={{ flex: 1 }}>Instalar aplicativo</span>
+        </button>
+      )}
       <button
         type="button"
         className="user-menu-item user-menu-action"
@@ -2445,8 +2509,8 @@ const Sidebar = memo(function Sidebar({
   onAbout,
   onReportIssue,
   myAvatarVersion,
-  canInstall,
-  onInstall,
+  onInstallApp,
+  standalone,
   onPresenceChange,
   onPresenceError,
   typingByRoom,
@@ -2471,8 +2535,8 @@ const Sidebar = memo(function Sidebar({
   onAbout: () => void
   onReportIssue: () => void
   myAvatarVersion: string
-  canInstall: boolean
-  onInstall: () => void
+  onInstallApp: () => void
+  standalone?: boolean
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
@@ -2583,6 +2647,8 @@ const Sidebar = memo(function Sidebar({
                 onAbout={onAbout}
                 onLogout={onLogout}
                 onClose={() => setHeaderMenuOpen(false)}
+                onInstallApp={onInstallApp}
+                standalone={standalone}
               />
             </div>
           )}
@@ -2918,12 +2984,6 @@ const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
-      {canInstall && (
-        <button className="install-link" onClick={onInstall}>
-          Instalar app
-        </button>
-      )}
-
       <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
@@ -2965,6 +3025,8 @@ const Sidebar = memo(function Sidebar({
               onAbout={onAbout}
               onLogout={onLogout}
               onClose={() => setFooterMenuOpen(false)}
+              onInstallApp={onInstallApp}
+              standalone={standalone}
             />
           </div>
         )}
@@ -3312,6 +3374,117 @@ function AboutModal({ onClose }: { onClose: () => void }) {
         <h2>Konnix Chat</h2>
         <p className="about-version">Versão 1.0.0</p>
         <AboutDetails />
+      </div>
+    </Modal>
+  )
+}
+
+function detectPlatform(): 'ios' | 'android' | 'desktop' {
+  if (typeof navigator === 'undefined') return 'desktop'
+  const ua = navigator.userAgent.toLowerCase()
+  if (/iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    return 'ios'
+  }
+  if (/android/.test(ua)) {
+    return 'android'
+  }
+  return 'desktop'
+}
+
+function DownloadAppModal({
+  onClose,
+  installEvent,
+  onInstall,
+  isInstalled,
+}: {
+  onClose: () => void
+  installEvent: BeforeInstallPromptEvent | null
+  onInstall: () => Promise<boolean> | void
+  isInstalled?: boolean
+}) {
+  const platform = detectPlatform()
+
+  return (
+    <Modal title="Instalar Aplicativo" onClose={onClose} className="download-app-modal">
+      <div className="download-app-body">
+        <div className="download-app-hero">
+          <img src="/icons/icon-192.png" alt="Konnix Chat" className="download-app-logo" />
+          <div className="download-app-hero-text">
+            <h3>Konnix Chat</h3>
+            <p>Instale no seu dispositivo para acesso rápido em tela cheia e notificações instantâneas.</p>
+          </div>
+        </div>
+
+        {isInstalled ? (
+          <div className="download-app-installed-notice" style={{
+            background: 'var(--konnix-surface-secondary, rgba(255, 255, 255, 0.06))',
+            border: '1px solid var(--konnix-border)',
+            borderRadius: 'var(--konnix-radius-sm)',
+            padding: '12px 14px',
+            fontSize: '13px',
+            color: 'var(--konnix-text-secondary)',
+            textAlign: 'center',
+            marginBottom: '8px',
+          }}>
+            ✓ O Konnix Chat já está instalado neste dispositivo.
+          </div>
+        ) : installEvent ? (
+          <div className="download-app-cta-box">
+            <button
+              type="button"
+              className="btn-primary download-app-install-btn"
+              onClick={async () => {
+                await onInstall()
+                onClose()
+              }}
+            >
+              <IconDownload size={18} />
+              <span>Instalar com 1 Clique</span>
+            </button>
+            <small>Instalação nativa direta no seu dispositivo</small>
+          </div>
+        ) : platform === 'ios' ? (
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">iPhone / iPad</span>
+              <strong>Como instalar no Safari</strong>
+            </div>
+            <ol className="download-ios-steps" style={{ margin: '8px 0 0', paddingLeft: '1.2rem', fontSize: '0.82rem', lineHeight: '1.55', color: 'var(--konnix-ink-soft)' }}>
+              <li>Toque no ícone de <strong>Compartilhar</strong> (quadrado com seta ⎋ na barra inferior do Safari).</li>
+              <li>Role para baixo e selecione <strong>&ldquo;Adicionar à Tela de Início&rdquo;</strong> (⊕).</li>
+              <li>Toque em <strong>&ldquo;Adicionar&rdquo;</strong> no topo direito para confirmar.</li>
+            </ol>
+          </div>
+        ) : platform === 'android' ? (
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">Android</span>
+              <strong>Como instalar no Chrome</strong>
+            </div>
+            <p style={{ margin: '0 0 8px', fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+              Toque no menu <strong>(⋮)</strong> no canto superior do navegador e selecione <strong>&ldquo;Instalar aplicativo&rdquo;</strong> ou <strong>&ldquo;Adicionar à tela inicial&rdquo;</strong>.
+            </p>
+            <small style={{ color: 'var(--konnix-ink-soft)', display: 'block', opacity: 0.85 }}>
+              Dica: Se abriu pelo WhatsApp, toque em (⋮) e escolha &ldquo;Abrir no Chrome&rdquo;.
+            </small>
+          </div>
+        ) : (
+          <div className="download-platform-card">
+            <div className="download-platform-header">
+              <span className="download-platform-badge">Computador</span>
+              <strong>Como instalar no Navegador</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+              Na barra de endereços do Chrome ou Edge, clique no ícone de instalar <strong>(⊕ Instalar)</strong> ou no menu <strong>(⋮) &gt; &ldquo;Instalar Konnix Chat&rdquo;</strong>.
+            </p>
+          </div>
+        )}
+
+        <div className="modal-actions" style={{ marginTop: '4px', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Fechar
+          </button>
+        </div>
       </div>
     </Modal>
   )
