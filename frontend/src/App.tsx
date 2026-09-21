@@ -1602,6 +1602,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     }
   }, [activeRoomId, nextBefore, showToast])
 
+  const [avatarVersions, setAvatarVersions] = useState<Record<string, string>>({})
+
   useEffect(() => {
     if (!session.token) return
     let ws: WebSocket | null = null
@@ -1771,6 +1773,11 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               ? { ...user, presenceStatus: presence.status }
               : user))
             window.dispatchEvent(new CustomEvent('konnix:presence', { detail: presence }))
+          } else if (evt.type === 'avatar.updated') {
+            const payload = evt.data as unknown as { userId: string }
+            if (payload?.userId) {
+              setAvatarVersions((prev) => ({ ...prev, [payload.userId]: `${Date.now()}` }))
+            }
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
@@ -2233,6 +2240,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
               online={online}
               me={me}
               myAvatarVersion={myAvatarVersion}
+              avatarVersions={avatarVersions}
               typingUsers={typingByRoom[activeRoom.id]}
               onTyping={(isTyping) => sendTypingStatus(activeRoom.id, isTyping)}
               onBack={() => { setActiveRoomId(null); setSidebarOpen(true) }}
@@ -3971,6 +3979,7 @@ function RoomView({
   online,
   me,
   myAvatarVersion,
+  avatarVersions,
   typingUsers,
   onTyping,
   onBack,
@@ -3998,6 +4007,7 @@ function RoomView({
   online: boolean
   me: User
   myAvatarVersion: string
+  avatarVersions: Record<string, string>
   typingUsers?: Record<string, TypingUser>
   onTyping?: (isTyping: boolean) => void
   onBack: () => void
@@ -4702,7 +4712,8 @@ function RoomView({
     if (!el) return
     el.style.height = 'auto'
     const max = codeBlock ? 420 : composerExpanded ? 280 : 140
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`
+    const lineCap = draft.includes('\n') ? max : Math.max(max, 360)
+    el.style.height = `${Math.min(el.scrollHeight, lineCap)}px`
   }, [draft, composerExpanded, codeBlock, room.id])
 
   const chooseMention = (member: RoomMember) => {
@@ -5082,6 +5093,7 @@ function RoomView({
                 isMine={m.userId === me.id}
                 currentUsername={me.username}
                 myAvatarVersion={myAvatarVersion}
+                avatarVersions={avatarVersions}
                 canWrite={!readOnlyAccount}
                  onDelete={onDelete}
                  onEdit={startEditing}
@@ -5151,7 +5163,7 @@ function RoomView({
           />
            <textarea
              ref={inputRef}
-             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''}`}
+             className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''} ${draft.includes('\n') ? 'composer-input-multiline' : ''}`}
             value={draft}
             onChange={(e) => updateDraft(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
@@ -5505,6 +5517,7 @@ function MessageRow({
   isMine,
   currentUsername,
   myAvatarVersion,
+  avatarVersions,
   canWrite,
   onDelete,
   onEdit,
@@ -5528,6 +5541,7 @@ function MessageRow({
   isMine: boolean
   currentUsername: string
   myAvatarVersion: string
+  avatarVersions: Record<string, string>
   canWrite: boolean
   onDelete: (msg: Message) => void
   onEdit: (message: Message) => void
@@ -5593,7 +5607,7 @@ function MessageRow({
       {!deleted && (
         <button type="button" className="message-avatar-button" onClick={onShowProfile} aria-label={`Abrir contato de ${msg.username || 'usuário'}`}>
           <AvatarImage
-            path={msg.userId ? `${userAvatarPath(msg.userId)}${isMine ? `?v=${encodeURIComponent(myAvatarVersion)}` : ''}` : null}
+            path={msg.userId ? `${userAvatarPath(msg.userId)}${isMine ? `?v=${encodeURIComponent(myAvatarVersion)}` : avatarVersions[msg.userId] ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}` : ''}` : null}
             className="msg-avatar"
             fallback={<span className="msg-avatar">{initials(msg.username || 'sistema')}</span>}
             alt={msg.username || 'sistema'}

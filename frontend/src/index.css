@@ -59,6 +59,38 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--konnix-ink-soft) 40%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  min-width: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--konnix-ink-soft) 32%, transparent);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--konnix-ink-soft) 60%, transparent);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 [data-theme="dark"] {
   --konnix-bg: #121212;
   --konnix-sidebar: #18181b;
@@ -2507,7 +2539,7 @@ button:disabled {
   scroll-behavior: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 1rem;
+  padding: 1rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -2600,7 +2632,7 @@ button:disabled {
   overflow-anchor: none;
   display: flex;
   gap: 0.6rem;
-  padding: 0.3rem 0.5rem;
+  padding: 0.3rem 0.25rem;
   border-radius: 10px;
   position: relative;
 }
@@ -3340,7 +3372,7 @@ button:disabled {
   border: 1px solid var(--konnix-border);
   border-radius: 10px;
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.4;
@@ -3363,6 +3395,10 @@ button:disabled {
 .composer-input:focus {
   outline: 2px solid var(--konnix-primary);
   outline-offset: 1px;
+}
+
+.composer-input-multiline {
+  overflow-y: auto;
 }
 
 .composer-actions {
@@ -4441,8 +4477,9 @@ img.room-header-avatar {
 .profile-common-room:disabled { cursor: default; }
 .profile-common-room b { color: var(--konnix-primary); font-size: 0.8rem; }
 .profile-loading { padding: 1rem 0; color: var(--konnix-ink-soft); font-size: 0.82rem; }
-.message-avatar-button { padding: 0; border: 0; border-radius: 50%; background: transparent; }
+.message-avatar-button { padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
 .message-avatar-button:hover { opacity: 0.82; }
+.message-avatar-button:focus, .message-avatar-button:focus-visible { outline: none; box-shadow: none; }
 .profile-contact-button { width: 52px; height: 52px; margin-top: 0.75rem; margin-left: auto; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2b78d0; color: #fff; box-shadow: 0 4px 12px rgba(43, 120, 208, 0.28); }
 .message-circle-icon { width: 22px; height: 22px; color: #fff; }
 .profile-contact-button:hover { background: #1e62b0; }
