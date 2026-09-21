@@ -20,8 +20,7 @@ public enum UserTheme {
             return DEFAULT.name();
         }
         try {
-            String normalized = value.trim().toUpperCase().equals("BLACK-GRAY")
-                    ? BLACK_GRAY.name() : value.trim().toUpperCase();
+            String normalized = value.trim().toUpperCase().replace('-', '_');
             valueOf(normalized);
             return normalized;
         } catch (RuntimeException e) {
@@ -30,8 +29,11 @@ public enum UserTheme {
     }
 
     public static boolean isValid(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
         try {
-            valueOf(value);
+            valueOf(value.trim().toUpperCase().replace('-', '_'));
             return true;
         } catch (RuntimeException e) {
             return false;

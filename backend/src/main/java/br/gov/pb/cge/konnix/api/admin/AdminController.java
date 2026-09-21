@@ -9,12 +9,8 @@ import br.gov.pb.cge.konnix.api.user.dto.UserResponse;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
-import br.gov.pb.cge.konnix.domain.session.Session;
-import br.gov.pb.cge.konnix.domain.session.SessionRepository;
-import br.gov.pb.cge.konnix.api.exception.ApiExceptions;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
-import br.gov.pb.cge.konnix.security.TokenService;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import br.gov.pb.cge.konnix.service.ApiTokenService;
 import br.gov.pb.cge.konnix.service.RoomService;
 import br.gov.pb.cge.konnix.service.SystemSettingService;
 import br.gov.pb.cge.konnix.service.UserService;
@@ -28,9 +24,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,9 +33,7 @@ import java.util.UUID;
 public class AdminController {
     private final UserService userService;
     private final UserRepository userRepository;
-    private final SessionRepository sessionRepository;
-    private final TokenService tokenService;
-    private final PasswordEncoder passwordEncoder;
+    private final ApiTokenService apiTokenService;
     private final RoomService roomService;
     private final AuditService auditService;
     private final SystemSettingService settingService;
@@ -50,17 +41,15 @@ public class AdminController {
     private final long defaultMaxUpload;
     private final String defaultAppName;
 
-    public AdminController(UserService userService, UserRepository userRepository, SessionRepository sessionRepository,
-                           TokenService tokenService, PasswordEncoder passwordEncoder, RoomService roomService,
+    public AdminController(UserService userService, UserRepository userRepository,
+                           ApiTokenService apiTokenService, RoomService roomService,
                            AuditService auditService, SystemSettingService settingService,
                            AdminMonitoringService monitoringService,
                            @Value("${konnix.files.max-size:62914560}") long defaultMaxUpload,
                            @Value("${spring.application.name:Konnix Chat}") String defaultAppName) {
         this.userService = userService;
         this.userRepository = userRepository;
-        this.sessionRepository = sessionRepository;
-        this.tokenService = tokenService;
-        this.passwordEncoder = passwordEncoder;
+        this.apiTokenService = apiTokenService;
         this.roomService = roomService;
         this.auditService = auditService;
         this.settingService = settingService;
@@ -71,39 +60,18 @@ public class AdminController {
 
     @GetMapping("/api-tokens")
     public ApiResponse<List<ApiTokenResponse>> apiTokens() {
-        return ApiResponse.ok(sessionRepository.findByApiTokenTrueOrderByCreatedAtDesc().stream().map(ApiTokenResponse::from).toList());
+        return ApiResponse.ok(apiTokenService.listApiTokens());
     }
 
     @PostMapping("/api-tokens")
     public ApiResponse<java.util.Map<String, Object>> createApiToken(@Valid @RequestBody ApiTokenCreateRequest request,
                                                                       Authentication auth) {
-        User target = userRepository.findByUsername(request.username().trim())
-                .orElseThrow(ApiExceptions::invalidCredentials);
-        if (!passwordEncoder.matches(request.password(), target.getPasswordHash())) {
-            throw ApiExceptions.invalidCredentials();
-        }
-        LocalDate expirationDate;
-        try {
-            expirationDate = LocalDate.parse(request.expirationDate());
-        } catch (RuntimeException error) {
-            throw ApiExceptions.conflict("TOKEN_EXPIRATION_INVALID", "Data de expiração inválida");
-        }
-        Instant expiresAt = expirationDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        if (!expiresAt.isAfter(Instant.now())) {
-            throw ApiExceptions.conflict("TOKEN_EXPIRATION_INVALID", "A data de expiração deve estar no futuro");
-        }
-        Duration ttl = Duration.between(Instant.now(), expiresAt);
-        User creator = userRepository.findById(principal(auth).id()).orElseThrow(ApiExceptions::invalidCredentials);
-        TokenService.IssuedToken issued = tokenService.issueApiToken(target, creator, ttl);
-        return ApiResponse.ok(java.util.Map.of("token", issued.rawToken(), "metadata", ApiTokenResponse.from(issued.session())));
+        return ApiResponse.ok(apiTokenService.createApiToken(request, principal(auth).id()));
     }
 
     @DeleteMapping("/api-tokens/{id}")
     public ApiResponse<Void> revokeApiToken(@PathVariable UUID id) {
-        Session session = sessionRepository.findById(id).orElseThrow(() -> ApiExceptions.notFound("api-token/" + id));
-        if (!session.isApiToken()) throw ApiExceptions.notFound("api-token/" + id);
-        session.setRevokedAt(Instant.now());
-        sessionRepository.save(session);
+        apiTokenService.revokeApiToken(id);
         return ApiResponse.ok(null);
     }
 

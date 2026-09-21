@@ -10,6 +10,8 @@ import br.gov.pb.cge.konnix.domain.user.Role;
 import br.gov.pb.cge.konnix.domain.user.RoleRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,22 +31,34 @@ public class UserImportService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final String defaultImportPassword;
+
+    @Autowired
+    public UserImportService(UserRepository userRepository,
+                             RoleRepository roleRepository,
+                             PasswordEncoder passwordEncoder,
+                             AuditService auditService,
+                             @Value("${konnix.users.default-import-password:cge@2026}") String defaultImportPassword) {
+        this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.auditService = auditService;
+        this.defaultImportPassword = (defaultImportPassword != null && !defaultImportPassword.isBlank())
+                ? defaultImportPassword : DEFAULT_PASSWORD;
+    }
 
     public UserImportService(UserRepository userRepository,
                              RoleRepository roleRepository,
                              PasswordEncoder passwordEncoder,
                              AuditService auditService) {
-        this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.auditService = auditService;
+        this(userRepository, roleRepository, passwordEncoder, auditService, DEFAULT_PASSWORD);
     }
 
     @Transactional
     public ImportUsersResponse importUsers(ImportUsersRequest request, UUID actorId, String ipAddress) {
         String password = (request.defaultPassword() != null && !request.defaultPassword().isBlank())
                 ? request.defaultPassword()
-                : DEFAULT_PASSWORD;
+                : defaultImportPassword;
 
         Role userRole = roleRepository.findByName(ROLE_USER)
                 .orElseThrow(() -> ApiExceptions.conflict("ROLE_MISSING", "Role " + ROLE_USER + " não configurada"));

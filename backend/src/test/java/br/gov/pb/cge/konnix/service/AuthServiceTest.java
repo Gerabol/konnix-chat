@@ -9,6 +9,7 @@ import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.LoginAttemptService;
 import br.gov.pb.cge.konnix.security.TokenService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
+import br.gov.pb.cge.konnix.websocket.ChatWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,9 @@ class AuthServiceTest {
     @Mock
     private ChatEventPublisher eventPublisher;
 
+    @Mock
+    private ChatWebSocketHandler chatWebSocketHandler;
+
     private AuthService authService;
 
     @BeforeEach
@@ -57,7 +61,8 @@ class AuthServiceTest {
                 auditService,
                 loginAttemptService,
                 userService,
-                eventPublisher
+                eventPublisher,
+                chatWebSocketHandler
         );
     }
 
@@ -132,5 +137,21 @@ class AuthServiceTest {
         assertThat(user.getPresenceStatus()).isEqualTo("busy");
         verify(userRepository, never()).save(user);
         verify(eventPublisher, never()).publishPresence(any(), any(), any());
+    }
+
+    @Test
+    void logoutMarcaUsuarioOfflineImediatamente() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("joao");
+
+        when(userRepository.findByUsername("joao")).thenReturn(Optional.of(user));
+
+        authService.logout("raw-token-123", "joao", "127.0.0.1");
+
+        verify(tokenService).revoke("raw-token-123");
+        verify(auditService).record("LOGOUT", user, "auth", "joao", "127.0.0.1");
+        verify(chatWebSocketHandler).markUserOfflineImmediately(userId);
     }
 }

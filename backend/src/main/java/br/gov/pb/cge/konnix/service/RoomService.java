@@ -81,7 +81,14 @@ public class RoomService {
                 ? messageRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
                     .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()))
                 : Map.of();
-        return roomRepository.findAllById(roomIds).stream()
+        List<Room> rooms = roomRepository.findAllById(roomIds);
+        List<Message> pinnedMessages = rooms.stream()
+                .map(Room::getPinnedMessage)
+                .filter(m -> m != null && m.getDeletedAt() == null)
+                .toList();
+        Map<UUID, MessageResponse> pinnedResponses = messageService.responsesForMessages(pinnedMessages, actor.id());
+
+        return rooms.stream()
                 .filter(room -> !TYPE_DIRECT.equals(room.getType()) || lastMessageByRoom.containsKey(room.getId()))
                 .map(room -> RoomResponse.from(room,
                         partnerOf(room, actor.id(),
@@ -91,7 +98,7 @@ public class RoomService {
                         unreadByRoom.getOrDefault(room.getId(), 0L),
                         favoriteOf(room, actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
                         room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                                ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null))
+                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null))
                 .filter(response -> response.directPartner() == null
                         || !"DISABLED".equals(response.directPartner().accountStatus()))
                 .sorted(Comparator.comparing(RoomResponse::lastActivityAt,

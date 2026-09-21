@@ -62,9 +62,8 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> list() {
-        return userRepository.findAll().stream()
+        return userRepository.findAllByOrderByUsernameAsc().stream()
                 .map(UserResponse::from)
-                .sorted(Comparator.comparing(UserResponse::username))
                 .toList();
     }
 
@@ -99,16 +98,9 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserDirectoryResponse> directory(String query) {
-        String q = query == null ? null : query.trim().toLowerCase();
-        return userRepository.findAll().stream()
-                .filter(user -> !user.isDisabled())
-                .filter(u -> q == null || q.isBlank()
-                        || (u.getName() != null && u.getName().toLowerCase().contains(q))
-                        || (u.getUsername() != null && u.getUsername().toLowerCase().contains(q))
-                        || (u.getEmail() != null && u.getEmail().toLowerCase().contains(q)))
+        String q = query == null || query.isBlank() ? null : query.trim();
+        return userRepository.searchDirectory(q).stream()
                 .map(UserDirectoryResponse::from)
-                .sorted(Comparator.comparing(UserDirectoryResponse::name, String.CASE_INSENSITIVE_ORDER)
-                        .thenComparing(UserDirectoryResponse::username))
                 .toList();
     }
 

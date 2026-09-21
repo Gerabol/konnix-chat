@@ -23,6 +23,7 @@ import br.gov.pb.cge.konnix.domain.poll.PollVote;
 import br.gov.pb.cge.konnix.domain.poll.PollVoteRepository;
 import br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse;
 import br.gov.pb.cge.konnix.domain.room.Room;
+import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
@@ -39,8 +40,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -340,6 +343,94 @@ public class MessageService {
             roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
         }
         return MessageResponse.from(message, attachment, readBy, reactions, pollFor(message, actorId), roles);
+    }
+
+    public Map<UUID, MessageResponse> responsesForMessages(List<Message> messages, UUID actorId) {
+        if (messages == null || messages.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = messages.stream().map(Message::getId).toList();
+        Map<UUID, Attachment> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
+                .collect(Collectors.toMap(a -> a.getMessage().getId(), a -> a, (a, b) -> a));
+        Map<UUID, List<ReadReceiptResponse>> readsByMessage = messageReadRepository.findByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(read -> read.getMessage().getId(),
+                        Collectors.mapping(ReadReceiptResponse::from, Collectors.toList())));
+        Map<UUID, List<MessageReactionResponse>> reactionsByMessage = reactionRepository.findByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(reaction -> reaction.getMessage().getId(),
+                        Collectors.mapping(MessageReactionResponse::from, Collectors.toList())));
+        boolean enabled = systemSettingService.readReceiptsEnabled();
+
+        List<UUID> roomIds = messages.stream().map(m -> m.getRoom().getId()).distinct().toList();
+        List<RoomMember> allMembers = roomMemberRepository.findByRoomIdIn(roomIds);
+        Map<UUID, Long> memberCountByRoom = allMembers.stream()
+                .collect(Collectors.groupingBy(rm -> rm.getRoom().getId(), Collectors.counting()));
+        Map<String, String> roleByRoomAndUser = allMembers.stream()
+                .collect(Collectors.toMap(
+                        rm -> rm.getRoom().getId() + "_" + rm.getUser().getId(),
+                        RoomMember::getRole,
+                        (a, b) -> a
+                ));
+
+        Map<UUID, MessageResponse.PollData> pollsByMessageId = new HashMap<>();
+        List<Poll> polls = pollRepository.findByMessageIdIn(ids);
+        if (!polls.isEmpty()) {
+            List<UUID> pollIds = polls.stream().map(Poll::getId).toList();
+            Map<UUID, List<PollOption>> optionsByPoll = pollOptionRepository.findByPollIdInOrderByPositionAsc(pollIds).stream()
+                    .collect(Collectors.groupingBy(opt -> opt.getPoll().getId()));
+            Map<UUID, List<PollVote>> votesByPoll = pollVoteRepository.findByPollIdIn(pollIds).stream()
+                    .collect(Collectors.groupingBy(vote -> vote.getPoll().getId()));
+
+            for (Poll poll : polls) {
+                List<PollOption> options = optionsByPoll.getOrDefault(poll.getId(), List.of());
+                List<PollVote> votes = votesByPoll.getOrDefault(poll.getId(), List.of());
+                int totalMembers = memberCountByRoom.getOrDefault(poll.getMessage().getRoom().getId(), 0L).intValue();
+                int totalVoters = (int) votes.stream().map(vote -> vote.getUser().getId()).distinct().count();
+                MessageResponse.PollData pollData = new MessageResponse.PollData(
+                        poll.getId(),
+                        poll.getQuestion(),
+                        poll.isAllowMultiple(),
+                        totalMembers,
+                        totalVoters,
+                        options.stream().map(option -> new MessageResponse.PollOptionData(
+                                option.getId(),
+                                option.getLabel(),
+                                votes.stream().filter(vote -> vote.getOption().getId().equals(option.getId())).count(),
+                                votes.stream().anyMatch(vote -> vote.getOption().getId().equals(option.getId())
+                                        && actorId != null && vote.getUser().getId().equals(actorId)),
+                                votes.stream().filter(vote -> vote.getOption().getId().equals(option.getId()))
+                                        .map(vote -> new MessageResponse.PollVoterData(
+                                                vote.getUser().getId(),
+                                                vote.getUser().getUsername(),
+                                                vote.getUser().getName(),
+                                                vote.getCreatedAt()))
+                                        .toList()
+                        )).toList()
+                );
+                pollsByMessageId.put(poll.getMessage().getId(), pollData);
+            }
+        }
+
+        Map<UUID, MessageResponse> result = new HashMap<>();
+        for (Message m : messages) {
+            List<String> roles = List.of();
+            if (m.getUser() != null) {
+                String key = m.getRoom().getId() + "_" + m.getUser().getId();
+                String roomMemberRole = roleByRoomAndUser.getOrDefault(key, "MEMBER");
+                boolean isGlobalAdmin = m.getUser().getRoles().stream()
+                        .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+                roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
+            }
+            result.put(m.getId(), MessageResponse.from(
+                    m,
+                    attachmentsByMessage.get(m.getId()),
+                    enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
+                            ? readsByMessage.getOrDefault(m.getId(), List.of()) : List.of(),
+                    reactionsByMessage.getOrDefault(m.getId(), List.of()),
+                    pollsByMessageId.get(m.getId()),
+                    roles
+            ));
+        }
+        return result;
     }
 
     private List<MessageResponse> toResponses(List<Message> messages, UUID actorId) {

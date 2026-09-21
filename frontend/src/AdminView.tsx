@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from './api'
 import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
-import { AvatarImage, cacheTheme, PaletteIcon, ThemeModal, applyTheme } from './App'
+import { AvatarImage } from './components/chat/AvatarImage'
+import { PaletteIcon } from './components/icons'
+import { ThemeModal } from './components/modals/ThemeModal'
+import { applyTheme, cacheTheme } from './utils/theme'
 import ApiDocsPanel from './ApiDocsPanel'
 import { validatePassword } from './passwordValidation'
+import { useEscapeClose } from './hooks/useEscapeClose'
 
 type Tab = 'users' | 'rooms' | 'audit-actions' | 'monitoring' | 'api' | 'settings'
 const ROLE_OPTIONS = ['ADMIN', 'USER', 'BOT']
@@ -29,16 +33,6 @@ function adminLogoPath(theme: User['theme']): string {
 function adminThemeAttribute(theme: User['theme']): string {
   const normalized = theme.trim().replace(/-/g, '_').toUpperCase()
   return normalized === 'DEFAULT' ? '' : normalized.toLowerCase().replace('_', '-')
-}
-
-function useEscapeClose(onClose: () => void) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
 }
 
 const ACCOUNT_STATUS_TONES: Record<AccountStatus, 'online' | 'away' | 'busy'> = {

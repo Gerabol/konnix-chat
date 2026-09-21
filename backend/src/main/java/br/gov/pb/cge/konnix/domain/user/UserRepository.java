@@ -26,6 +26,20 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmail(String email);
 
+    List<User> findAllByOrderByUsernameAsc();
+
+    @Query("""
+            select u from User u
+            where u.active = true
+              and (u.accountStatus is null or u.accountStatus <> 'DISABLED')
+              and (:query is null or :query = ''
+                   or lower(u.name) like lower(concat('%', :query, '%'))
+                   or lower(u.username) like lower(concat('%', :query, '%'))
+                   or lower(u.email) like lower(concat('%', :query, '%')))
+            order by lower(coalesce(u.name, u.username)) asc, lower(u.username) asc
+            """)
+    List<User> searchDirectory(@Param("query") String query);
+
     @Query("""
             select u from User u
             where :query is null or :query = ''
