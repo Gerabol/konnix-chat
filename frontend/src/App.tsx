@@ -151,6 +151,27 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+type RelatedApp = { id?: string; platform: string; url?: string }
+
+async function detectInstalledWebApp(): Promise<boolean> {
+  const nav = navigator as Navigator & { getInstalledRelatedApps?: () => Promise<RelatedApp[]> }
+  if (typeof nav.getInstalledRelatedApps !== 'function') return false
+  try {
+    const apps = await nav.getInstalledRelatedApps()
+    return apps.some((app) => app.platform === 'webapp')
+  } catch {
+    return false
+  }
+}
+
+function persistAppInstalledFlag(): void {
+  try { window.localStorage.setItem('konnix_app_installed', '1') } catch { /* ignore */ }
+}
+
+function readAppInstalledFlag(): boolean {
+  try { return window.localStorage.getItem('konnix_app_installed') === '1' } catch { return false }
+}
+
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padded = base64.replace(/-/g, '+').replace(/_/g, '/')
   const normalized = padded.padEnd(Math.ceil(padded.length / 4) * 4, '=')
@@ -1328,6 +1349,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as { standalone?: boolean }).standalone === true,
   )
+  const [appInstalled, setAppInstalled] = useState(standalone || readAppInstalledFlag())
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   const activeRoomIdRef = useRef(activeRoomId)
@@ -1878,6 +1900,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     const onAppInstalled = () => {
       setInstallEvent(null)
+      try { window.localStorage.setItem('konnix_app_installed', '1') } catch { /* ignore */ }
       ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
     }
     window.addEventListener('appinstalled', onAppInstalled)
@@ -1886,6 +1909,22 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       window.removeEventListener('appinstalled', onAppInstalled)
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    if (standalone) {
+      persistAppInstalledFlag()
+      setAppInstalled(true)
+    }
+    detectInstalledWebApp().then((installed) => {
+      if (!installed) return
+      persistAppInstalledFlag()
+      if (active) setAppInstalled(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [standalone])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -1938,15 +1977,17 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [installEvent])
 
   const installAppDirectly = useCallback(async () => {
-    if (standalone) {
-      modalNotify('O Konnix Chat já está instalado neste dispositivo.')
+    if (appInstalled || await detectInstalledWebApp()) {
+      persistAppInstalledFlag()
+      setAppInstalled(true)
+      setDownloadModalOpen(true)
       return
     }
     const success = await installApp()
     if (!success) {
       setDownloadModalOpen(true)
     }
-  }, [standalone, installApp, modalNotify])
+  }, [appInstalled, installApp])
 
   const sendMessage = async (content: string, parentMessageId?: string, attachments: File[] = []): Promise<boolean> => {
     let roomId = activeRoomId
@@ -2224,7 +2265,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           onClose={() => setDownloadModalOpen(false)}
           installEvent={installEvent}
           onInstall={installApp}
-          isInstalled={standalone}
+          isInstalled={appInstalled}
         />
       )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}
@@ -3416,17 +3457,28 @@ function DownloadAppModal({
         </div>
 
         {isInstalled ? (
-          <div className="download-app-installed-notice" style={{
-            background: 'var(--konnix-surface-secondary, rgba(255, 255, 255, 0.06))',
-            border: '1px solid var(--konnix-border)',
-            borderRadius: 'var(--konnix-radius-sm)',
-            padding: '12px 14px',
-            fontSize: '13px',
-            color: 'var(--konnix-text-secondary)',
-            textAlign: 'center',
-            marginBottom: '8px',
-          }}>
-            ✓ O Konnix Chat já está instalado neste dispositivo.
+          <div className="download-app-installed">
+            <div className="download-app-installed-notice" role="status">
+              <span className="download-app-installed-check" aria-hidden="true">✓</span>
+              <span>O Konnix Chat já está instalado neste dispositivo.</span>
+            </div>
+            <div className="download-platform-card">
+              <div className="download-platform-header">
+                <span className="download-platform-badge">
+                  {platform === 'ios' ? 'iPhone / iPad' : platform === 'android' ? 'Android' : 'Computador'}
+                </span>
+                <strong>Como abrir o aplicativo</strong>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+                {platform === 'ios' ? (
+                  <>Volte para a <strong>Tela de Início</strong> do seu iPhone/iPad e toque no ícone do <strong>Konnix Chat</strong> para abrir o aplicativo instalado.</>
+                ) : platform === 'android' ? (
+                  <>Volte para a <strong>Tela de Início</strong> (ou abra a <strong>gaveta de aplicativos</strong>) e toque no ícone do <strong>Konnix Chat</strong> para abrir o aplicativo instalado.</>
+                ) : (
+                  <>Abra o <strong>Konnix Chat</strong> pelo atalho criado no <strong>menu Iniciar</strong>, na <strong>barra de tarefas</strong> ou na <strong>área de trabalho</strong> para abrir o aplicativo instalado.</>
+                )}
+              </p>
+            </div>
           </div>
         ) : installEvent ? (
           <div className="download-app-cta-box">
@@ -3480,11 +3532,6 @@ function DownloadAppModal({
           </div>
         )}
 
-        <div className="modal-actions" style={{ marginTop: '4px', justifyContent: 'flex-end' }}>
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Fechar
-          </button>
-        </div>
       </div>
     </Modal>
   )
