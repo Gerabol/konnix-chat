@@ -55,7 +55,9 @@
   --sidebar-w: 284px;
   --r: 10px;
   --rl: 16px;
+  --safe-top: constant(safe-area-inset-top);
   --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: constant(safe-area-inset-bottom);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -364,7 +366,8 @@
 html,
 body {
   height: 100%;
-  height: var(--app-height, 100dvh);
+  height: -webkit-fill-available;
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
@@ -373,8 +376,9 @@ body {
 
 #root {
   height: 100%;
-  height: var(--app-height, 100dvh);
-  max-height: var(--app-height, 100dvh);
+  height: -webkit-fill-available;
+  height: 100dvh;
+  max-height: 100%;
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
@@ -384,6 +388,7 @@ body {
 
 body {
   margin: 0;
+  padding: 0;
   font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--konnix-ink);
   background: var(--konnix-bg);
@@ -392,12 +397,28 @@ body {
   overscroll-behavior-y: none;
   position: fixed;
   inset: 0;
-  top: var(--app-top, 0px);
-  left: var(--app-left, 0px);
+  top: 0;
+  left: 0;
   right: 0;
   bottom: 0;
   width: 100%;
   height: 100%;
+  height: -webkit-fill-available;
+  height: 100dvh;
+}
+
+html.keyboard-open,
+body.keyboard-open {
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+}
+
+body.keyboard-open {
+  top: var(--app-top, 0px);
+  left: var(--app-left, 0px);
+}
+
+body.keyboard-open #root {
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
 }
@@ -3049,7 +3070,8 @@ button:disabled {
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.7rem 1rem;
-  padding-bottom: calc(0.7rem + min(var(--safe-bottom, 0px), 14px));
+  padding-bottom: calc(0.7rem + constant(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
   background: var(--konnix-surface);
   border-top: 1px solid var(--konnix-border);
 }
@@ -4965,7 +4987,8 @@ img.room-header-avatar {
 
   .composer {
     padding: 0.45rem 0.65rem;
-    padding-bottom: max(0.45rem, min(var(--safe-bottom, 0px), 12px));
+    padding-bottom: calc(0.45rem + constant(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px));
   }
 
   html.keyboard-open .composer,
@@ -5009,9 +5032,18 @@ img.room-header-avatar {
   .main,
   .room-view,
   .desktop-shell {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.keyboard-open #root,
+  body.keyboard-open .chat-shell,
+  body.keyboard-open .chat-body,
+  body.keyboard-open .main,
+  body.keyboard-open .room-view {
     height: var(--app-height, 100dvh);
     max-height: var(--app-height, 100dvh);
-    overflow: hidden;
   }
 
   .room-view {
@@ -5222,7 +5254,8 @@ img.room-header-avatar {
 
   .composer {
     padding: 0.45rem 0.5rem;
-    padding-bottom: max(0.45rem, min(var(--safe-bottom, 0px), 12px));
+    padding-bottom: calc(0.45rem + constant(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px));
   }
 
   html.keyboard-open .composer,

@@ -5,15 +5,13 @@ export function useMobileViewport() {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
+    let wasKeyboardOpen = false
+
     const handleViewport = () => {
       const vv = window.visualViewport
       const vh = vv ? Math.round(vv.height) : window.innerHeight
       const vt = vv ? Math.round(vv.offsetTop) : 0
       const vl = vv ? Math.round(vv.offsetLeft) : 0
-
-      document.documentElement.style.setProperty('--app-height', `${vh}px`)
-      document.documentElement.style.setProperty('--app-top', `${vt}px`)
-      document.documentElement.style.setProperty('--app-left', `${vl}px`)
 
       // Detect whether virtual keyboard is open
       const isMobile =
@@ -36,11 +34,22 @@ export function useMobileViewport() {
         )
 
       if (isKeyboardOpen) {
+        wasKeyboardOpen = true
+        document.documentElement.style.setProperty('--app-height', `${vh}px`)
+        document.documentElement.style.setProperty('--app-top', `${vt}px`)
+        document.documentElement.style.setProperty('--app-left', `${vl}px`)
         document.documentElement.classList.add('keyboard-open')
         document.body.classList.add('keyboard-open')
       } else {
+        document.documentElement.style.setProperty('--app-height', '100dvh')
+        document.documentElement.style.setProperty('--app-top', '0px')
+        document.documentElement.style.setProperty('--app-left', '0px')
         document.documentElement.classList.remove('keyboard-open')
         document.body.classList.remove('keyboard-open')
+        if (wasKeyboardOpen) {
+          wasKeyboardOpen = false
+          void document.body?.offsetHeight
+        }
       }
 
       // Ensure window scroll stays at top to prevent dead gap below composer
@@ -84,6 +93,11 @@ export function useMobileViewport() {
         vv.removeEventListener('resize', handleViewport)
         vv.removeEventListener('scroll', handleViewport)
       }
+      document.documentElement.style.removeProperty('--app-height')
+      document.documentElement.style.removeProperty('--app-top')
+      document.documentElement.style.removeProperty('--app-left')
+      document.documentElement.classList.remove('keyboard-open')
+      document.body?.classList.remove('keyboard-open')
     }
   }, [])
 }
