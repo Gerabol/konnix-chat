@@ -71,6 +71,7 @@ export function ChatView({
     dismissInstallCard,
     installApp,
   } = usePwaInstall()
+  const [avatarVersions, setAvatarVersions] = useState<Record<string, string>>({})
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   const activeRoomIdRef = useRef(activeRoomId)
@@ -528,6 +529,11 @@ export function ChatView({
               prev.map((user) => (user.id === presence.userId ? { ...user, presenceStatus: presence.status } : user)),
             )
             window.dispatchEvent(new CustomEvent('konnix:presence', { detail: presence }))
+          } else if (evt.type === 'avatar.updated') {
+            const payload = evt.data as unknown as { userId: string }
+            if (payload?.userId) {
+              setAvatarVersions((prev) => ({ ...prev, [payload.userId]: `${Date.now()}` }))
+            }
           } else if (evt.type === 'room.added') {
             const room = evt.data as unknown as Room
             if (room?.id) {
@@ -934,6 +940,7 @@ export function ChatView({
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
+          avatarVersions={avatarVersions}
           onClose={() => setSidebarOpen(false)}
         />
 
@@ -953,6 +960,7 @@ export function ChatView({
               online={online}
               me={me}
               myAvatarVersion={myAvatarVersion}
+              avatarVersions={avatarVersions}
               typingUsers={typingByRoom[activeRoom.id]}
               onTyping={(isTyping) => sendTypingStatus(activeRoom.id, isTyping)}
               onBack={() => {

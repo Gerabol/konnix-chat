@@ -42,6 +42,7 @@ export interface SidebarProps {
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
+  avatarVersions?: Record<string, string>
   onClose?: () => void
 }
 
@@ -73,6 +74,7 @@ export const Sidebar = memo(function Sidebar({
   onPresenceChange,
   onPresenceError,
   typingByRoom,
+  avatarVersions,
   onClose,
 }: SidebarProps) {
   const sidebarLogo = isWhiteSidebarLogoTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
@@ -418,7 +420,15 @@ export const Sidebar = memo(function Sidebar({
                           <span className="room-icon direct">
                             <span className="sidebar-avatar-wrap">
                               <AvatarImage
-                                path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                                path={
+                                  room.directPartner
+                                    ? `${userAvatarPath(room.directPartner.userId)}${
+                                        avatarVersions?.[room.directPartner.userId]
+                                          ? `?v=${encodeURIComponent(avatarVersions[room.directPartner.userId])}`
+                                          : ''
+                                      }`
+                                    : null
+                                }
                                 className="mini-avatar"
                                 fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
                                 alt={roomDisplayName(room)}
@@ -586,7 +596,15 @@ export const Sidebar = memo(function Sidebar({
                         <span className="room-icon direct">
                           <span className="sidebar-avatar-wrap">
                             <AvatarImage
-                              path={room.directPartner ? userAvatarPath(room.directPartner.userId) : null}
+                              path={
+                                room.directPartner
+                                  ? `${userAvatarPath(room.directPartner.userId)}${
+                                      avatarVersions?.[room.directPartner.userId]
+                                        ? `?v=${encodeURIComponent(avatarVersions[room.directPartner.userId])}`
+                                        : ''
+                                    }`
+                                  : null
+                              }
                               className="mini-avatar"
                               fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
                               alt={roomDisplayName(room)}

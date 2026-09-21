@@ -15,6 +15,7 @@ export interface MessageRowProps {
   isMine: boolean
   currentUsername: string
   myAvatarVersion: string
+  avatarVersions: Record<string, string>
   canWrite: boolean
   onDelete: (msg: Message) => void
   onEdit: (message: Message) => void
@@ -40,6 +41,7 @@ function MessageRowComponent({
   isMine,
   currentUsername,
   myAvatarVersion,
+  avatarVersions,
   canWrite,
   onDelete,
   onEdit,
@@ -135,7 +137,17 @@ function MessageRowComponent({
           aria-label={`Abrir contato de ${msg.username || 'usuário'}`}
         >
           <AvatarImage
-            path={msg.userId ? `${userAvatarPath(msg.userId)}${isMine ? `?v=${encodeURIComponent(myAvatarVersion)}` : ''}` : null}
+            path={
+              msg.userId
+                ? `${userAvatarPath(msg.userId)}${
+                    isMine
+                      ? `?v=${encodeURIComponent(myAvatarVersion)}`
+                      : avatarVersions[msg.userId]
+                      ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}`
+                      : ''
+                  }`
+                : null
+            }
             className="msg-avatar"
             fallback={<span className="msg-avatar">{initials(msg.username || 'sistema')}</span>}
             alt={msg.username || 'sistema'}

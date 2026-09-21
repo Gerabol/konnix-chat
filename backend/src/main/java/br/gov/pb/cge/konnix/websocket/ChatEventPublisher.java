@@ -65,6 +65,10 @@ public class ChatEventPublisher {
         publishToAll("presence.updated", data);
     }
 
+    public void publishAvatarUpdated(UUID userId) {
+        publishToAll("avatar.updated", Map.of("userId", userId));
+    }
+
     public void publishTyping(UUID roomId, UUID userId, String username, String name, boolean isTyping) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("userId", userId);

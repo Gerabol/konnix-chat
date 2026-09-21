@@ -48,6 +48,7 @@ export interface RoomViewProps {
   online: boolean
   me: User
   myAvatarVersion: string
+  avatarVersions: Record<string, string>
   typingUsers?: Record<string, TypingUser>
   onTyping?: (isTyping: boolean) => void
   onBack: () => void
@@ -77,6 +78,7 @@ export function RoomView({
   online,
   me,
   myAvatarVersion,
+  avatarVersions,
   typingUsers,
   onTyping,
   onBack,
@@ -829,7 +831,8 @@ export function RoomView({
     if (!el) return
     el.style.height = 'auto'
     const max = codeBlock ? 420 : composerExpanded ? 280 : 140
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`
+    const lineCap = draft.includes('\n') ? max : Math.max(max, 360)
+    el.style.height = `${Math.min(el.scrollHeight, lineCap)}px`
   }, [draft, composerExpanded, codeBlock, room.id])
 
   const chooseMention = (member: RoomMember) => {
@@ -1438,6 +1441,7 @@ export function RoomView({
                   isMine={m.userId === me.id}
                   currentUsername={me.username}
                   myAvatarVersion={myAvatarVersion}
+                  avatarVersions={avatarVersions}
                   canWrite={!readOnlyAccount}
                   onDelete={onDelete}
                   onEdit={startEditing}
@@ -1524,7 +1528,7 @@ export function RoomView({
             />
             <textarea
               ref={inputRef}
-              className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''}`}
+              className={`composer-input ${composerExpanded ? 'composer-input-expanded' : ''} ${codeBlock ? 'composer-input-code' : ''} ${draft.includes('\n') ? 'composer-input-multiline' : ''}`}
               value={draft}
               onChange={(e) => updateDraft(e.target.value, e.target.selectionStart)}
               onKeyDown={(e) => {
