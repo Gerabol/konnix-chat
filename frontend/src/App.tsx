@@ -172,6 +172,16 @@ function readAppInstalledFlag(): boolean {
   try { return window.localStorage.getItem('konnix_app_installed') === '1' } catch { return false }
 }
 
+function clearAppInstalledFlag(): void {
+  try { window.localStorage.removeItem('konnix_app_installed') } catch { /* ignore */ }
+}
+
+function detectStandalone(): boolean {
+  const modes = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay', 'picture-in-picture']
+  return modes.some((mode) => window.matchMedia(`(display-mode: ${mode})`).matches) ||
+    (navigator as { standalone?: boolean }).standalone === true
+}
+
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padded = base64.replace(/-/g, '+').replace(/_/g, '/')
   const normalized = padded.padEnd(Math.ceil(padded.length / 4) * 4, '=')
@@ -1345,11 +1355,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => {
     return (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt ?? null
   })
-  const [standalone] = useState(
-    window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as { standalone?: boolean }).standalone === true,
-  )
-  const [appInstalled, setAppInstalled] = useState(standalone || readAppInstalledFlag())
+  const [standalone, setStandalone] = useState(detectStandalone)
+  const [appInstalled, setAppInstalled] = useState(detectStandalone() || readAppInstalledFlag())
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   const activeRoomIdRef = useRef(activeRoomId)
@@ -1893,6 +1900,8 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
       const p = e as BeforeInstallPromptEvent
       ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt = p
       setInstallEvent(p)
+      clearAppInstalledFlag()
+      setAppInstalled(false)
     }
     ;(window as unknown as { __onKonnixInstallReady?: (e: BeforeInstallPromptEvent) => void }).__onKonnixInstallReady = (e) => {
       setInstallEvent(e)
@@ -1900,6 +1909,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     const onAppInstalled = () => {
       setInstallEvent(null)
+      setAppInstalled(true)
       try { window.localStorage.setItem('konnix_app_installed', '1') } catch { /* ignore */ }
       ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
     }
@@ -1911,20 +1921,46 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
   }, [])
 
   useEffect(() => {
-    let active = true
-    if (standalone) {
-      persistAppInstalledFlag()
-      setAppInstalled(true)
+    const mqs = ['standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay', 'picture-in-picture']
+      .map((mode) => window.matchMedia(`(display-mode: ${mode})`))
+    const onChange = () => {
+      setStandalone(detectStandalone())
+      if (detectStandalone()) {
+        persistAppInstalledFlag()
+        setAppInstalled(true)
+      }
     }
-    detectInstalledWebApp().then((installed) => {
-      if (!installed) return
-      persistAppInstalledFlag()
-      if (active) setAppInstalled(true)
+    mqs.forEach((mq) => {
+      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange)
     })
     return () => {
-      active = false
+      mqs.forEach((mq) => {
+        if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange)
+      })
     }
-  }, [standalone])
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const syncInstalled = async (): Promise<void> => {
+      const installed = await detectInstalledWebApp()
+      if (!active) return
+      if (installed) {
+        persistAppInstalledFlag()
+        setAppInstalled(true)
+      }
+    }
+    void syncInstalled()
+    const onFocus = () => { void syncInstalled() }
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') void syncInstalled() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      active = false
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -2174,6 +2210,7 @@ function ChatView({ session, avatarRevision, onLogout, onPresenceChange, onProfi
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
+          appInstalled={appInstalled}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
@@ -2480,7 +2517,7 @@ function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
-      {!isTauri && !standalone && onInstallApp && (
+      {!isTauri && !isMobilePlatform() && !standalone && onInstallApp && (
         <button
           type="button"
           className="user-menu-item user-menu-action"
@@ -2552,6 +2589,7 @@ const Sidebar = memo(function Sidebar({
   myAvatarVersion,
   onInstallApp,
   standalone,
+  appInstalled,
   onPresenceChange,
   onPresenceError,
   typingByRoom,
@@ -2578,6 +2616,7 @@ const Sidebar = memo(function Sidebar({
   myAvatarVersion: string
   onInstallApp: () => void
   standalone?: boolean
+  appInstalled?: boolean
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
@@ -2587,6 +2626,7 @@ const Sidebar = memo(function Sidebar({
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [footerMenuOpen, setFooterMenuOpen] = useState(false)
+  const [installCardDismissed, setInstallCardDismissed] = useState(false)
   const [channelsOpen, setChannelsOpen] = useState(true)
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
@@ -3025,6 +3065,33 @@ const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
+      {!isTauri && !isMobilePlatform() && !standalone && !appInstalled && !installCardDismissed && onInstallApp && (
+        <div className="sidebar-install-card">
+          <button
+            type="button"
+            className="sidebar-install-dismiss"
+            aria-label="Fechar aviso"
+            title="Fechar aviso"
+            onClick={() => setInstallCardDismissed(true)}
+          >
+            ×
+          </button>
+          <div className="sidebar-install-copy">
+            <strong>Baixar aplicativo</strong>
+            <span>Instale o Konnix no seu dispositivo</span>
+          </div>
+          <button
+            type="button"
+            className="btn-primary sidebar-install-btn"
+            title="Baixar aplicativo"
+            aria-label="Baixar aplicativo"
+            onClick={() => { onClose?.(); onInstallApp() }}
+          >
+            <IconDownload size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
@@ -3430,6 +3497,11 @@ function detectPlatform(): 'ios' | 'android' | 'desktop' {
     return 'android'
   }
   return 'desktop'
+}
+
+function isMobilePlatform(): boolean {
+  const platform = detectPlatform()
+  return platform === 'ios' || platform === 'android'
 }
 
 function DownloadAppModal({
