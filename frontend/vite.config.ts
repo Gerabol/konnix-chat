@@ -20,6 +20,12 @@ export default defineConfig({
         target: process.env.VITE_BACKEND_URL || 'http://localhost:8081',
         changeOrigin: true,
         ws: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            if ((err as NodeJS.ErrnoException).code === 'ECONNRESET') return
+            console.error('[vite] ws proxy error:', err)
+          })
+        },
       },
     },
     headers: {
