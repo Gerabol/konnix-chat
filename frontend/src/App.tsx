@@ -2877,7 +2877,7 @@ const Sidebar = memo(function Sidebar({
               <div className="nav-section">
                 <div className="nav-section-head">
                   <button type="button" className="nav-section-toggle" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} aria-controls="favorites-list">
-                    <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span>
+                    <span className={`nav-chevron${favoritesOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Favoritos</span>
                   </button>
                 </div>
@@ -2914,7 +2914,7 @@ const Sidebar = memo(function Sidebar({
                     aria-expanded={adminOpen}
                     aria-controls="admin-channels-list"
                   >
-                    <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                    <span className={`nav-chevron${adminOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Administração</span>
                   </button>
                 </div>
@@ -2964,7 +2964,7 @@ const Sidebar = memo(function Sidebar({
                   aria-expanded={channelsOpen}
                   aria-controls="channels-list"
                 >
-                  <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
+                  <span className={`nav-chevron${channelsOpen ? ' open' : ''}`}>›</span>
                   <span className="nav-section-title">Canais e grupos</span>
                 </button>
                 <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
@@ -3017,7 +3017,7 @@ const Sidebar = memo(function Sidebar({
                   aria-expanded={conversationsOpen}
                   aria-controls="conversations-list"
                 >
-                  <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
+                  <span className={`nav-chevron${conversationsOpen ? ' open' : ''}`}>›</span>
                   <span className="nav-section-title">Conversas</span>
                 </button>
                 <button className="nav-add" onClick={onNewDm} title="Nova conversa">
@@ -3832,7 +3832,7 @@ function AddMembersModal({
         <input autoComplete="off" className="input" placeholder="Pesquisar usuário" value={search} onChange={(event) => setSearch(event.target.value)} />
         <RoomPeopleSection title="Proprietários" tone="owner" members={owners} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
         <RoomPeopleSection title="Membros" tone="member" members={regularMembers} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
-        <div className="room-people-section"><button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}><span className="nav-chevron">{inviteOpen ? '⌄' : '›'}</span><span>Pessoas para convidar</span></button>{inviteOpen && <div className="picker-list small">{available.length === 0 && <span className="nav-empty">Nenhuma pessoa encontrada</span>}{available.map((user) => <button key={user.id} className={`picker-item ${selected.some((item) => item.id === user.id) ? 'active' : ''}`} onClick={() => setSelected((prev) => prev.some((item) => item.id === user.id) ? prev.filter((item) => item.id !== user.id) : [...prev, user])}><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} /><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}</small></span><span className="room-person-badge invite-badge">Convidar</span></button>)}</div>}</div>
+        <div className="room-people-section"><button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}><span className={`nav-chevron${inviteOpen ? ' open' : ''}`}>›</span><span>Pessoas para convidar</span></button>{inviteOpen && <div className="picker-list small">{available.length === 0 && <span className="nav-empty">Nenhuma pessoa encontrada</span>}{available.map((user) => <button key={user.id} className={`picker-item ${selected.some((item) => item.id === user.id) ? 'active' : ''}`} onClick={() => setSelected((prev) => prev.some((item) => item.id === user.id) ? prev.filter((item) => item.id !== user.id) : [...prev, user])}><AvatarImage path={userAvatarPath(user.id)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(user.name || user.username)}</span>} alt={user.name || user.username} /><span className="picker-item-text"><strong>{user.name || user.username}</strong><small>@{user.username}</small></span><span className="room-person-badge invite-badge">Convidar</span></button>)}</div>}</div>
       </div>
       </div>
       <div className="modal-actions">
@@ -3876,7 +3876,7 @@ function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
 
 function RoomPeopleSection({ title, tone, members, onToggleOwner, busyId }: { title: string; tone: 'owner' | 'member'; members: RoomMember[]; onToggleOwner?: (member: RoomMember) => void; busyId?: string | null }) {
   const [open, setOpen] = useState(true)
-  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="nav-chevron">{open ? '⌄' : '›'}</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span>{onToggleOwner && <button type="button" className={`owner-action ${member.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`} onClick={() => onToggleOwner(member)} disabled={busyId !== null} title={member.role === 'OWNER' ? `Remover ${member.name || member.username} de proprietário` : `Tornar ${member.name || member.username} proprietário`}>{member.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}</button>}</div>)}</div>}</div>
+  return <div className="room-people-section"><button type="button" className={`room-people-section-toggle ${tone === 'owner' ? 'owner-title' : 'member-title'}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className={`nav-chevron${open ? ' open' : ''}`}>›</span><span>{title}</span></button>{open && <div className="picker-list small">{members.length === 0 && <span className="nav-empty">Nenhum usuário</span>}{members.map((member) => <div className="picker-item picker-row" key={member.userId}><AvatarImage path={userAvatarPath(member.userId)} className="mini-avatar" fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>} alt={member.name || member.username} /><span className="picker-item-text"><strong>{member.name || member.username}</strong><small>@{member.username}</small></span><span className={`room-person-badge ${tone === 'owner' ? 'owner-badge' : 'member-badge'}`}>{tone === 'owner' ? 'Proprietário' : 'Membro'}</span>{onToggleOwner && <button type="button" className={`owner-action ${member.role === 'OWNER' ? 'owner-action-remove' : 'owner-action-add'}`} onClick={() => onToggleOwner(member)} disabled={busyId !== null} title={member.role === 'OWNER' ? `Remover ${member.name || member.username} de proprietário` : `Tornar ${member.name || member.username} proprietário`}>{member.role === 'OWNER' ? 'Remover proprietário' : 'Tornar proprietário'}</button>}</div>)}</div>}</div>
 }
 
 function RemoveMembersModal({
