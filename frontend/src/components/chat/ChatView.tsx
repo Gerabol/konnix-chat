@@ -66,6 +66,7 @@ export function ChatView({
   const {
     installEvent,
     standalone,
+    appInstalled,
     installCardDismissed,
     dismissInstallCard,
     installApp,
@@ -927,6 +928,7 @@ export function ChatView({
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
+          appInstalled={appInstalled}
           installCardDismissed={installCardDismissed}
           onDismissInstallCard={dismissInstallCard}
           onPresenceChange={changePresenceManually}
@@ -1039,7 +1041,7 @@ export function ChatView({
           onClose={() => setDownloadModalOpen(false)}
           installEvent={installEvent}
           onInstall={installApp}
-          isInstalled={standalone}
+          isInstalled={standalone || appInstalled}
         />
       )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}

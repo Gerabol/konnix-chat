@@ -1,4 +1,5 @@
 import { isTauri } from '../../platform'
+import { isMobilePlatform } from '../../utils/pwa'
 import type { User } from '../../api'
 import {
   IconAlertTriangle,
@@ -22,6 +23,7 @@ export function UserSettingsMenuContent({
   onClose,
   onInstallApp,
   standalone,
+  appInstalled,
 }: {
   me: User
   onTheme: () => void
@@ -32,6 +34,7 @@ export function UserSettingsMenuContent({
   onClose: () => void
   onInstallApp?: () => void
   standalone?: boolean
+  appInstalled?: boolean
 }) {
   return (
     <>
@@ -71,7 +74,7 @@ export function UserSettingsMenuContent({
         <IconAlertTriangle size={16} />
         <span>Relatar Problema</span>
       </button>
-      {!isTauri && !standalone && onInstallApp && (
+      {!isTauri && !isMobilePlatform() && !standalone && !appInstalled && onInstallApp && (
         <button
           type="button"
           className="user-menu-item user-menu-action"

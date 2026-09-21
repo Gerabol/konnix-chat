@@ -28,7 +28,7 @@ export function RoomPeopleSection({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="nav-chevron">{open ? '⌄' : '›'}</span>
+        <span className={`nav-chevron${open ? ' open' : ''}`}>›</span>
         <span>{title}</span>
       </button>
       {open && (
@@ -152,7 +152,7 @@ export function AddMembersModal({
         <RoomPeopleSection title="Membros" tone="member" members={regularMembers} onToggleOwner={toggleOwner} busyId={busyOwnerId} />
         <div className="room-people-section">
           <button type="button" className="room-people-section-toggle invite-title" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}>
-            <span className="nav-chevron">{inviteOpen ? '⌄' : '›'}</span>
+            <span className={`nav-chevron${inviteOpen ? ' open' : ''}`}>›</span>
             <span>Pessoas para convidar</span>
           </button>
           {inviteOpen && (

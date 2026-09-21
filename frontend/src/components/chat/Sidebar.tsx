@@ -5,6 +5,7 @@ import type { DmPartner, TypingUser } from '../../types'
 import { presenceLabel } from '../../utils/presence'
 import { getRoomIcon, roomDisplayName } from '../../utils/room'
 import { isTauri } from '../../platform'
+import { isMobilePlatform } from '../../utils/pwa'
 import { isWhiteSidebarLogoTheme } from '../../utils/theme'
 import { IconSearch, IconSettings } from '../icons'
 import { PresenceSelector } from '../settings/PresenceSelector'
@@ -35,6 +36,7 @@ export interface SidebarProps {
   myAvatarVersion: string
   onInstallApp: () => void
   standalone?: boolean
+  appInstalled?: boolean
   installCardDismissed?: boolean
   onDismissInstallCard?: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
@@ -65,6 +67,7 @@ export const Sidebar = memo(function Sidebar({
   myAvatarVersion,
   onInstallApp,
   standalone,
+  appInstalled,
   installCardDismissed,
   onDismissInstallCard,
   onPresenceChange,
@@ -192,6 +195,7 @@ export const Sidebar = memo(function Sidebar({
                 onClose={() => setHeaderMenuOpen(false)}
                 onInstallApp={onInstallApp}
                 standalone={standalone}
+                appInstalled={appInstalled}
               />
             </div>
           )}
@@ -398,7 +402,7 @@ export const Sidebar = memo(function Sidebar({
                     aria-expanded={favoritesOpen}
                     aria-controls="favorites-list"
                   >
-                    <span className="nav-chevron">{favoritesOpen ? '⌄' : '›'}</span>
+                    <span className={`nav-chevron${favoritesOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Favoritos</span>
                   </button>
                 </div>
@@ -452,7 +456,7 @@ export const Sidebar = memo(function Sidebar({
                     aria-expanded={adminOpen}
                     aria-controls="admin-channels-list"
                   >
-                    <span className="nav-chevron">{adminOpen ? '⌄' : '›'}</span>
+                    <span className={`nav-chevron${adminOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Administração</span>
                   </button>
                 </div>
@@ -505,7 +509,7 @@ export const Sidebar = memo(function Sidebar({
                   aria-expanded={channelsOpen}
                   aria-controls="channels-list"
                 >
-                  <span className="nav-chevron">{channelsOpen ? '⌄' : '›'}</span>
+                  <span className={`nav-chevron${channelsOpen ? ' open' : ''}`}>›</span>
                   <span className="nav-section-title">Canais e grupos</span>
                 </button>
                 <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
@@ -561,7 +565,7 @@ export const Sidebar = memo(function Sidebar({
                   aria-expanded={conversationsOpen}
                   aria-controls="conversations-list"
                 >
-                  <span className="nav-chevron">{conversationsOpen ? '⌄' : '›'}</span>
+                  <span className={`nav-chevron${conversationsOpen ? ' open' : ''}`}>›</span>
                   <span className="nav-section-title">Conversas</span>
                 </button>
                 <button className="nav-add" onClick={onNewDm} title="Nova conversa">
@@ -618,7 +622,7 @@ export const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
-      {!isTauri && !standalone && !installCardDismissed && onInstallApp && (
+      {!isTauri && !isMobilePlatform() && !standalone && !appInstalled && !installCardDismissed && onInstallApp && (
         <SidebarInstallCard
           onInstall={() => {
             onClose?.()
@@ -675,6 +679,7 @@ export const Sidebar = memo(function Sidebar({
               onClose={() => setFooterMenuOpen(false)}
               onInstallApp={onInstallApp}
               standalone={standalone}
+              appInstalled={appInstalled}
             />
           </div>
         )}
