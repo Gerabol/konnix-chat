@@ -8,6 +8,7 @@
     "desktop:vite": "vite --port 5175 --strictPort",
     "build": "npm run build:frontend",
     "build:frontend": "tsc -b && vite build --emptyOutDir",
+    "test": "node --test src/utils/pwa.test.ts",
     "preview": "vite preview",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",

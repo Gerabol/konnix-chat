@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, wsUrl } from '../../api'
 import type { DirectoryUser, Message, MessageReaction, PresenceStatus, ReadReceipt, Room, Theme, User } from '../../api'
 import { useOnline } from '../../hooks/useOnline'
+import { usePwaInstall } from '../../hooks/usePwaInstall'
 import { isTauri, notifyDesktop } from '../../platform'
-import type { BeforeInstallPromptEvent, DmPartner, Session, TypingUser } from '../../types'
+import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
+import { detectInstalledWebApp, persistAppInstalledFlag } from '../../utils/pwa'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
 import { AboutModal } from '../modals/AboutModal'
 import { ConfirmModal } from '../modals/ConfirmModal'
@@ -62,13 +64,15 @@ export function ChatView({
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
   const [typingByRoom, setTypingByRoom] = useState<Record<string, Record<string, TypingUser>>>({})
-  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => {
-    return (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt ?? null
-  })
-  const [standalone] = useState(
-    window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as { standalone?: boolean }).standalone === true,
-  )
+  const {
+    installEvent,
+    standalone,
+    appInstalled,
+    installCardDismissed,
+    dismissInstallCard,
+    installApp,
+    setAppInstalled,
+  } = usePwaInstall()
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   const activeRoomIdRef = useRef(activeRoomId)
@@ -663,30 +667,6 @@ export function ChatView({
   }, [openRoom])
 
   useEffect(() => {
-    const onBeforeInstall = (e: Event) => {
-      e.preventDefault()
-      const p = e as BeforeInstallPromptEvent
-      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt = p
-      setInstallEvent(p)
-    }
-    ;(window as unknown as { __onKonnixInstallReady?: (e: BeforeInstallPromptEvent) => void }).__onKonnixInstallReady = (
-      e,
-    ) => {
-      setInstallEvent(e)
-    }
-    window.addEventListener('beforeinstallprompt', onBeforeInstall)
-    const onAppInstalled = () => {
-      setInstallEvent(null)
-      ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
-    }
-    window.addEventListener('appinstalled', onAppInstalled)
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
-      window.removeEventListener('appinstalled', onAppInstalled)
-    }
-  }, [])
-
-  useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     let active = true
     navigator.serviceWorker.ready
@@ -720,33 +700,18 @@ export function ChatView({
     return () => navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
   }, [waitingWorker])
 
-  const installApp = useCallback(async () => {
-    const prompt =
-      installEvent || (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt
-    if (!prompt) return false
-    try {
-      await prompt.prompt()
-      const choice = await prompt.userChoice
-      if (choice.outcome === 'accepted') {
-        setInstallEvent(null)
-        ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent | null }).__konnixInstallPrompt = null
-      }
-      return true
-    } catch {
-      return false
-    }
-  }, [installEvent])
-
   const installAppDirectly = useCallback(async () => {
-    if (standalone) {
-      modalNotify('O Konnix Chat já está instalado neste dispositivo.')
+    if (appInstalled || (await detectInstalledWebApp())) {
+      persistAppInstalledFlag()
+      setAppInstalled(true)
+      setDownloadModalOpen(true)
       return
     }
     const success = await installApp()
     if (!success) {
       setDownloadModalOpen(true)
     }
-  }, [standalone, installApp, modalNotify])
+  }, [appInstalled, installApp, setAppInstalled])
 
   const sendMessage = async (
     content: string,
@@ -967,6 +932,9 @@ export function ChatView({
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
+          appInstalled={appInstalled}
+          installCardDismissed={installCardDismissed}
+          onDismissInstallCard={dismissInstallCard}
           onPresenceChange={changePresenceManually}
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
@@ -1077,7 +1045,7 @@ export function ChatView({
           onClose={() => setDownloadModalOpen(false)}
           installEvent={installEvent}
           onInstall={installApp}
-          isInstalled={standalone}
+          isInstalled={appInstalled || standalone}
         />
       )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}

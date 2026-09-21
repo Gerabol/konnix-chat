@@ -5,6 +5,7 @@ import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import type { DmPartner, TypingUser } from '../../types'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
+import { isMobilePlatform } from '../../utils/pwa'
 import {
   IconArrowLeft,
   IconClip,
@@ -327,9 +328,33 @@ export function RoomView({
   }, [room.id])
 
   useEffect(() => {
+    // Não expandir teclado ao entrar numa conversa em dispositivos mobile/touch
+    const isTouchOrMobile =
+      typeof window !== 'undefined' &&
+      (isMobilePlatform() ||
+        window.matchMedia('(pointer: coarse)').matches ||
+        window.matchMedia('(max-width: 768px)').matches)
+    if (isTouchOrMobile) return
+
     const frame = requestAnimationFrame(() => inputRef.current?.focus())
     return () => cancelAnimationFrame(frame)
   }, [room.id])
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const onViewportChange = () => {
+      if (wasNearBottomRef.current && messageListRef.current) {
+        messageListRef.current.scrollTop = messageListRef.current.scrollHeight
+      }
+    }
+    vv.addEventListener('resize', onViewportChange)
+    vv.addEventListener('scroll', onViewportChange)
+    return () => {
+      vv.removeEventListener('resize', onViewportChange)
+      vv.removeEventListener('scroll', onViewportChange)
+    }
+  }, [])
 
   useEffect(() => {
     if (forceScrollRequest > 0) forceScrollToBottomRef.current = true
@@ -1607,8 +1632,23 @@ export function RoomView({
                 }
               }}
               onFocus={() => {
-                if (window.visualViewport) {
+                if (typeof window !== 'undefined') {
                   window.scrollTo(0, 0)
+                  requestAnimationFrame(() => window.scrollTo(0, 0))
+                  setTimeout(() => window.scrollTo(0, 0), 100)
+                  setTimeout(() => window.scrollTo(0, 0), 300)
+                }
+                if (wasNearBottomRef.current && messageListRef.current) {
+                  const list = messageListRef.current
+                  requestAnimationFrame(() => {
+                    list.scrollTop = list.scrollHeight
+                  })
+                  setTimeout(() => {
+                    list.scrollTop = list.scrollHeight
+                  }, 150)
+                  setTimeout(() => {
+                    list.scrollTop = list.scrollHeight
+                  }, 350)
                 }
               }}
               onPaste={handlePaste}

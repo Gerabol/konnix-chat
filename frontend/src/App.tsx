@@ -11,6 +11,7 @@ import { DesktopShell } from './components/auth/DesktopShell'
 import { LoginView } from './components/auth/LoginView'
 import { RequiredPasswordChangeView } from './components/auth/RequiredPasswordChangeView'
 import { ChatView } from './components/chat/ChatView'
+import { useMobileViewport } from './hooks/useMobileViewport'
 
 // Re-exports for backwards compatibility
 export { AvatarImage, initials } from './components/chat/AvatarImage'
@@ -37,6 +38,7 @@ const initialDesktopServer = isTauri
 if (isTauri) setActiveServer(initialDesktopServer?.url ?? null, initialDesktopServer?.id)
 
 export default function App() {
+  useMobileViewport()
   const [desktopServers, setDesktopServers] = useState(initialDesktopServers)
   const [activeDesktopId, setActiveDesktopId] = useState<string | null>(initialDesktopServer?.id ?? null)
   const [pathname, setPathname] = useState(() => window.location.pathname)

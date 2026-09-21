@@ -4,11 +4,13 @@ import type { DirectoryUser, PresenceStatus, Room, Theme, User } from '../../api
 import type { DmPartner, TypingUser } from '../../types'
 import { presenceLabel } from '../../utils/presence'
 import { getRoomIcon, roomDisplayName } from '../../utils/room'
+import { isTauri } from '../../platform'
 import { isWhiteSidebarLogoTheme } from '../../utils/theme'
 import { IconSearch, IconSettings } from '../icons'
 import { PresenceSelector } from '../settings/PresenceSelector'
 import { UserSettingsMenuContent } from '../settings/UserSettingsMenuContent'
 import { AvatarImage, initials } from './AvatarImage'
+import { SidebarInstallCard } from './SidebarInstallCard'
 import { formatTypingText } from './TypingIndicator'
 
 export interface SidebarProps {
@@ -33,6 +35,9 @@ export interface SidebarProps {
   myAvatarVersion: string
   onInstallApp: () => void
   standalone?: boolean
+  appInstalled?: boolean
+  installCardDismissed?: boolean
+  onDismissInstallCard?: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
   onPresenceError: (message: string) => void
   typingByRoom: Record<string, Record<string, TypingUser>>
@@ -61,6 +66,9 @@ export const Sidebar = memo(function Sidebar({
   myAvatarVersion,
   onInstallApp,
   standalone,
+  appInstalled,
+  installCardDismissed,
+  onDismissInstallCard,
   onPresenceChange,
   onPresenceError,
   typingByRoom,
@@ -186,6 +194,7 @@ export const Sidebar = memo(function Sidebar({
                 onClose={() => setHeaderMenuOpen(false)}
                 onInstallApp={onInstallApp}
                 standalone={standalone}
+                appInstalled={appInstalled}
               />
             </div>
           )}
@@ -612,6 +621,18 @@ export const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
+      {!isTauri && !standalone && !appInstalled && !installCardDismissed && onInstallApp && (
+        <SidebarInstallCard
+          onInstall={() => {
+            onClose?.()
+            onInstallApp()
+          }}
+          onDismiss={() => {
+            onDismissInstallCard?.()
+          }}
+        />
+      )}
+
       <div className="sidebar-footer" ref={footerUserRef}>
         <div
           className="user-menu-trigger"
@@ -657,6 +678,7 @@ export const Sidebar = memo(function Sidebar({
               onClose={() => setFooterMenuOpen(false)}
               onInstallApp={onInstallApp}
               standalone={standalone}
+              appInstalled={appInstalled}
             />
           </div>
         )}

@@ -359,10 +359,13 @@ body {
   -webkit-touch-callout: none;
   overscroll-behavior-y: none;
   position: fixed;
-  inset: 0;
+  top: var(--app-top, 0px);
+  left: var(--app-left, 0px);
+  right: 0;
   width: 100%;
   height: 100%;
   height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
 }
 
 button,
@@ -1533,6 +1536,80 @@ button:disabled {
   border-color: var(--konnix-primary);
 }
 
+.sidebar-install-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 1rem 0.5rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--konnix-border);
+  border-radius: 12px;
+  background: var(--konnix-surface);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--konnix-ink) 6%, transparent);
+}
+
+.sidebar-install-dismiss {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--konnix-border);
+  border-radius: 50%;
+  background: var(--konnix-surface);
+  color: var(--konnix-ink-soft);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--konnix-ink) 12%, transparent);
+}
+
+.sidebar-install-dismiss:hover {
+  background: var(--konnix-bg);
+  color: var(--konnix-ink);
+}
+
+.sidebar-install-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-install-copy strong {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--konnix-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-install-copy span {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--konnix-ink-soft);
+  white-space: nowrap;
+}
+
+.sidebar-install-btn.btn-primary {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
 /* ---- Modal de Download PWA ---- */
 .download-app-modal .modal-card {
   max-width: 480px;
@@ -1543,7 +1620,42 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-  padding: 0.2rem 0;
+  padding: 0;
+}
+
+.download-app-installed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.download-app-installed-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--konnix-ok);
+  background: color-mix(in srgb, var(--konnix-ok) 12%, var(--konnix-surface));
+  color: var(--konnix-ink);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.download-app-installed-check {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--konnix-ok);
+  color: var(--konnix-surface);
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 .download-app-hero {
@@ -2885,6 +2997,11 @@ button:disabled {
   padding-bottom: calc(0.7rem + var(--safe-bottom));
   background: var(--konnix-surface);
   border-top: 1px solid var(--konnix-border);
+}
+
+html.keyboard-open .composer,
+body.keyboard-open .composer {
+  padding-bottom: 0.5rem;
 }
 
 .composer-pending-attachments {
@@ -4991,6 +5108,11 @@ img.room-header-avatar {
   .composer {
     padding: 0.45rem 0.5rem;
     padding-bottom: calc(0.45rem + var(--safe-bottom));
+  }
+
+  html.keyboard-open .composer,
+  body.keyboard-open .composer {
+    padding-bottom: 0.45rem;
   }
 
   .composer-top {

@@ -1,22 +1,9 @@
 import { Modal } from './Modal'
 import { IconDownload } from '../icons'
+import { detectPlatform } from '../../utils/pwa'
+import type { BeforeInstallPromptEvent } from '../../hooks/usePwaInstall'
 
-export interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-}
-
-function detectPlatform(): 'ios' | 'android' | 'desktop' {
-  if (typeof navigator === 'undefined') return 'desktop'
-  const ua = navigator.userAgent.toLowerCase()
-  if (/iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    return 'ios'
-  }
-  if (/android/.test(ua)) {
-    return 'android'
-  }
-  return 'desktop'
-}
+export type { BeforeInstallPromptEvent }
 
 export function DownloadAppModal({
   onClose,
@@ -43,17 +30,28 @@ export function DownloadAppModal({
         </div>
 
         {isInstalled ? (
-          <div className="download-app-installed-notice" style={{
-            background: 'var(--konnix-surface-secondary, rgba(255, 255, 255, 0.06))',
-            border: '1px solid var(--konnix-border)',
-            borderRadius: 'var(--konnix-radius-sm)',
-            padding: '12px 14px',
-            fontSize: '13px',
-            color: 'var(--konnix-text-secondary)',
-            textAlign: 'center',
-            marginBottom: '8px',
-          }}>
-            ✓ O Konnix Chat já está instalado neste dispositivo.
+          <div className="download-app-installed">
+            <div className="download-app-installed-notice" role="status">
+              <span className="download-app-installed-check" aria-hidden="true">✓</span>
+              <span>O Konnix Chat já está instalado neste dispositivo.</span>
+            </div>
+            <div className="download-platform-card">
+              <div className="download-platform-header">
+                <span className="download-platform-badge">
+                  {platform === 'ios' ? 'iPhone / iPad' : platform === 'android' ? 'Android' : 'Computador'}
+                </span>
+                <strong>Como abrir o aplicativo</strong>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: '1.5', color: 'var(--konnix-ink-soft)' }}>
+                {platform === 'ios' ? (
+                  <>Volte para a <strong>Tela de Início</strong> do seu iPhone/iPad e toque no ícone do <strong>Konnix Chat</strong> para abrir o aplicativo instalado.</>
+                ) : platform === 'android' ? (
+                  <>Volte para a <strong>Tela de Início</strong> (ou abra a <strong>gaveta de aplicativos</strong>) e toque no ícone do <strong>Konnix Chat</strong> para abrir o aplicativo instalado.</>
+                ) : (
+                  <>Abra o <strong>Konnix Chat</strong> pelo atalho criado no <strong>menu Iniciar</strong>, na <strong>barra de tarefas</strong> ou na <strong>área de trabalho</strong> para abrir o aplicativo instalado.</>
+                )}
+              </p>
+            </div>
           </div>
         ) : installEvent ? (
           <div className="download-app-cta-box">
