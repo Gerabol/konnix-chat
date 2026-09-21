@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  clearAppInstalledFlag,
   detectInstalledWebApp,
   detectStandalone,
   persistAppInstalledFlag,
-  persistPwaCardDismissed,
-  readAppInstalledFlag,
-  readPwaCardDismissed,
 } from '../utils/pwa'
 
 export interface BeforeInstallPromptEvent extends Event {
@@ -19,8 +15,8 @@ export function usePwaInstall() {
     return (window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt ?? null
   })
   const [standalone, setStandalone] = useState<boolean>(detectStandalone)
-  const [appInstalled, setAppInstalled] = useState<boolean>(() => detectStandalone() || readAppInstalledFlag())
-  const [installCardDismissed, setInstallCardDismissed] = useState<boolean>(readPwaCardDismissed)
+  const [appInstalled, setAppInstalled] = useState<boolean>(detectStandalone)
+  const [installCardDismissed, setInstallCardDismissed] = useState<boolean>(false)
 
   // Listen to beforeinstallprompt and appinstalled
   useEffect(() => {
@@ -29,7 +25,6 @@ export function usePwaInstall() {
       const p = e as BeforeInstallPromptEvent
       ;(window as unknown as { __konnixInstallPrompt?: BeforeInstallPromptEvent }).__konnixInstallPrompt = p
       setInstallEvent(p)
-      clearAppInstalledFlag()
       setAppInstalled(false)
     }
 
@@ -113,7 +108,6 @@ export function usePwaInstall() {
   }, [])
 
   const dismissCard = useCallback(() => {
-    persistPwaCardDismissed()
     setInstallCardDismissed(true)
   }, [])
 

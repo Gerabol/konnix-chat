@@ -29,8 +29,11 @@ export function useMobileViewport() {
 
       const isKeyboardOpen =
         isMobile &&
-        ((vv ? window.innerHeight - vv.height > 80 : false) ||
-          (isInputFocused && vv && window.screen ? window.screen.height - vv.height > 120 : false))
+        isInputFocused &&
+        Boolean(
+          (vv && window.innerHeight - vv.height > 80) ||
+            (vv && window.screen && window.screen.height - vv.height > 120),
+        )
 
       if (isKeyboardOpen) {
         document.documentElement.classList.add('keyboard-open')

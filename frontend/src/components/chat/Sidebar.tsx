@@ -35,7 +35,6 @@ export interface SidebarProps {
   myAvatarVersion: string
   onInstallApp: () => void
   standalone?: boolean
-  appInstalled?: boolean
   installCardDismissed?: boolean
   onDismissInstallCard?: () => void
   onPresenceChange: (status: PresenceStatus) => Promise<User>
@@ -66,7 +65,6 @@ export const Sidebar = memo(function Sidebar({
   myAvatarVersion,
   onInstallApp,
   standalone,
-  appInstalled,
   installCardDismissed,
   onDismissInstallCard,
   onPresenceChange,
@@ -194,7 +192,6 @@ export const Sidebar = memo(function Sidebar({
                 onClose={() => setHeaderMenuOpen(false)}
                 onInstallApp={onInstallApp}
                 standalone={standalone}
-                appInstalled={appInstalled}
               />
             </div>
           )}
@@ -621,7 +618,7 @@ export const Sidebar = memo(function Sidebar({
         )}
       </nav>
 
-      {!isTauri && !standalone && !appInstalled && !installCardDismissed && onInstallApp && (
+      {!isTauri && !standalone && !installCardDismissed && onInstallApp && (
         <SidebarInstallCard
           onInstall={() => {
             onClose?.()
@@ -678,7 +675,6 @@ export const Sidebar = memo(function Sidebar({
               onClose={() => setFooterMenuOpen(false)}
               onInstallApp={onInstallApp}
               standalone={standalone}
-              appInstalled={appInstalled}
             />
           </div>
         )}

@@ -22,7 +22,6 @@ export function UserSettingsMenuContent({
   onClose,
   onInstallApp,
   standalone,
-  appInstalled,
 }: {
   me: User
   onTheme: () => void
@@ -33,7 +32,6 @@ export function UserSettingsMenuContent({
   onClose: () => void
   onInstallApp?: () => void
   standalone?: boolean
-  appInstalled?: boolean
 }) {
   return (
     <>
@@ -83,8 +81,7 @@ export function UserSettingsMenuContent({
           }}
         >
           <IconDownload size={16} />
-          <span style={{ flex: 1 }}>{appInstalled ? 'Aplicativo instalado' : 'Instalar aplicativo'}</span>
-          {appInstalled && <span className="badge" style={{ fontSize: '11px', padding: '1px 6px' }}>Instalado</span>}
+          <span style={{ flex: 1 }}>Baixar aplicativo</span>
         </button>
       )}
       <button

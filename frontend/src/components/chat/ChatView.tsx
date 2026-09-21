@@ -7,7 +7,6 @@ import { isTauri, notifyDesktop } from '../../platform'
 import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
-import { detectInstalledWebApp, persistAppInstalledFlag } from '../../utils/pwa'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
 import { AboutModal } from '../modals/AboutModal'
 import { ConfirmModal } from '../modals/ConfirmModal'
@@ -67,11 +66,9 @@ export function ChatView({
   const {
     installEvent,
     standalone,
-    appInstalled,
     installCardDismissed,
     dismissInstallCard,
     installApp,
-    setAppInstalled,
   } = usePwaInstall()
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
@@ -701,9 +698,7 @@ export function ChatView({
   }, [waitingWorker])
 
   const installAppDirectly = useCallback(async () => {
-    if (appInstalled || (await detectInstalledWebApp())) {
-      persistAppInstalledFlag()
-      setAppInstalled(true)
+    if (standalone) {
       setDownloadModalOpen(true)
       return
     }
@@ -711,7 +706,7 @@ export function ChatView({
     if (!success) {
       setDownloadModalOpen(true)
     }
-  }, [appInstalled, installApp, setAppInstalled])
+  }, [standalone, installApp])
 
   const sendMessage = async (
     content: string,
@@ -932,7 +927,6 @@ export function ChatView({
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
-          appInstalled={appInstalled}
           installCardDismissed={installCardDismissed}
           onDismissInstallCard={dismissInstallCard}
           onPresenceChange={changePresenceManually}
@@ -1045,7 +1039,7 @@ export function ChatView({
           onClose={() => setDownloadModalOpen(false)}
           installEvent={installEvent}
           onInstall={installApp}
-          isInstalled={appInstalled || standalone}
+          isInstalled={standalone}
         />
       )}
       {reportIssueOpen && <ReportIssueModal onClose={() => setReportIssueOpen(false)} notify={modalNotify} />}

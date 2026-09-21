@@ -88,7 +88,10 @@ export function ComposerActionBox({
     }
   }, [open])
 
-  const showPoll = roomType === 'PRIVATE_GROUP' && !readOnlyAccount && !roomReadOnly
+  const showPoll =
+    (roomType === 'PRIVATE_GROUP' || roomType === 'PUBLIC_GROUP' || roomType === 'CHANNEL') &&
+    !readOnlyAccount &&
+    !roomReadOnly
 
   return (
     <div className="composer-action-box" ref={ref}>
