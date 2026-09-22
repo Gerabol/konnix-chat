@@ -41,14 +41,19 @@ export function useMobileViewport() {
         document.documentElement.classList.add('keyboard-open')
         document.body.classList.add('keyboard-open')
       } else {
-        document.documentElement.style.setProperty('--app-height', '100dvh')
-        document.documentElement.style.setProperty('--app-top', '0px')
-        document.documentElement.style.setProperty('--app-left', '0px')
+        document.documentElement.style.removeProperty('--app-height')
+        document.documentElement.style.removeProperty('--app-top')
+        document.documentElement.style.removeProperty('--app-left')
         document.documentElement.classList.remove('keyboard-open')
         document.body.classList.remove('keyboard-open')
         if (wasKeyboardOpen) {
           wasKeyboardOpen = false
           void document.body?.offsetHeight
+          if (typeof window !== 'undefined') {
+            window.scrollTo(0, 0)
+            setTimeout(() => window.scrollTo(0, 0), 100)
+            setTimeout(() => window.scrollTo(0, 0), 300)
+          }
         }
       }
 
