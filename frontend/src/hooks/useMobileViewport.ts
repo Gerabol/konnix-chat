@@ -1,9 +1,18 @@
 import { useEffect } from 'react'
-import { isMobilePlatform } from '../utils/pwa'
+import { detectPlatform, detectStandalone, isMobilePlatform } from '../utils/pwa'
 
 export function useMobileViewport() {
   useEffect(() => {
     if (typeof window === 'undefined') return
+
+    const platform = detectPlatform()
+    const isStandalone = detectStandalone()
+    if (platform === 'ios') {
+      document.documentElement.classList.add('is-ios')
+    }
+    if (isStandalone) {
+      document.documentElement.classList.add('is-standalone')
+    }
 
     let wasKeyboardOpen = false
 
@@ -102,6 +111,8 @@ export function useMobileViewport() {
       document.documentElement.style.removeProperty('--app-top')
       document.documentElement.style.removeProperty('--app-left')
       document.documentElement.classList.remove('keyboard-open')
+      document.documentElement.classList.remove('is-ios')
+      document.documentElement.classList.remove('is-standalone')
       document.body?.classList.remove('keyboard-open')
     }
   }, [])
