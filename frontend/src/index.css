@@ -4331,6 +4331,11 @@ img.room-header-avatar {
   white-space: nowrap;
 }
 
+.read-receipts-modal .modal-actions,
+.reaction-users-modal .modal-actions {
+  margin-top: 0;
+}
+
 /* ---- Banners ---- */
 .offline-banner {
   display: flex;

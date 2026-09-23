@@ -6,6 +6,7 @@ import { usePwaInstall } from '../../hooks/usePwaInstall'
 import { isTauri, notifyDesktop } from '../../platform'
 import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
+import { isMobilePlatform } from '../../utils/pwa'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
 import { AboutModal } from '../modals/AboutModal'
@@ -76,6 +77,8 @@ export function ChatView({
 
   const activeRoomIdRef = useRef(activeRoomId)
   activeRoomIdRef.current = activeRoomId
+  const sidebarOpenRef = useRef(sidebarOpen)
+  sidebarOpenRef.current = sidebarOpen
   const pendingDmRef = useRef(pendingDm)
   pendingDmRef.current = pendingDm
   const roomsRef = useRef(rooms)
@@ -287,6 +290,7 @@ export function ChatView({
       const requestId = ++roomLoadRequestRef.current
       isInitializingConversationRef.current = true
       setActiveRoomId(roomId)
+      window.history.pushState({ konnix: 'room' }, '')
       setMessages([])
       setHasMore(false)
       setNextBefore(null)
@@ -312,6 +316,54 @@ export function ChatView({
     },
     [showToast],
   )
+
+  const openSidebar = useCallback(() => {
+    if (isMobilePlatform()) {
+      window.history.pushState({ konnix: 'sidebar' }, '')
+    }
+    setSidebarOpen(true)
+  }, [])
+
+  const closeSidebar = useCallback(() => {
+    if (isMobilePlatform() && window.history.state && window.history.state.konnix === 'sidebar') {
+      window.history.back()
+    } else {
+      setSidebarOpen(false)
+    }
+  }, [])
+
+  const closeRoom = useCallback(() => {
+    roomLoadRequestRef.current += 1
+    setActiveRoomId(null)
+    setMessages([])
+    setLoadingRoom(false)
+    setHasMore(false)
+    setNextBefore(null)
+    setPendingDm(null)
+    setSidebarOpen(true)
+  }, [])
+
+  const requestBack = useCallback(() => {
+    if (window.history.state && window.history.state.konnix === 'room') {
+      window.history.back()
+    } else {
+      closeRoom()
+    }
+  }, [closeRoom])
+
+  useEffect(() => {
+    const handleBack = () => {
+      if (activeRoomIdRef.current) {
+        closeRoom()
+        return
+      }
+      if (isMobilePlatform() && sidebarOpenRef.current) {
+        setSidebarOpen(false)
+      }
+    }
+    window.addEventListener('popstate', handleBack)
+    return () => window.removeEventListener('popstate', handleBack)
+  }, [closeRoom])
 
   useEffect(() => {
     api
@@ -809,6 +861,7 @@ export function ChatView({
         presenceStatus: partner?.presenceStatus,
       })
       setActiveRoomId(`pending:${userId}`)
+      window.history.pushState({ konnix: 'room' }, '')
       setMessages([])
       setHasMore(false)
       setNextBefore(null)
@@ -911,7 +964,7 @@ export function ChatView({
   return (
     <div className="chat-shell">
       <div className={`chat-body ${sidebarOpen ? 'sidebar-open' : ''}`}>
-        {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+        {sidebarOpen && <div className="sidebar-overlay" onClick={closeSidebar} />}
         <Sidebar
           me={me}
           theme={effectiveTheme}
@@ -941,12 +994,12 @@ export function ChatView({
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
           avatarVersions={avatarVersions}
-          onClose={() => setSidebarOpen(false)}
+          onClose={closeSidebar}
         />
 
         <main className="main">
           {!activeRoom ? (
-            <EmptyState onOpenSidebar={() => setSidebarOpen(true)} />
+            <EmptyState onOpenSidebar={openSidebar} />
           ) : (
             <RoomView
               room={activeRoom}
@@ -963,10 +1016,7 @@ export function ChatView({
               avatarVersions={avatarVersions}
               typingUsers={typingByRoom[activeRoom.id]}
               onTyping={(isTyping) => sendTypingStatus(activeRoom.id, isTyping)}
-              onBack={() => {
-                setActiveRoomId(null)
-                setSidebarOpen(true)
-              }}
+              onBack={requestBack}
               onSend={sendMessage}
               onInitialPositioned={() => {
                 isInitializingConversationRef.current = false
