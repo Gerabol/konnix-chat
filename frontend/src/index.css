@@ -4602,8 +4602,11 @@ img.room-header-avatar {
 .forward-list { display: flex; max-height: 320px; margin-top: 0.7rem; flex-direction: column; gap: 2px; overflow-y: auto; }
 .forward-user { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem; border: 0; border-radius: 7px; background: transparent; color: var(--konnix-ink); text-align: left; }
 .forward-user:hover { background: var(--konnix-bg); }
+.forward-user.selected { background: color-mix(in srgb, var(--konnix-primary) 10%, var(--konnix-surface)); }
 .forward-user span { display: flex; flex-direction: column; gap: 0.1rem; }
 .forward-user small { color: var(--konnix-ink-soft); font-size: 0.72rem; }
+.forward-modal.admin-modal > .input { display: block; width: calc(100% - 60px); max-width: none; margin-top: 1rem; margin-bottom: 0.75rem; min-height: 44px; padding: 0.65rem 0.75rem; }
+.forward-modal > .forward-list { margin-top: 0; }
 
 /* ---- Responsivo ---- */
 .sidebar-overlay {
@@ -6635,11 +6638,10 @@ img.room-header-avatar {
   .api-endpoint-title { display: none; }
   .api-detail-head { flex-direction: column; }
   .modal-overlay,
-  .admin-modal-overlay { padding: 10px; padding-top: calc(10px + var(--safe-top, 0px)); padding-bottom: calc(10px + var(--safe-bottom, 0px)); }
-
-  .members-modal-overlay { align-items: flex-start; padding: 20px 10px; padding-top: calc(20px + var(--safe-top, 0px)); padding-bottom: calc(20px + var(--safe-bottom, 0px)); }
+  .admin-modal-overlay,
+  .members-modal-overlay { padding: 20px 10px; padding-top: calc(20px + var(--safe-top, 0px)); padding-bottom: calc(20px + var(--safe-bottom, 0px)); }
   .modal,
-  .admin-modal { width: calc(100vw - 20px); max-height: calc(var(--app-height, 100dvh) - 20px); }
+  .admin-modal { width: calc(100vw - 20px); max-height: calc(var(--app-height, 100dvh) - 40px); }
   .modal-head,
   .admin-modal .modal-head { padding: 18px 18px 12px; }
   .modal-content { padding: 0 18px 18px; }
@@ -6649,6 +6651,7 @@ img.room-header-avatar {
   .admin-modal > .input,
   .admin-modal > .forward-list,
   .admin-modal > .modal-actions { margin-left: 18px; margin-right: 18px; }
+  .forward-modal.admin-modal > .input { width: calc(100% - 36px); }
   .admin-modal .modal-close { top: 14px; right: 14px; }
   .admin-header {
     flex-direction: row;
