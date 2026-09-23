@@ -3,7 +3,7 @@ import { api, ApiError, wsUrl } from '../../api'
 import type { DirectoryUser, Message, MessageReaction, PresenceStatus, ReadReceipt, Room, Theme, User } from '../../api'
 import { useOnline } from '../../hooks/useOnline'
 import { usePwaInstall } from '../../hooks/usePwaInstall'
-import { isTauri, notifyDesktop } from '../../platform'
+import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
 import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
@@ -415,9 +415,34 @@ export function ChatView({
             if (isIncomingRelevant) {
               const room = roomsRef.current.find((r) => r.id === msg.roomId)
               const label = room ? roomDisplayName(room) : 'Chat'
-              const snippet = msg.content.replace(/\s+/g, ' ').trim()
-              const body = snippet ? `${msg.username}: ${snippet}` : `${msg.username} enviou um anexo`
-              if (appInBackground) {
+              const isDirect = room?.type === 'DIRECT'
+              const notifTitle = isDirect ? (msg.username || 'Konnix Chat') : `${label} • ${msg.username}`
+
+              let snippet = msg.content?.replace(/\s+/g, ' ').trim() || ''
+              if (!snippet && msg.attachment) {
+                if (msg.attachment.mimeType?.startsWith('audio/')) {
+                  snippet = '🎤 Mensagem de áudio'
+                } else if (msg.attachment.mimeType?.startsWith('image/')) {
+                  snippet = '📷 Enviou uma foto'
+                } else {
+                  snippet = `📎 Arquivo: ${msg.attachment.originalName || 'Anexo'}`
+                }
+              } else if (!snippet && msg.poll) {
+                snippet = `📊 Enquete: ${msg.poll.question}`
+              }
+              const notifBody = snippet || 'Nova mensagem'
+
+              // Respeitar status de presença: se ocupado ou em missão, só notifica DM ou menção direta
+              const currentPresence = presenceStatusRef.current
+              const isMentioned = Boolean(
+                msg.content &&
+                  me.username &&
+                  msg.content.toLowerCase().includes(`@${me.username.toLowerCase()}`)
+              )
+              const suppressNotification =
+                (currentPresence === 'busy' || currentPresence === 'mission') && !isDirect && !isMentioned
+
+              if (appInBackground && !suppressNotification) {
                 let enabled = false
                 try {
                   enabled = localStorage.getItem('konnix-system-notifications') === 'true'
@@ -426,13 +451,13 @@ export function ChatView({
                 }
                 if (enabled) {
                   if (isTauri) {
-                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    void notifyDesktop(notifTitle, notifBody, msg.roomId).catch(() => undefined)
                   } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                    void notifyDesktop('Konnix Chat', body, msg.roomId).catch(() => undefined)
+                    void notifyDesktop(notifTitle, notifBody, msg.roomId).catch(() => undefined)
                   }
                 }
-              } else if (!isActiveRoom) {
-                showToast(`${label} • ${body}`)
+              } else if (!isActiveRoom && !suppressNotification) {
+                showToast(`${notifTitle}: ${notifBody}`)
               }
             }
           } else if (evt.type === 'chat.typing') {
@@ -669,6 +694,11 @@ export function ChatView({
       window.removeEventListener('konnix:navigate', onDesktopNotification)
     }
   }, [openRoom])
+
+  useEffect(() => {
+    const totalUnread = rooms.reduce((acc, r) => acc + (r.unreadCount || 0), 0)
+    updateAppBadge(totalUnread)
+  }, [rooms])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return

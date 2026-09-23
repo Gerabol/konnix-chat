@@ -10,13 +10,19 @@ export function appEnvironment(): AppEnvironment {
 
 export async function notifyDesktop(title: string, body: string, roomId?: string): Promise<void> {
   if (!isTauri && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
-  const notification = new Notification(title, { body, tag: roomId })
+  const notification = new Notification(title, {
+    body,
+    tag: roomId ? `konnix-room-${roomId}` : 'konnix-message',
+  })
   notification.onclick = () => {
     window.focus()
     if (isTauri) {
       void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
         const appWindow = getCurrentWindow()
-        return appWindow.show().then(() => appWindow.setFocus())
+        return appWindow.unminimize()
+          .catch(() => undefined)
+          .then(() => appWindow.show())
+          .then(() => appWindow.setFocus())
       }).catch(() => undefined)
     }
     if (roomId) window.dispatchEvent(new CustomEvent('konnix:navigate', { detail: { roomId } }))
@@ -33,7 +39,9 @@ export async function listenDesktopNotificationAction(onRoomClick?: (roomId: str
   const listener = await onAction((notification) => {
     const window = getCurrentWindow()
     const roomId = notification.extra?.roomId
-    void window.show()
+    void window.unminimize()
+      .catch(() => undefined)
+      .then(() => window.show())
       .then(() => window.setFocus())
       .catch(() => undefined)
       .finally(() => {
@@ -41,6 +49,30 @@ export async function listenDesktopNotificationAction(onRoomClick?: (roomId: str
       })
   })
   return () => { void listener.unregister() }
+}
+
+export function updateAppBadge(count: number): void {
+  if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+    try {
+      if (count > 0) {
+        void (navigator as unknown as { setAppBadge: (c: number) => Promise<void> }).setAppBadge(count).catch(() => undefined)
+      } else {
+        void (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => undefined)
+      }
+    } catch {
+      /* Graceful fallback where unsupported */
+    }
+  }
+}
+
+export function clearAppBadge(): void {
+  if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
+    try {
+      void (navigator as unknown as { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => undefined)
+    } catch {
+      /* Graceful fallback where unsupported */
+    }
+  }
 }
 
 export async function setDesktopAutostart(enabled: boolean): Promise<void> {

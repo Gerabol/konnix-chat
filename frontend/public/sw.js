@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v12';
+const VERSION = 'konnix-shell-v13';
 
 const CORE_ASSETS = [
   '/',
@@ -87,18 +87,37 @@ self.addEventListener('push', (event) => {
   }
   event.waitUntil(
     (async () => {
-      // Se houver alguma aba do app aberta, o WebSocket já emite a notificação
-      // (new Notification). Evita notificação duplicada do push.
+      // Se houver uma janela aberta E visível/focada pelo usuário, o WebSocket da página
+      // em primeiro plano já cuida da notificação e do som. Se todas as janelas estiverem
+      // minimizadas, em segundo plano (document.hidden) ou fechadas, exibe a notificação push.
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      if (clients.length > 0) return;
+      const isForegroundAndFocused = clients.some(
+        (c) => c.visibilityState === 'visible' && c.focused
+      );
+      if (isForegroundAndFocused) return;
+
+      const roomId = payload.data?.roomId;
       await self.registration.showNotification(payload.title, {
         body: payload.body,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
-        tag: 'konnix-message',
-        renotify: false,
+        tag: roomId ? `konnix-room-${roomId}` : 'konnix-message',
+        renotify: true,
         data: payload.data || {},
       });
+
+      // Atualiza o app badge no PWA se suportado
+      if ('setAppBadge' in self.navigator && typeof payload.data?.unreadCount === 'number') {
+        try {
+          if (payload.data.unreadCount > 0) {
+            await self.navigator.setAppBadge(payload.data.unreadCount);
+          } else {
+            await self.navigator.clearAppBadge();
+          }
+        } catch {
+          /* ignore badge failure */
+        }
+      }
     })()
   );
 });
@@ -107,17 +126,24 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
   const target = data.url || '/';
+  const roomId = data.roomId || null;
+
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clients) {
         if ('focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'konnix:navigate', url: target, roomId: data.roomId || null });
+          await client.focus();
+          client.postMessage({ type: 'konnix:navigate', url: target, roomId });
           return;
         }
       }
-      await self.clients.openWindow(target);
+      const newClient = await self.clients.openWindow(target);
+      if (newClient && roomId) {
+        setTimeout(() => {
+          newClient.postMessage({ type: 'konnix:navigate', url: target, roomId });
+        }, 1000);
+      }
     })()
   );
 });
