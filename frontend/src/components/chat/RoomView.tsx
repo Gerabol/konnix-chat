@@ -1692,7 +1692,18 @@ export function RoomView({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => chooseMention(member)}
                   >
-                    <span className="mini-avatar">{initials(member.name || member.username)}</span>
+                    <AvatarImage
+                      path={`${userAvatarPath(member.userId)}${
+                        avatarVersions?.[member.userId]
+                          ? `?v=${encodeURIComponent(avatarVersions[member.userId])}`
+                          : member.joinedAt
+                          ? `?v=${encodeURIComponent(member.joinedAt)}`
+                          : ''
+                      }`}
+                      className="mini-avatar"
+                      fallback={<span className="mini-avatar">{initials(member.name || member.username)}</span>}
+                      alt={member.name || member.username}
+                    />
                     <span className="picker-item-text">
                       <strong>{member.name || member.username}</strong>
                       <small>@{member.username}</small>
