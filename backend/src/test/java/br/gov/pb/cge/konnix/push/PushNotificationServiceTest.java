@@ -1,6 +1,7 @@
 package br.gov.pb.cge.konnix.push;
 
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
+import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.domain.push.PushSubscription;
 import br.gov.pb.cge.konnix.domain.push.PushSubscriptionRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
@@ -29,9 +30,10 @@ class PushNotificationServiceTest {
 
     private final PushSubscriptionRepository repository = mock(PushSubscriptionRepository.class);
     private final PushSender sender = mock(PushSender.class);
+    private final MessageRepository messageRepository = mock(MessageRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PushNotificationService service =
-            new PushNotificationService(repository, sender, objectMapper, Runnable::run);
+            new PushNotificationService(repository, sender, objectMapper, messageRepository, Runnable::run);
 
     @Test
     void naoNotificaAutor() throws Exception {
@@ -48,19 +50,45 @@ class PushNotificationServiceTest {
     }
 
     @Test
-    void payloadSemConteudoSensivel() throws Exception {
+    void payloadSemConteudoSensivelEComUnreadCount() throws Exception {
         UUID roomId = UUID.randomUUID();
         UUID messageId = UUID.randomUUID();
 
-        String payload = service.buildPayload(messageId, roomId, "Grupo Financeiro", "joao");
+        String payload = service.buildPayload(messageId, roomId, "Grupo Financeiro", "joao", 3L);
 
         JsonNode node = objectMapper.readTree(payload);
         assertThat(node.path("title").asText()).isEqualTo("Konnix Chat");
         assertThat(node.path("body").asText()).isEqualTo("Nova mensagem de joao em Grupo Financeiro");
+        assertThat(node.path("unreadCount").asLong()).isEqualTo(3L);
         assertThat(node.path("data").path("url").asText()).isEqualTo("/room/" + roomId);
         assertThat(node.path("data").path("roomId").asText()).isEqualTo(roomId.toString());
         assertThat(node.path("data").path("messageId").asText()).isEqualTo(messageId.toString());
+        assertThat(node.path("data").path("unreadCount").asLong()).isEqualTo(3L);
         assertThat(payload).doesNotContain("joao disse");
+    }
+
+    @Test
+    void payloadDirectMessageAjustaTexto() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+
+        String payload = service.buildPayload(messageId, roomId, "maria", "maria", 1L);
+
+        JsonNode node = objectMapper.readTree(payload);
+        assertThat(node.path("body").asText()).isEqualTo("Nova mensagem de maria");
+    }
+
+    @Test
+    void notifyNewMessageCalculaUnreadCountDoDestinatario() throws Exception {
+        UUID authorId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        PushSubscription otherSub = subscription(otherId, "https://push.example.com/destinatario");
+        when(repository.findByRoomId(any())).thenReturn(List.of(otherSub));
+        when(messageRepository.countTotalUnreadByUserId(otherId)).thenReturn(7L);
+
+        service.notifyNewMessage(UUID.randomUUID(), message(authorId, "carlos", "olá"), "Geral");
+
+        verify(sender).send(eq(otherSub), org.mockito.ArgumentMatchers.contains("\"unreadCount\":7"));
     }
 
     @Test

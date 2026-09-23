@@ -318,6 +318,17 @@ export function ChatView({
     [showToast],
   )
 
+  const deepLinkedRoomHandledRef = useRef(false)
+
+  useEffect(() => {
+    if (deepLinkedRoomHandledRef.current) return
+    const match = window.location.pathname.match(/^\/room\/([a-f0-9-]+)/i)
+    if (match && match[1]) {
+      deepLinkedRoomHandledRef.current = true
+      void openRoom(match[1])
+    }
+  }, [openRoom])
+
   const openSidebar = useCallback(() => {
     if (isMobilePlatform()) {
       window.history.pushState({ konnix: 'sidebar' }, '')
@@ -683,14 +694,23 @@ export function ChatView({
     const onVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         const currentWs = wsRef.current
-        if (!currentWs || currentWs.readyState === WebSocket.CLOSED) {
+        if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
           connect()
         }
+        void loadRooms()
         const activeRoom = activeRoomIdRef.current
         if (activeRoom && !activeRoom.startsWith('pending:')) {
           setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
           void api.markRoomRead(activeRoom).catch(() => undefined)
+          void api.messages(activeRoom, 50).then((res) => {
+            if (activeRoomIdRef.current === activeRoom) {
+              setMessages(res.messages)
+              setHasMore(res.hasMore)
+              setNextBefore(res.nextBefore)
+            }
+          }).catch(() => undefined)
         }
+        void syncPushSubscription().catch(() => undefined)
       }
     }
     document.addEventListener('visibilitychange', onVisibilityOrFocus)

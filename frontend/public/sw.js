@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v14';
+const VERSION = 'konnix-shell-v15';
 
 const CORE_ASSETS = [
   '/',
@@ -96,10 +96,24 @@ self.addEventListener('push', (event) => {
       );
       if (isForegroundAndFocused) return;
 
+      const roomId = payload.data?.roomId;
       const messageId = payload.data?.messageId;
       const notificationTag = messageId
         ? `konnix-msg-${messageId}`
-        : `konnix-msg-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`);
+
+      let unreadCount = typeof payload.data?.unreadCount === 'number'
+        ? payload.data.unreadCount
+        : (typeof payload.unreadCount === 'number' ? payload.unreadCount : null);
+
+      if (unreadCount === null) {
+        try {
+          const existing = await self.registration.getNotifications();
+          unreadCount = existing.length + 1;
+        } catch {
+          unreadCount = 1;
+        }
+      }
 
       await self.registration.showNotification(payload.title, {
         body: payload.body,
@@ -109,14 +123,19 @@ self.addEventListener('push', (event) => {
         renotify: true,
         vibrate: [200, 100, 200],
         timestamp: Date.now(),
-        data: payload.data || {},
+        data: {
+          ...(payload.data || {}),
+          unreadCount,
+          url: payload.data?.url || (roomId ? `/room/${roomId}` : '/'),
+          roomId: roomId || null,
+        },
       });
 
-      // Atualiza o app badge no PWA se suportado
-      if ('setAppBadge' in self.navigator && typeof payload.data?.unreadCount === 'number') {
+      // Atualiza o app badge no PWA mobile se suportado
+      if ('setAppBadge' in self.navigator) {
         try {
-          if (payload.data.unreadCount > 0) {
-            await self.navigator.setAppBadge(payload.data.unreadCount);
+          if (unreadCount > 0) {
+            await self.navigator.setAppBadge(unreadCount);
           } else {
             await self.navigator.clearAppBadge();
           }
@@ -131,11 +150,25 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
-  const target = data.url || '/';
   const roomId = data.roomId || null;
+  const target = data.url || (roomId ? `/room/${roomId}` : '/');
 
   event.waitUntil(
     (async () => {
+      // Ajusta o badge ao clicar em uma notificação
+      try {
+        const notifs = await self.registration.getNotifications();
+        if ('setAppBadge' in self.navigator) {
+          if (notifs.length > 0) {
+            await self.navigator.setAppBadge(notifs.length);
+          } else {
+            await self.navigator.clearAppBadge();
+          }
+        }
+      } catch {
+        /* ignore badge failure */
+      }
+
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clients) {
         if ('focus' in client) {
@@ -154,8 +187,53 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// Renovação automática de subscrição push caso o browser rotacione o token (comum após 24h+)
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const keyRes = await fetch('/api/v1/push/public-key').catch(() => null);
+        if (!keyRes || !keyRes.ok) return;
+        const keyJson = await keyRes.json();
+        const pubKey = keyJson?.data?.publicKey;
+        if (!pubKey) return;
+
+        const padded = pubKey.replace(/-/g, '+').replace(/_/g, '/');
+        const normalized = padded.padEnd(Math.ceil(padded.length / 4) * 4, '=');
+        const binary = atob(normalized);
+        const keyBytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) keyBytes[i] = binary.charCodeAt(i);
+
+        const newSub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes,
+        });
+
+        const toB64Url = (bytes) => {
+          let bin = '';
+          for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+          return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        };
+
+        await fetch('/api/v1/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: newSub.endpoint,
+            p256dh: toB64Url(new Uint8Array(newSub.getKey('p256dh'))),
+            auth: toB64Url(new Uint8Array(newSub.getKey('auth'))),
+          }),
+        });
+      } catch (err) {
+        console.warn('Falha na renovação da subscrição push:', err);
+      }
+    })()
+  );
+});
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'konnix:skipWaiting') {
     self.skipWaiting();
   }
 });
+

@@ -11,23 +11,50 @@ export function appEnvironment(): AppEnvironment {
 export async function notifyDesktop(title: string, body: string, roomId?: string): Promise<void> {
   if (!isTauri && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
   const tag = roomId ? `konnix-msg-${roomId}-${Date.now()}` : `konnix-msg-${Date.now()}`
-  const notification = new Notification(title, {
-    body,
-    tag,
-  })
-  notification.onclick = () => {
-    window.focus()
-    if (isTauri) {
-      void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-        const appWindow = getCurrentWindow()
-        return appWindow.unminimize()
-          .catch(() => undefined)
-          .then(() => appWindow.show())
-          .then(() => appWindow.setFocus())
-      }).catch(() => undefined)
+
+  // Em navegadores mobile (ex: Android Chrome), `new Notification()` no contexto da janela é proibido
+  // e lança TypeError. O caminho padrão e suportado é ServiceWorkerRegistration.showNotification().
+  if (!isTauri && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready
+      if (reg && 'showNotification' in reg) {
+        await reg.showNotification(title, {
+          body,
+          tag,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          renotify: true,
+          data: { roomId, url: roomId ? `/room/${roomId}` : '/' },
+        } as NotificationOptions)
+        return
+      }
+    } catch {
+      /* fallback para Notification() */
     }
-    if (roomId) window.dispatchEvent(new CustomEvent('konnix:navigate', { detail: { roomId } }))
-    notification.close()
+  }
+
+  try {
+    const notification = new Notification(title, {
+      body,
+      tag,
+      icon: '/icons/icon-192.png',
+    })
+    notification.onclick = () => {
+      window.focus()
+      if (isTauri) {
+        void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+          const appWindow = getCurrentWindow()
+          return appWindow.unminimize()
+            .catch(() => undefined)
+            .then(() => appWindow.show())
+            .then(() => appWindow.setFocus())
+        }).catch(() => undefined)
+      }
+      if (roomId) window.dispatchEvent(new CustomEvent('konnix:navigate', { detail: { roomId } }))
+      notification.close()
+    }
+  } catch {
+    /* ignore fallback failure */
   }
 }
 

@@ -1,6 +1,7 @@
 package br.gov.pb.cge.konnix.push;
 
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
+import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.domain.push.PushSubscription;
 import br.gov.pb.cge.konnix.domain.push.PushSubscriptionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -26,22 +27,26 @@ public class PushNotificationService {
     private final PushSubscriptionRepository subscriptionRepository;
     private final PushSender pushSender;
     private final ObjectMapper objectMapper;
+    private final MessageRepository messageRepository;
     private final Executor executor;
 
     @Autowired
     public PushNotificationService(PushSubscriptionRepository subscriptionRepository,
                                    PushSender pushSender,
-                                   ObjectMapper objectMapper) {
-        this(subscriptionRepository, pushSender, objectMapper, ForkJoinPool.commonPool());
+                                   ObjectMapper objectMapper,
+                                   @Autowired(required = false) MessageRepository messageRepository) {
+        this(subscriptionRepository, pushSender, objectMapper, messageRepository, ForkJoinPool.commonPool());
     }
 
     public PushNotificationService(PushSubscriptionRepository subscriptionRepository,
                                    PushSender pushSender,
                                    ObjectMapper objectMapper,
+                                   MessageRepository messageRepository,
                                    Executor executor) {
         this.subscriptionRepository = subscriptionRepository;
         this.pushSender = pushSender;
         this.objectMapper = objectMapper;
+        this.messageRepository = messageRepository;
         this.executor = executor != null ? executor : ForkJoinPool.commonPool();
     }
 
@@ -60,7 +65,18 @@ public class PushNotificationService {
                     if (Set.of("busy", "vacation").contains(subscription.getUser().getPresenceStatus())) {
                         continue;
                     }
-                    String payload = buildPayload(message.id(), roomId, roomDisplayName, author);
+
+                    long unreadCount = 1L;
+                    if (messageRepository != null) {
+                        try {
+                            long total = messageRepository.countTotalUnreadByUserId(subscription.getUser().getId());
+                            unreadCount = total > 0 ? total : 1L;
+                        } catch (Exception e) {
+                            log.debug("Não foi possível calcular unreadCount para o usuário {}", subscription.getUser().getId(), e);
+                        }
+                    }
+
+                    String payload = buildPayload(message.id(), roomId, roomDisplayName, author, unreadCount);
                     try {
                         pushSender.send(subscription, payload);
                     } catch (HttpResponseException e) {
@@ -81,14 +97,27 @@ public class PushNotificationService {
     }
 
     public String buildPayload(UUID messageId, UUID roomId, String roomDisplayName, String author) {
+        return buildPayload(messageId, roomId, roomDisplayName, author, 1L);
+    }
+
+    public String buildPayload(UUID messageId, UUID roomId, String roomDisplayName, String author, long unreadCount) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("url", "/room/" + roomId);
         data.put("roomId", roomId);
         data.put("messageId", messageId);
+        data.put("unreadCount", unreadCount);
+
+        String bodyText;
+        if (roomDisplayName == null || roomDisplayName.isBlank() || roomDisplayName.equalsIgnoreCase(author)) {
+            bodyText = "Nova mensagem de " + author;
+        } else {
+            bodyText = "Nova mensagem de " + author + " em " + roomDisplayName;
+        }
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("title", "Konnix Chat");
-        payload.put("body", "Nova mensagem de " + author + " em " + roomDisplayName);
+        payload.put("body", bodyText);
+        payload.put("unreadCount", unreadCount);
         payload.put("data", data);
         try {
             return objectMapper.writeValueAsString(payload);

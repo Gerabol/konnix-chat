@@ -4,6 +4,7 @@ import br.gov.pb.cge.konnix.domain.push.PushSubscription;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
 import nl.martijndwars.webpush.Subscription;
+import nl.martijndwars.webpush.Urgency;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpResponseException;
 import org.apache.http.util.EntityUtils;
@@ -32,7 +33,7 @@ public class WebPushSender implements PushSender {
     public void send(PushSubscription subscription, String payload) throws Exception {
         Subscription keys = new Subscription(subscription.getEndpoint(),
                 new Subscription.Keys(subscription.getP256dh(), subscription.getAuth()));
-        HttpResponse response = pushService.send(new Notification(keys, payload));
+        HttpResponse response = pushService.send(new Notification(keys, payload, Urgency.HIGH));
         int statusCode = response.getStatusLine().getStatusCode();
 
         if (statusCode == 201) {
