@@ -1,4 +1,4 @@
-﻿# Modo desenvolvimento com hot reload
+# Modo desenvolvimento com hot reload
 # Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # Frontend: Vite HMR via volume montado (polling ativo no vite.config.ts)
@@ -27,7 +27,7 @@ services:
 
       KONNIX_VAPID_PUBLIC_KEY: ${KONNIX_VAPID_PUBLIC_KEY:-}
       KONNIX_VAPID_PRIVATE_KEY: ${KONNIX_VAPID_PRIVATE_KEY:-}
-      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:konnix@konnix.local}
+      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:suporte@cge.pb.gov.br}
 
 volumes:
   konnix_maven_cache:

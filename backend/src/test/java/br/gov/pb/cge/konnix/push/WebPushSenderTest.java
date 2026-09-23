@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -27,7 +28,7 @@ class WebPushSenderTest {
     void aceitaStatus201CreatedComSucesso() throws Exception {
         PushService pushService = mock(PushService.class);
         HttpResponse response = new BasicHttpResponse(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 201, "Created"));
-        when(pushService.send(any(Notification.class))).thenReturn(response);
+        when(pushService.send(any(Notification.class), eq(nl.martijndwars.webpush.Encoding.AES128GCM))).thenReturn(response);
 
         WebPushSender sender = new WebPushSender(settings);
         ReflectionTestUtils.setField(sender, "pushService", pushService);
@@ -37,11 +38,25 @@ class WebPushSenderTest {
     }
 
     @Test
+    void enviaCorretamenteParaEndpointAppleApnsComAes128Gcm() throws Exception {
+        PushService pushService = mock(PushService.class);
+        HttpResponse response = new BasicHttpResponse(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 201, "Created"));
+        when(pushService.send(any(Notification.class), eq(nl.martijndwars.webpush.Encoding.AES128GCM))).thenReturn(response);
+
+        WebPushSender sender = new WebPushSender(settings);
+        ReflectionTestUtils.setField(sender, "pushService", pushService);
+
+        PushSubscription sub = sampleSubscription();
+        sub.setEndpoint("https://web.push.apple.com/QD3...example-ios-token");
+        assertThatCode(() -> sender.send(sub, "{\"title\":\"iOS Test\"}")).doesNotThrowAnyException();
+    }
+
+    @Test
     void lancaExcecaoComStatus410QuandoExpirada() throws Exception {
         PushService pushService = mock(PushService.class);
         BasicHttpResponse response = new BasicHttpResponse(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 410, "Gone"));
         response.setEntity(new StringEntity("subscription has expired"));
-        when(pushService.send(any(Notification.class))).thenReturn(response);
+        when(pushService.send(any(Notification.class), eq(nl.martijndwars.webpush.Encoding.AES128GCM))).thenReturn(response);
 
         WebPushSender sender = new WebPushSender(settings);
         ReflectionTestUtils.setField(sender, "pushService", pushService);
@@ -57,7 +72,7 @@ class WebPushSenderTest {
         PushService pushService = mock(PushService.class);
         BasicHttpResponse response = new BasicHttpResponse(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 401, "Unauthorized"));
         response.setEntity(new StringEntity("Unauthorized"));
-        when(pushService.send(any(Notification.class))).thenReturn(response);
+        when(pushService.send(any(Notification.class), eq(nl.martijndwars.webpush.Encoding.AES128GCM))).thenReturn(response);
 
         WebPushSender sender = new WebPushSender(settings);
         ReflectionTestUtils.setField(sender, "pushService", pushService);

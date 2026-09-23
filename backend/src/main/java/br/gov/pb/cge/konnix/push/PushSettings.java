@@ -32,20 +32,22 @@ public class PushSettings {
         Security.addProvider(new BouncyCastleProvider());
     }
 
+    public static final String DEFAULT_SUBJECT = "mailto:suporte@cge.pb.gov.br";
+
     private final String publicKey;
     private final String privateKey;
     private final String subject;
 
     public PushSettings(@Value("${konnix.vapid.public-key:}") String publicKey,
                         @Value("${konnix.vapid.private-key:}") String privateKey,
-                        @Value("${konnix.vapid.subject:mailto:konnix@localhost}") String subject) {
+                        @Value("${konnix.vapid.subject:mailto:suporte@cge.pb.gov.br}") String subject) {
         this(publicKey, privateKey, subject, null);
     }
 
     @Autowired
     public PushSettings(@Value("${konnix.vapid.public-key:}") String publicKey,
                         @Value("${konnix.vapid.private-key:}") String privateKey,
-                        @Value("${konnix.vapid.subject:mailto:konnix@localhost}") String subject,
+                        @Value("${konnix.vapid.subject:mailto:suporte@cge.pb.gov.br}") String subject,
                         @Autowired(required = false) AppSettingRepository appSettingRepository) {
         String resolvedPub = publicKey;
         String resolvedPriv = privateKey;
@@ -76,7 +78,25 @@ public class PushSettings {
         }
         this.publicKey = resolvedPub;
         this.privateKey = resolvedPriv;
-        this.subject = subject;
+        this.subject = sanitizeSubject(subject);
+    }
+
+    static String sanitizeSubject(String subject) {
+        if (isBlank(subject)) {
+            return DEFAULT_SUBJECT;
+        }
+        String trimmed = subject.trim();
+        // Gateways rigorosos como Apple APNs (web.push.apple.com) rejeitam com HTTP 403 (BadJwtToken)
+        // qualquer VAPID subject que utilize @localhost, .local ou domínios não públicos/inválidos.
+        if (trimmed.equalsIgnoreCase("mailto:konnix@localhost")
+                || trimmed.equalsIgnoreCase("mailto:homolog@konnix.local")
+                || trimmed.equalsIgnoreCase("mailto:admin@konnix.local")
+                || trimmed.contains("@localhost")
+                || trimmed.endsWith(".local")) {
+            log.warn("VAPID subject '{}' utiliza host/TLD local rejeitado pelo Apple APNs. Ajustando automaticamente para {}", trimmed, DEFAULT_SUBJECT);
+            return DEFAULT_SUBJECT;
+        }
+        return trimmed;
     }
 
     private static void saveSetting(AppSettingRepository repo, String key, String value) {

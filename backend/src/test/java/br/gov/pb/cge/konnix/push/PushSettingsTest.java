@@ -21,13 +21,30 @@ class PushSettingsTest {
     @Test
     void usaChavesFornecidasViaPropriedades() {
         AppSettingRepository repository = mock(AppSettingRepository.class);
-        PushSettings settings = new PushSettings("custom-public-key", "custom-private-key", "mailto:test@test.local", repository);
+        PushSettings settings = new PushSettings("custom-public-key", "custom-private-key", "mailto:admin@empresa.com.br", repository);
 
         assertThat(settings.publicKey()).isEqualTo("custom-public-key");
         assertThat(settings.privateKey()).isEqualTo("custom-private-key");
-        assertThat(settings.subject()).isEqualTo("mailto:test@test.local");
+        assertThat(settings.subject()).isEqualTo("mailto:admin@empresa.com.br");
         verify(repository, never()).findById(any());
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void sanitizaSubjectInvalidoParaCompatibilidadeComAppleApns() {
+        AppSettingRepository repository = mock(AppSettingRepository.class);
+        
+        PushSettings localSetting = new PushSettings("pub", "priv", "mailto:homolog@konnix.local", repository);
+        assertThat(localSetting.subject()).isEqualTo(PushSettings.DEFAULT_SUBJECT);
+
+        PushSettings localhostSetting = new PushSettings("pub", "priv", "mailto:konnix@localhost", repository);
+        assertThat(localhostSetting.subject()).isEqualTo(PushSettings.DEFAULT_SUBJECT);
+
+        PushSettings blankSetting = new PushSettings("pub", "priv", "   ", repository);
+        assertThat(blankSetting.subject()).isEqualTo(PushSettings.DEFAULT_SUBJECT);
+
+        PushSettings validSetting = new PushSettings("pub", "priv", "mailto:notificacoes@orgao.gov.br", repository);
+        assertThat(validSetting.subject()).isEqualTo("mailto:notificacoes@orgao.gov.br");
     }
 
     @Test
@@ -45,7 +62,7 @@ class PushSettingsTest {
         when(repository.findById(PushSettings.VAPID_PUBLIC_KEY_SETTING)).thenReturn(Optional.of(pubSetting));
         when(repository.findById(PushSettings.VAPID_PRIVATE_KEY_SETTING)).thenReturn(Optional.of(privSetting));
 
-        PushSettings settings = new PushSettings("", "", "mailto:test@test.local", repository);
+        PushSettings settings = new PushSettings("", "", "mailto:admin@empresa.com.br", repository);
 
         assertThat(settings.publicKey()).isEqualTo("db-stored-public-key");
         assertThat(settings.privateKey()).isEqualTo("db-stored-private-key");
@@ -58,7 +75,7 @@ class PushSettingsTest {
         when(repository.findById(PushSettings.VAPID_PUBLIC_KEY_SETTING)).thenReturn(Optional.empty());
         when(repository.findById(PushSettings.VAPID_PRIVATE_KEY_SETTING)).thenReturn(Optional.empty());
 
-        PushSettings settings = new PushSettings(null, null, "mailto:test@test.local", repository);
+        PushSettings settings = new PushSettings(null, null, "mailto:admin@empresa.com.br", repository);
 
         assertThat(settings.publicKey()).isNotBlank();
         assertThat(settings.privateKey()).isNotBlank();

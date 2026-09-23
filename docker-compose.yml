@@ -41,7 +41,7 @@ services:
 
       KONNIX_VAPID_PUBLIC_KEY: ${KONNIX_VAPID_PUBLIC_KEY:-}
       KONNIX_VAPID_PRIVATE_KEY: ${KONNIX_VAPID_PRIVATE_KEY:-}
-      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:konnix@konnix.local}
+      KONNIX_VAPID_SUBJECT: ${KONNIX_VAPID_SUBJECT:-mailto:suporte@cge.pb.gov.br}
 
     ports:
       - "8081:8080"

@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v16';
+const VERSION = 'konnix-shell-v17';
 
 const CORE_ASSETS = [
   '/',
@@ -131,26 +131,31 @@ self.addEventListener('push', (event) => {
           console.warn('[SW Push] Falha ao despachar postMessage para clientes:', clientErr);
         }
 
-        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag);
-        await self.registration.showNotification(payload.title, {
+        const notificationOptions = {
           body: payload.body,
           icon: '/icons/icon-192.png',
           badge: '/icons/icon-192.png',
           tag: notificationTag,
           renotify: true,
-          vibrate: [200, 100, 200],
-          timestamp: Date.now(),
           data: {
             ...(payload.data || {}),
             unreadCount,
             url: payload.data?.url || (roomId ? `/room/${roomId}` : '/'),
             roomId: roomId || null,
           },
-        });
+        };
+
+        // Adiciona vibrate somente se suportado pelo ambiente (WebKit/Safari no iOS não suporta e pode falhar)
+        if ('vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
+          notificationOptions.vibrate = [200, 100, 200];
+        }
+
+        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag);
+        await self.registration.showNotification(payload.title, notificationOptions);
         console.log('[SW Push] registration.showNotification concluído com sucesso.');
 
         // Atualiza o app badge no PWA mobile se suportado
-        if ('setAppBadge' in self.navigator) {
+        if ('setAppBadge' in self.navigator && typeof self.navigator.setAppBadge === 'function') {
           try {
             if (unreadCount > 0) {
               await self.navigator.setAppBadge(unreadCount);
@@ -192,7 +197,7 @@ self.addEventListener('notificationclick', (event) => {
       // Ajusta o badge ao clicar em uma notificação
       try {
         const notifs = await self.registration.getNotifications();
-        if ('setAppBadge' in self.navigator) {
+        if ('setAppBadge' in self.navigator && typeof self.navigator.setAppBadge === 'function') {
           if (notifs.length > 0) {
             await self.navigator.setAppBadge(notifs.length);
           } else {
