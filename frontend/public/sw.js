@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v15';
+const VERSION = 'konnix-shell-v16';
 
 const CORE_ASSETS = [
   '/',
@@ -85,62 +85,96 @@ self.addEventListener('push', (event) => {
       payload.body = event.data.text() || payload.body;
     }
   }
+
+  const roomId = payload.data?.roomId;
+  const messageId = payload.data?.messageId;
+
+  console.log('[SW Push] Evento push recebido:', {
+    title: payload.title,
+    hasData: !!event.data,
+    roomId: roomId || null,
+    messageId: messageId || null,
+    timestamp: new Date().toISOString(),
+  });
+
   event.waitUntil(
     (async () => {
-      // Se houver uma janela aberta E visível/focada pelo usuário, o WebSocket da página
-      // em primeiro plano já cuida da notificação e do som. Se todas as janelas estiverem
-      // minimizadas, em segundo plano (document.hidden) ou fechadas, exibe a notificação push.
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const isForegroundAndFocused = clients.some(
-        (c) => c.visibilityState === 'visible' && c.focused
-      );
-      if (isForegroundAndFocused) return;
+      try {
+        const notificationTag = messageId
+          ? `konnix-msg-${messageId}`
+          : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`);
 
-      const roomId = payload.data?.roomId;
-      const messageId = payload.data?.messageId;
-      const notificationTag = messageId
-        ? `konnix-msg-${messageId}`
-        : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`);
+        let unreadCount = typeof payload.data?.unreadCount === 'number'
+          ? payload.data.unreadCount
+          : (typeof payload.unreadCount === 'number' ? payload.unreadCount : null);
 
-      let unreadCount = typeof payload.data?.unreadCount === 'number'
-        ? payload.data.unreadCount
-        : (typeof payload.unreadCount === 'number' ? payload.unreadCount : null);
-
-      if (unreadCount === null) {
-        try {
-          const existing = await self.registration.getNotifications();
-          unreadCount = existing.length + 1;
-        } catch {
-          unreadCount = 1;
-        }
-      }
-
-      await self.registration.showNotification(payload.title, {
-        body: payload.body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: notificationTag,
-        renotify: true,
-        vibrate: [200, 100, 200],
-        timestamp: Date.now(),
-        data: {
-          ...(payload.data || {}),
-          unreadCount,
-          url: payload.data?.url || (roomId ? `/room/${roomId}` : '/'),
-          roomId: roomId || null,
-        },
-      });
-
-      // Atualiza o app badge no PWA mobile se suportado
-      if ('setAppBadge' in self.navigator) {
-        try {
-          if (unreadCount > 0) {
-            await self.navigator.setAppBadge(unreadCount);
-          } else {
-            await self.navigator.clearAppBadge();
+        if (unreadCount === null) {
+          try {
+            const existing = await self.registration.getNotifications();
+            unreadCount = existing.length + 1;
+          } catch {
+            unreadCount = 1;
           }
-        } catch {
-          /* ignore badge failure */
+        }
+
+        // Notifica janelas abertas para sincronização imediata em segundo plano
+        try {
+          const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          for (const client of clients) {
+            client.postMessage({
+              type: 'konnix:push-received',
+              roomId: roomId || null,
+              messageId: messageId || null,
+            });
+          }
+        } catch (clientErr) {
+          console.warn('[SW Push] Falha ao despachar postMessage para clientes:', clientErr);
+        }
+
+        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag);
+        await self.registration.showNotification(payload.title, {
+          body: payload.body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          tag: notificationTag,
+          renotify: true,
+          vibrate: [200, 100, 200],
+          timestamp: Date.now(),
+          data: {
+            ...(payload.data || {}),
+            unreadCount,
+            url: payload.data?.url || (roomId ? `/room/${roomId}` : '/'),
+            roomId: roomId || null,
+          },
+        });
+        console.log('[SW Push] registration.showNotification concluído com sucesso.');
+
+        // Atualiza o app badge no PWA mobile se suportado
+        if ('setAppBadge' in self.navigator) {
+          try {
+            if (unreadCount > 0) {
+              await self.navigator.setAppBadge(unreadCount);
+            } else {
+              await self.navigator.clearAppBadge();
+            }
+          } catch {
+            /* ignore badge failure */
+          }
+        }
+      } catch (err) {
+        console.error('[SW Push] Erro no processamento do push, acionando fallback de segurança:', err);
+        // Regra inviolável userVisibleOnly: true: NUNCA permitir término sem showNotification
+        try {
+          await self.registration.showNotification(payload.title || 'Konnix Chat', {
+            body: payload.body || 'Nova mensagem recebida',
+            icon: '/icons/icon-192.png',
+            tag: `konnix-fallback-${Date.now()}`,
+            renotify: true,
+            data: { url: '/' },
+          });
+          console.log('[SW Push] Notificação de fallback exibida com sucesso.');
+        } catch (fallbackErr) {
+          console.error('[SW Push] Falha crítica no showNotification de fallback:', fallbackErr);
         }
       }
     })()
@@ -187,11 +221,18 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Renovação automática de subscrição push caso o browser rotacione o token (comum após 24h+)
+// Renovação automática de subscrição push caso o browser rotacione o token
 self.addEventListener('pushsubscriptionchange', (event) => {
+  console.log('[SW Push] Evento pushsubscriptionchange disparado pelo navegador.');
   event.waitUntil(
     (async () => {
       try {
+        // Notificar janelas ativas para executarem o syncPushSubscription() autenticado
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          client.postMessage({ type: 'konnix:push-subscription-change' });
+        }
+
         const keyRes = await fetch('/api/v1/push/public-key').catch(() => null);
         if (!keyRes || !keyRes.ok) return;
         const keyJson = await keyRes.json();
@@ -208,24 +249,9 @@ self.addEventListener('pushsubscriptionchange', (event) => {
           userVisibleOnly: true,
           applicationServerKey: keyBytes,
         });
-
-        const toB64Url = (bytes) => {
-          let bin = '';
-          for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-          return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        };
-
-        await fetch('/api/v1/push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint: newSub.endpoint,
-            p256dh: toB64Url(new Uint8Array(newSub.getKey('p256dh'))),
-            auth: toB64Url(new Uint8Array(newSub.getKey('auth'))),
-          }),
-        });
+        console.log('[SW Push] PushManager re-subscrito com sucesso:', newSub.endpoint);
       } catch (err) {
-        console.warn('Falha na renovação da subscrição push:', err);
+        console.warn('[SW Push] Falha no pushsubscriptionchange:', err);
       }
     })()
   );

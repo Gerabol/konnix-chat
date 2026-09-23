@@ -36,8 +36,9 @@ public class WebPushSender implements PushSender {
         HttpResponse response = pushService.send(new Notification(keys, payload, Urgency.HIGH));
         int statusCode = response.getStatusLine().getStatusCode();
 
+        String maskedEndpoint = maskEndpoint(subscription.getEndpoint());
         if (statusCode == 201) {
-            log.debug("Push enviado com sucesso para endpoint {}", subscription.getEndpoint());
+            log.info("Push gateway respondeu HTTP 201 Created para endpoint {}", maskedEndpoint);
             return;
         }
 
@@ -50,11 +51,17 @@ public class WebPushSender implements PushSender {
         }
 
         if (statusCode == 404 || statusCode == 410) {
-            log.info("Endpoint de push expirado/inexistente ({}): {}", statusCode, subscription.getEndpoint());
+            log.info("Push gateway recusou endpoint expirado/inexistente (HTTP {}): {}", statusCode, maskedEndpoint);
             throw new HttpResponseException(statusCode, "Push endpoint expired (" + statusCode + "): " + reason);
         }
 
-        log.warn("Falha no envio de push (status {}): {} para {}", statusCode, reason, subscription.getEndpoint());
+        log.warn("Falha no envio de push (HTTP {}): {} para {}", statusCode, reason, maskedEndpoint);
         throw new HttpResponseException(statusCode, "Push gateway error (" + statusCode + "): " + reason);
+    }
+
+    private static String maskEndpoint(String endpoint) {
+        if (endpoint == null) return "null";
+        if (endpoint.length() <= 40) return endpoint;
+        return endpoint.substring(0, 30) + "..." + endpoint.substring(endpoint.length() - 8);
     }
 }

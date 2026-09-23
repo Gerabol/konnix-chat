@@ -515,9 +515,9 @@ export function ChatView({
                 }
                 if (enabled) {
                   if (isTauri) {
-                    void notifyDesktop(notifTitle, notifBody, msg.roomId).catch(() => undefined)
+                    void notifyDesktop(notifTitle, notifBody, msg.roomId, msg.id).catch(() => undefined)
                   } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                    void notifyDesktop(notifTitle, notifBody, msg.roomId).catch(() => undefined)
+                    void notifyDesktop(notifTitle, notifBody, msg.roomId, msg.id).catch(() => undefined)
                   }
                 }
               } else if (!isActiveRoom && !suppressNotification) {

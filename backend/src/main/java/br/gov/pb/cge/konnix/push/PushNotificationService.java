@@ -58,11 +58,20 @@ public class PushNotificationService {
         String author = message.username() == null || message.username().isBlank() ? "Alguém" : message.username();
         executor.execute(() -> {
             try {
-                for (PushSubscription subscription : subscriptionRepository.findByRoomId(roomId)) {
+                var subscriptions = subscriptionRepository.findByRoomId(roomId);
+                log.info("Processando envio de Web Push para sala {} ({} subscrições encontradas)", roomId, subscriptions.size());
+
+                int sent = 0;
+                int skipped = 0;
+
+                for (PushSubscription subscription : subscriptions) {
                     if (senderId.equals(subscription.getUser().getId())) {
+                        skipped++;
                         continue;
                     }
-                    if (Set.of("busy", "vacation").contains(subscription.getUser().getPresenceStatus())) {
+                    String presence = subscription.getUser().getPresenceStatus();
+                    if (presence != null && Set.of("busy", "vacation").contains(presence)) {
+                        skipped++;
                         continue;
                     }
 
@@ -77,23 +86,33 @@ public class PushNotificationService {
                     }
 
                     String payload = buildPayload(message.id(), roomId, roomDisplayName, author, unreadCount);
+                    String maskedEndpoint = maskEndpoint(subscription.getEndpoint());
                     try {
                         pushSender.send(subscription, payload);
+                        sent++;
+                        log.info("Push entregue ao gateway com sucesso para {}", maskedEndpoint);
                     } catch (HttpResponseException e) {
                         if (e.getStatusCode() == 404 || e.getStatusCode() == 410) {
-                            log.info("Subscription inválida/expirada removida: {}", subscription.getEndpoint());
+                            log.info("Subscription expirada/inválida removida do banco (HTTP {}): {}", e.getStatusCode(), maskedEndpoint);
                             subscriptionRepository.delete(subscription);
                         } else {
-                            log.warn("Push recusado (status {}) para {}", e.getStatusCode(), subscription.getEndpoint());
+                            log.warn("Push recusado pelo gateway (status {}) para {}", e.getStatusCode(), maskedEndpoint);
                         }
                     } catch (Exception e) {
-                        log.warn("Falha ao enviar push para {}", subscription.getEndpoint(), e);
+                        log.warn("Falha ao enviar push para {}: {}", maskedEndpoint, e.getMessage());
                     }
                 }
+                log.info("Concluído envio de Web Push da sala {}: {} enviados, {} ignorados", roomId, sent, skipped);
             } catch (Exception e) {
                 log.warn("Falha ao processar notificações push da sala {}", roomId, e);
             }
         });
+    }
+
+    private static String maskEndpoint(String endpoint) {
+        if (endpoint == null) return "null";
+        if (endpoint.length() <= 40) return endpoint;
+        return endpoint.substring(0, 30) + "..." + endpoint.substring(endpoint.length() - 8);
     }
 
     public String buildPayload(UUID messageId, UUID roomId, String roomDisplayName, String author) {

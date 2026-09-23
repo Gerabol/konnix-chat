@@ -8,9 +8,11 @@ export function appEnvironment(): AppEnvironment {
   return 'web'
 }
 
-export async function notifyDesktop(title: string, body: string, roomId?: string): Promise<void> {
+export async function notifyDesktop(title: string, body: string, roomId?: string, messageId?: string): Promise<void> {
   if (!isTauri && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
-  const tag = roomId ? `konnix-msg-${roomId}-${Date.now()}` : `konnix-msg-${Date.now()}`
+  const tag = messageId
+    ? `konnix-msg-${messageId}`
+    : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`)
 
   // Em navegadores mobile (ex: Android Chrome), `new Notification()` no contexto da janela é proibido
   // e lança TypeError. O caminho padrão e suportado é ServiceWorkerRegistration.showNotification().
@@ -24,7 +26,7 @@ export async function notifyDesktop(title: string, body: string, roomId?: string
           icon: '/icons/icon-192.png',
           badge: '/icons/icon-192.png',
           renotify: true,
-          data: { roomId, url: roomId ? `/room/${roomId}` : '/' },
+          data: { roomId, messageId, url: roomId ? `/room/${roomId}` : '/' },
         } as NotificationOptions)
         return
       }

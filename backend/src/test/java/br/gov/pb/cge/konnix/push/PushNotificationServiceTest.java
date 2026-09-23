@@ -115,6 +115,18 @@ class PushNotificationServiceTest {
         verify(repository, never()).delete(any());
     }
 
+    @Test
+    void presencaNulaNaoLancaExcecaoENotifica() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        PushSubscription sub = subscription(otherId, "https://push.example.com/dest");
+        sub.getUser().setPresenceStatus(null);
+        when(repository.findByRoomId(any())).thenReturn(List.of(sub));
+
+        service.notifyNewMessage(UUID.randomUUID(), message(UUID.randomUUID(), "carlos", "olá"), "Geral");
+
+        verify(sender, times(1)).send(eq(sub), anyString());
+    }
+
     private PushSubscription subscription(UUID userId, String endpoint) {
         User user = new User();
         user.setId(userId);
