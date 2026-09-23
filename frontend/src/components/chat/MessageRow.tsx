@@ -68,6 +68,26 @@ function MessageRowComponent({
   const rowRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
   const longPressStart = useRef<{ x: number; y: number } | null>(null)
+  // If the layout shifts between pointerdown and click (e.g. the virtual
+  // keyboard closes under a tap), the browser can drop the click entirely,
+  // forcing a second tap. pointerup is never dropped, so activate on it for
+  // touch and let click act as the fallback (keyboard/assistive tech).
+  const activationGuard = useRef(false)
+
+  const onActivatePointerUp =
+    (fn: (event?: ReactPointerEvent) => void) => (event: ReactPointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return
+      activationGuard.current = true
+      fn(event)
+    }
+
+  const onActivateClick = (fn: (event?: ReactMouseEvent) => void) => (event: ReactMouseEvent) => {
+    if (activationGuard.current) {
+      activationGuard.current = false
+      return
+    }
+    fn(event)
+  }
 
   const beginLongPress = (x: number, y: number) => {
     longPressStart.current = { x, y }
@@ -133,7 +153,8 @@ function MessageRowComponent({
         <button
           type="button"
           className="message-avatar-button"
-          onClick={handleShowProfile}
+          onPointerUp={onActivatePointerUp(handleShowProfile)}
+          onClick={onActivateClick(handleShowProfile)}
           aria-label={`Abrir contato de ${msg.username || 'usuário'}`}
         >
           <AvatarImage
@@ -171,7 +192,8 @@ function MessageRowComponent({
               <button
                 type="button"
                 className="message-author message-author-button"
-                onClick={handleShowProfile}
+                onPointerUp={onActivatePointerUp(handleShowProfile)}
+                onClick={onActivateClick(handleShowProfile)}
               >
                 {msg.username || 'sistema'}
               </button>
@@ -190,7 +212,8 @@ function MessageRowComponent({
             <button
               type="button"
               className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
-              onClick={() => onShowReads(msg.id)}
+              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
+              onClick={onActivateClick(() => onShowReads(msg.id))}
             >
               {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
             </button>
@@ -246,7 +269,8 @@ function MessageRowComponent({
                     className="message-reaction"
                     key={emoji}
                     title={reactions.map((reaction) => reaction.username).join(', ')}
-                    onClick={() => setReactionDetailsEmoji(emoji)}
+                    onPointerUp={onActivatePointerUp(() => setReactionDetailsEmoji(emoji))}
+                    onClick={onActivateClick(() => setReactionDetailsEmoji(emoji))}
                   >
                     {emoji} {reactions.length}
                   </button>

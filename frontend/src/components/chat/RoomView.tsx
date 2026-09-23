@@ -760,13 +760,22 @@ export function RoomView({
   }
 
   const showProfile = useCallback(async (userId: string, event?: ReactMouseEvent) => {
+    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
     if (event) {
       const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-      const width = Math.min(460, window.innerWidth - 24)
-      setProfilePosition({
-        top: Math.min(window.innerHeight - 360, Math.max(12, rect.bottom + 8)),
-        left: Math.min(window.innerWidth - width - 12, Math.max(12, rect.left)),
-      })
+      const vw = window.innerWidth
+      const width = Math.min(560, vw - 24)
+      if (vw <= 760) {
+        setProfilePosition({
+          top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
+          left: Math.max(12, Math.round((vw - width) / 2)),
+        })
+      } else {
+        setProfilePosition({
+          top: Math.min(window.innerHeight - 360, Math.max(12 + safeTop, rect.bottom + 8)),
+          left: Math.min(vw - width - 12, Math.max(12, rect.left)),
+        })
+      }
     }
     setProfileLoading(true)
     setProfileCommonRoomsLoading(true)
@@ -793,11 +802,20 @@ export function RoomView({
 
   const showRoomInfo = (event: ReactMouseEvent) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const width = Math.min(560, window.innerWidth - 24)
-    setRoomInfoPosition({
-      top: Math.max(12, Math.min(window.innerHeight - 420, Math.max(12, rect.bottom + 8))),
-      left: Math.min(window.innerWidth - width - 12, Math.max(12, rect.left)),
-    })
+    const vw = window.innerWidth
+    const width = Math.min(560, vw - 24)
+    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
+    if (vw <= 760) {
+      setRoomInfoPosition({
+        top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
+        left: Math.max(12, Math.round((vw - width) / 2)),
+      })
+    } else {
+      setRoomInfoPosition({
+        top: Math.min(window.innerHeight - 420, Math.max(12 + safeTop, rect.bottom + 8)),
+        left: Math.min(vw - width - 12, Math.max(12, rect.left)),
+      })
+    }
     setProfile(null)
     void api.members(room.id).then(setRoomMembers).catch(() => undefined)
     setRoomInfoOpen(true)
