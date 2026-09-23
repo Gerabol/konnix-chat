@@ -89,8 +89,12 @@ function MessageRowComponent({
     fn(event)
   }
 
-  const beginLongPress = (x: number, y: number) => {
-    longPressStart.current = { x, y }
+  const beginLongPress = (event: ReactPointerEvent) => {
+    const target = event.target as HTMLElement | null
+    if (target?.closest('.message-content')) {
+      return
+    }
+    longPressStart.current = { x: event.clientX, y: event.clientY }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
     longPressTimer.current = window.setTimeout(() => setLongPressed(true), 500)
   }
@@ -141,12 +145,17 @@ function MessageRowComponent({
       ref={rowRef}
       data-message-id={msg.id}
       onMouseEnter={() => setActionDismissed(false)}
-      onPointerDown={(e) => beginLongPress(e.clientX, e.clientY)}
+      onPointerDown={beginLongPress}
       onPointerMove={moveLongPress}
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
       onPointerLeave={cancelLongPress}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        const target = e.target as HTMLElement | null
+        if (!target?.closest('.message-content')) {
+          e.preventDefault()
+        }
+      }}
       className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}
     >
       {!deleted && (

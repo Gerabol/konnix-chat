@@ -2711,6 +2711,9 @@ button:disabled {
   padding: 0.3rem 0.25rem;
   border-radius: 10px;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .message:hover {
@@ -2872,6 +2875,9 @@ button:disabled {
   border-radius: 12px;
   border-top-left-radius: 4px;
   padding: 0.45rem 0.7rem;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .message-content pre { margin: 0.35rem 0; padding: 0.65rem 0.75rem; overflow-x: auto; border-radius: 8px; background: #202230; color: #f7f8fc; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre; }
