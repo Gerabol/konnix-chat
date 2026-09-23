@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { isMobilePlatform } from '../utils/pwa'
+import { detectPlatform, detectStandalone, isMobilePlatform } from '../utils/pwa'
 
 let viewportSyncHandler: (() => void) | null = null
 
