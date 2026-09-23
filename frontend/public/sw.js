@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v8';
+const VERSION = 'konnix-shell-v11';
 
 const CORE_ASSETS = [
   '/',
