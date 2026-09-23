@@ -12,8 +12,6 @@ import { PresenceSelector } from '../settings/PresenceSelector'
 import { UserSettingsMenuContent } from '../settings/UserSettingsMenuContent'
 import { AvatarImage, initials } from './AvatarImage'
 import { SidebarInstallCard } from './SidebarInstallCard'
-import { SidebarNotificationCard } from './SidebarNotificationCard'
-import { isPushSupported } from '../../utils/push'
 import { formatTypingText } from './TypingIndicator'
 
 export interface SidebarProps {
@@ -87,16 +85,6 @@ export const Sidebar = memo(function Sidebar({
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
-  const [notifCardDismissed, setNotifCardDismissed] = useState(() => {
-    try {
-      return localStorage.getItem('konnix-notif-prompt-dismissed') === 'true'
-    } catch {
-      return false
-    }
-  })
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => {
-    return typeof Notification !== 'undefined' ? Notification.permission : 'default'
-  })
   const headerMenuRef = useRef<HTMLDivElement>(null)
   const footerUserRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -651,22 +639,6 @@ export const Sidebar = memo(function Sidebar({
           </>
         )}
       </nav>
-
-      {!isTauri && isPushSupported() && notifPermission === 'default' && !notifCardDismissed && (
-        <SidebarNotificationCard
-          onActivated={() => {
-            setNotifPermission('granted')
-          }}
-          onDismiss={() => {
-            setNotifCardDismissed(true)
-            try {
-              localStorage.setItem('konnix-notif-prompt-dismissed', 'true')
-            } catch {
-              /* ignore */
-            }
-          }}
-        />
-      )}
 
       {!isTauri && !isMobilePlatform() && !standalone && !appInstalled && !installCardDismissed && onInstallApp && (
         <SidebarInstallCard
