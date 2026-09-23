@@ -1274,8 +1274,6 @@ button:disabled {
 }
 
 [data-theme$="-strong"] .sidebar-persistent-search {
-  padding: 0.25rem 0.8rem 0.5rem;
-  background: transparent;
   border-bottom: 1px solid var(--konnix-sidebar-border);
 }
 
