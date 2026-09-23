@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useEscapeClose } from '../../hooks/useEscapeClose'
+import { requestViewportSync } from '../../hooks/useMobileViewport'
 
 let modalToastDismiss: (() => void) | null = null
 
@@ -27,7 +28,17 @@ export function Modal({
   const titleId = `modal-title-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   const closeRef = useRef<HTMLButtonElement>(null)
   useEscapeClose(onClose)
-  useEffect(() => { closeRef.current?.focus() }, [])
+  useEffect(() => {
+    // Blur any focused input so the virtual keyboard closes behind the modal;
+    // otherwise modals opened near the composer render short/high up against
+    // the keyboard-reduced --app-height.
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body && !active.closest('.modal')) {
+      active.blur()
+    }
+    closeRef.current?.focus()
+    requestViewportSync()
+  }, [])
   useEffect(() => () => dismissModalToast(), [])
 
   return (

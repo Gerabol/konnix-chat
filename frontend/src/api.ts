@@ -200,7 +200,36 @@ const API_BASE: string = configuredApiUrl
 let token: string | null = null
 let authTokenKey = 'konnix.auth-token'
 const isDesktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-const authStorage = isDesktopRuntime ? localStorage : sessionStorage
+// Web e PWA: cookie persistente (sobrevive a reload e ao fechamento do app).
+// Desktop: localStorage por servidor (também persistente entre execuções).
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+function readStoredToken(key: string): string | null {
+  if (isDesktopRuntime) return localStorage.getItem(key)
+  const value = document.cookie
+    .split('; ')
+    .find((entry) => entry.startsWith(`${key}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=')
+  return value ? decodeURIComponent(value) : null
+}
+
+function writeStoredToken(key: string, value: string): void {
+  if (isDesktopRuntime) {
+    localStorage.setItem(key, value)
+    return
+  }
+  document.cookie = `${key}=${encodeURIComponent(value)}; Max-Age=${AUTH_COOKIE_MAX_AGE}; Path=/; SameSite=Lax`
+}
+
+function clearStoredToken(key: string): void {
+  if (isDesktopRuntime) {
+    localStorage.removeItem(key)
+    return
+  }
+  document.cookie = `${key}=; Max-Age=0; Path=/; SameSite=Lax`
+}
 
 export function setActiveServer(baseUrl: string | null, serverId?: string): void {
   activeServerBaseUrl = baseUrl ? baseUrl.replace(/\/$/, '') : null
@@ -214,16 +243,13 @@ function apiBase(): string {
 
 export function setAuthToken(next: string | null): void {
   token = next
-  if (next) {
-    authStorage.setItem(authTokenKey, next)
-  } else {
-    authStorage.removeItem(authTokenKey)
-  }
+  if (next) writeStoredToken(authTokenKey, next)
+  else clearStoredToken(authTokenKey)
 }
 
 export function getAuthToken(): string | null {
   if (token) return token
-  token = authStorage.getItem(authTokenKey)
+  token = readStoredToken(authTokenKey)
   return token
 }
 
