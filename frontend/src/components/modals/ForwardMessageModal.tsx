@@ -20,6 +20,7 @@ export function ForwardMessageModal({
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<(typeof candidates)[number] | null>(null)
 
   useEffect(() => {
     api.userDirectory().then(setUsers).catch(() => setUsers([]))
@@ -69,7 +70,7 @@ export function ForwardMessageModal({
 
   return (
     <div className="admin-modal-overlay">
-      <div className="admin-modal">
+      <div className="admin-modal forward-modal">
         <div className="modal-head">
           <h3>Encaminhar mensagem</h3>
           <button className="modal-close" onClick={onClose}>
@@ -84,32 +85,39 @@ export function ForwardMessageModal({
           onChange={(event) => setQuery(event.target.value)}
         />
         <div className="forward-list">
-          {candidates.map((destination) => (
-            <button
-              type="button"
-              className="forward-user"
-              disabled={busy}
-              key={`${destination.type}-${destination.id}`}
-              onClick={() => void forward(destination)}
-            >
-              {destination.type === 'user' ? (
-                <AvatarImage
-                  path={userAvatarPath(destination.id)}
-                  className="admin-member-avatar"
-                  fallback={<span className="admin-member-avatar">{initials(destination.name)}</span>}
-                  alt={destination.name}
-                />
-              ) : (
-                <span className="admin-member-avatar forward-room-icon" aria-hidden="true">
-                  {ROOM_ICON[destination.room.type] ?? '#'}
-                </span>
-              )}
-              <span>
-                <strong>{destination.name}</strong>
-                <small>{destination.subtitle}</small>
+          {candidates.map((destination) => {
+        const isSelected = selected?.id === destination.id && selected?.type === destination.type
+        return (
+          <button
+            type="button"
+            className={`forward-user${isSelected ? ' selected' : ''}`}
+            disabled={busy}
+            key={`${destination.type}-${destination.id}`}
+            onClick={() => setSelected(destination)}
+          >
+            {destination.type === 'user' ? (
+              <AvatarImage
+                path={userAvatarPath(destination.id)}
+                className="admin-member-avatar"
+                fallback={<span className="admin-member-avatar">{initials(destination.name)}</span>}
+                alt={destination.name}
+              />
+            ) : (
+              <span className="admin-member-avatar forward-room-icon" aria-hidden="true">
+                {ROOM_ICON[destination.room.type] ?? '#'}
               </span>
-            </button>
-          ))}
+            )}
+            <span>
+              <strong>{destination.name}</strong>
+              <small>{destination.subtitle}</small>
+            </span>
+          </button>
+        )
+      })}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" disabled={busy || !selected} onClick={() => selected && void forward(selected)}>{busy ? 'Enviando…' : 'Enviar'}</button>
         </div>
       </div>
     </div>
