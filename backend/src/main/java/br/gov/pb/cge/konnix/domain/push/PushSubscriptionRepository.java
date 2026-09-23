@@ -19,7 +19,7 @@ public interface PushSubscriptionRepository extends JpaRepository<PushSubscripti
     @Query("""
             select ps from PushSubscription ps
             join fetch ps.user u
-            where u.id in (select rm.user.id from RoomMember rm where rm.room.id = :roomId)
+            where u.id in (select rm.user.id from RoomMember rm where rm.room.id = :roomId and rm.active = true)
             """)
     List<PushSubscription> findByRoomId(@Param("roomId") UUID roomId);
 }

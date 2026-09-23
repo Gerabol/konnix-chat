@@ -10,9 +10,10 @@ export function appEnvironment(): AppEnvironment {
 
 export async function notifyDesktop(title: string, body: string, roomId?: string): Promise<void> {
   if (!isTauri && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
+  const tag = roomId ? `konnix-msg-${roomId}-${Date.now()}` : `konnix-msg-${Date.now()}`
   const notification = new Notification(title, {
     body,
-    tag: roomId ? `konnix-room-${roomId}` : 'konnix-message',
+    tag,
   })
   notification.onclick = () => {
     window.focus()

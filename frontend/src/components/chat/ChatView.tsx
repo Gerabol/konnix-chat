@@ -7,6 +7,7 @@ import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
 import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { isMobilePlatform } from '../../utils/pwa'
+import { syncPushSubscription } from '../../utils/push'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
 import { AboutModal } from '../modals/AboutModal'
@@ -726,6 +727,11 @@ export function ChatView({
       }
     }, 10_000)
     return () => clearInterval(interval)
+  }, [session.token])
+
+  useEffect(() => {
+    if (!session.token) return
+    void syncPushSubscription().catch(() => undefined)
   }, [session.token])
 
   useEffect(() => {

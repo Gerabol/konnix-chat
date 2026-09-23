@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v13';
+const VERSION = 'konnix-shell-v14';
 
 const CORE_ASSETS = [
   '/',
@@ -96,13 +96,19 @@ self.addEventListener('push', (event) => {
       );
       if (isForegroundAndFocused) return;
 
-      const roomId = payload.data?.roomId;
+      const messageId = payload.data?.messageId;
+      const notificationTag = messageId
+        ? `konnix-msg-${messageId}`
+        : `konnix-msg-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
       await self.registration.showNotification(payload.title, {
         body: payload.body,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
-        tag: roomId ? `konnix-room-${roomId}` : 'konnix-message',
+        tag: notificationTag,
         renotify: true,
+        vibrate: [200, 100, 200],
+        timestamp: Date.now(),
         data: payload.data || {},
       });
 
