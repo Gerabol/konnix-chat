@@ -1,31 +1,13 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError } from '../../api'
+import { ApiError } from '../../api'
 import { isTauri } from '../../platform'
 import { IconBell } from '../icons'
+import { isPushSupported, syncPushSubscription, unsubscribePush } from '../../utils/push'
 
-export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padded = base64.replace(/-/g, '+').replace(/_/g, '/')
-  const normalized = padded.padEnd(Math.ceil(padded.length / 4) * 4, '=')
-  const binary = atob(normalized)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
-}
-
-export function uint8ArrayToBase64Url(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+export { urlBase64ToUint8Array, uint8ArrayToBase64Url } from '../../utils/push'
 
 export function NotificationButton() {
-  const [supported] = useState(
-    () => !isTauri && 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator,
-  )
+  const [supported] = useState(() => isPushSupported())
   const [subscribed, setSubscribed] = useState(false)
   const [nativeOn, setNativeOn] = useState(() => {
     try {
@@ -65,24 +47,13 @@ export function NotificationButton() {
         setError('Permissão de notificação negada no navegador. Desbloqueie as notificações do site nas configurações do navegador para ativar esta opção.')
         return
       }
-      const reg = await navigator.serviceWorker.ready
-      const key = await api.pushPublicKey()
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(key.publicKey),
-      })
-      await api.pushSubscribe({
-        endpoint: sub.endpoint,
-        p256dh: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('p256dh') ?? new ArrayBuffer(0))),
-        auth: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('auth') ?? new ArrayBuffer(0))),
-      })
-      try {
-        localStorage.setItem('konnix-system-notifications', 'true')
-      } catch {
-        /* preferência opcional */
+      const success = await syncPushSubscription()
+      if (success) {
+        setSubscribed(true)
+        setNativeOn(true)
+      } else {
+        setError('Não foi possível registrar as notificações push no servidor.')
       }
-      setSubscribed(true)
-      setNativeOn(true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
     } finally {
@@ -95,21 +66,7 @@ export function NotificationButton() {
     setBusy(true)
     setError(null)
     try {
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.getSubscription()
-      if (sub) {
-        try {
-          await api.pushUnsubscribe(sub.endpoint)
-        } catch {
-          /* best-effort */
-        }
-        await sub.unsubscribe().catch(() => undefined)
-      }
-      try {
-        localStorage.setItem('konnix-system-notifications', 'false')
-      } catch {
-        /* preferência opcional */
-      }
+      await unsubscribePush()
       setSubscribed(false)
       setNativeOn(false)
     } finally {

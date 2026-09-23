@@ -42,7 +42,7 @@ services:
 
       KONNIX_VAPID_PUBLIC_KEY: "${KONNIX_VAPID_PUBLIC_KEY:-}"
       KONNIX_VAPID_PRIVATE_KEY: "${KONNIX_VAPID_PRIVATE_KEY:-}"
-      KONNIX_VAPID_SUBJECT: "${KONNIX_VAPID_SUBJECT:-mailto:homolog@konnix.local}"
+      KONNIX_VAPID_SUBJECT: "${KONNIX_VAPID_SUBJECT:-mailto:suporte@cge.pb.gov.br}"
 
     ports:
       - "127.0.0.1:${STAGING_BACKEND_PORT:-8082}:8080"

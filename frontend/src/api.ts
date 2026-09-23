@@ -191,11 +191,11 @@ export type MessageTimeSeriesResponse = {
 export type AppSettings = { name: string; maxUploadBytes: number }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
 
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+const configuredApiUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ? import.meta.env.VITE_API_URL.trim() : undefined
 let activeServerBaseUrl: string | null = null
 const API_BASE: string = configuredApiUrl
   ? configuredApiUrl.replace(/\/$/, '')
-  : window.location.origin
+  : (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '')
 
 let token: string | null = null
 let authTokenKey = 'konnix.auth-token'

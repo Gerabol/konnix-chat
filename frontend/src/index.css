@@ -2616,6 +2616,8 @@ button:disabled {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding: 1rem 0.5rem;
+  padding-left: calc(0.5rem + var(--safe-left, 0px));
+  padding-right: calc(0.5rem + var(--safe-right, 0px));
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -2866,8 +2868,12 @@ button:disabled {
 
 .message-content {
   margin: 0;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   font-size: 0.93rem;
   line-height: 1.45;
   background: var(--konnix-surface);
@@ -3867,6 +3873,8 @@ body.keyboard-open .composer {
   border-radius: 5px;
   padding: 0.05rem 0.3rem;
   font-size: 0.85em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .message-content pre {
@@ -3877,7 +3885,8 @@ body.keyboard-open .composer {
   box-sizing: border-box;
   border-radius: 8px;
   padding: 0.5rem 0.6rem;
-  overflow-x: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   font-size: 0.85rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -3906,6 +3915,9 @@ body.keyboard-open .composer {
   background: var(--konnix-bg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .kx-code-header {
@@ -3958,6 +3970,8 @@ body.keyboard-open .composer {
   align-items: stretch;
   overflow: hidden;
   background: var(--konnix-bg);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .kx-code-gutter {
@@ -3988,10 +4002,12 @@ body.keyboard-open .composer {
 .kx-code-pre {
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   margin: 0 !important;
   padding: 0.7rem 0.85rem !important;
   background: transparent !important;
   overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
   font-size: 0.83rem !important;
   line-height: 1.55 !important;
@@ -5155,7 +5171,7 @@ img.room-header-avatar {
 
 @media (max-width: 480px) {
   .message-body {
-    max-width: 92%;
+    max-width: min(92%, calc(100% - 44px));
   }
 
   .attachment,

@@ -2,7 +2,7 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v11';
+const VERSION = 'konnix-shell-v17';
 
 const CORE_ASSETS = [
   '/',
@@ -85,20 +85,103 @@ self.addEventListener('push', (event) => {
       payload.body = event.data.text() || payload.body;
     }
   }
+
+  const roomId = payload.data?.roomId;
+  const messageId = payload.data?.messageId;
+
+  console.log('[SW Push] Evento push recebido:', {
+    title: payload.title,
+    hasData: !!event.data,
+    roomId: roomId || null,
+    messageId: messageId || null,
+    timestamp: new Date().toISOString(),
+  });
+
   event.waitUntil(
     (async () => {
-      // Se houver alguma aba do app aberta, o WebSocket já emite a notificação
-      // (new Notification). Evita notificação duplicada do push.
-      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      if (clients.length > 0) return;
-      await self.registration.showNotification(payload.title, {
-        body: payload.body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: 'konnix-message',
-        renotify: false,
-        data: payload.data || {},
-      });
+      try {
+        const notificationTag = messageId
+          ? `konnix-msg-${messageId}`
+          : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`);
+
+        let unreadCount = typeof payload.data?.unreadCount === 'number'
+          ? payload.data.unreadCount
+          : (typeof payload.unreadCount === 'number' ? payload.unreadCount : null);
+
+        if (unreadCount === null) {
+          try {
+            const existing = await self.registration.getNotifications();
+            unreadCount = existing.length + 1;
+          } catch {
+            unreadCount = 1;
+          }
+        }
+
+        // Notifica janelas abertas para sincronização imediata em segundo plano
+        try {
+          const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          for (const client of clients) {
+            client.postMessage({
+              type: 'konnix:push-received',
+              roomId: roomId || null,
+              messageId: messageId || null,
+            });
+          }
+        } catch (clientErr) {
+          console.warn('[SW Push] Falha ao despachar postMessage para clientes:', clientErr);
+        }
+
+        const notificationOptions = {
+          body: payload.body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          tag: notificationTag,
+          renotify: true,
+          data: {
+            ...(payload.data || {}),
+            unreadCount,
+            url: payload.data?.url || (roomId ? `/room/${roomId}` : '/'),
+            roomId: roomId || null,
+          },
+        };
+
+        // Adiciona vibrate somente se suportado pelo ambiente (WebKit/Safari no iOS não suporta e pode falhar)
+        if ('vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
+          notificationOptions.vibrate = [200, 100, 200];
+        }
+
+        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag);
+        await self.registration.showNotification(payload.title, notificationOptions);
+        console.log('[SW Push] registration.showNotification concluído com sucesso.');
+
+        // Atualiza o app badge no PWA mobile se suportado
+        if ('setAppBadge' in self.navigator && typeof self.navigator.setAppBadge === 'function') {
+          try {
+            if (unreadCount > 0) {
+              await self.navigator.setAppBadge(unreadCount);
+            } else {
+              await self.navigator.clearAppBadge();
+            }
+          } catch {
+            /* ignore badge failure */
+          }
+        }
+      } catch (err) {
+        console.error('[SW Push] Erro no processamento do push, acionando fallback de segurança:', err);
+        // Regra inviolável userVisibleOnly: true: NUNCA permitir término sem showNotification
+        try {
+          await self.registration.showNotification(payload.title || 'Konnix Chat', {
+            body: payload.body || 'Nova mensagem recebida',
+            icon: '/icons/icon-192.png',
+            tag: `konnix-fallback-${Date.now()}`,
+            renotify: true,
+            data: { url: '/' },
+          });
+          console.log('[SW Push] Notificação de fallback exibida com sucesso.');
+        } catch (fallbackErr) {
+          console.error('[SW Push] Falha crítica no showNotification de fallback:', fallbackErr);
+        }
+      }
     })()
   );
 });
@@ -106,18 +189,75 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
-  const target = data.url || '/';
+  const roomId = data.roomId || null;
+  const target = data.url || (roomId ? `/room/${roomId}` : '/');
+
   event.waitUntil(
     (async () => {
+      // Ajusta o badge ao clicar em uma notificação
+      try {
+        const notifs = await self.registration.getNotifications();
+        if ('setAppBadge' in self.navigator && typeof self.navigator.setAppBadge === 'function') {
+          if (notifs.length > 0) {
+            await self.navigator.setAppBadge(notifs.length);
+          } else {
+            await self.navigator.clearAppBadge();
+          }
+        }
+      } catch {
+        /* ignore badge failure */
+      }
+
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clients) {
         if ('focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'konnix:navigate', url: target, roomId: data.roomId || null });
+          await client.focus();
+          client.postMessage({ type: 'konnix:navigate', url: target, roomId });
           return;
         }
       }
-      await self.clients.openWindow(target);
+      const newClient = await self.clients.openWindow(target);
+      if (newClient && roomId) {
+        setTimeout(() => {
+          newClient.postMessage({ type: 'konnix:navigate', url: target, roomId });
+        }, 1000);
+      }
+    })()
+  );
+});
+
+// Renovação automática de subscrição push caso o browser rotacione o token
+self.addEventListener('pushsubscriptionchange', (event) => {
+  console.log('[SW Push] Evento pushsubscriptionchange disparado pelo navegador.');
+  event.waitUntil(
+    (async () => {
+      try {
+        // Notificar janelas ativas para executarem o syncPushSubscription() autenticado
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          client.postMessage({ type: 'konnix:push-subscription-change' });
+        }
+
+        const keyRes = await fetch('/api/v1/push/public-key').catch(() => null);
+        if (!keyRes || !keyRes.ok) return;
+        const keyJson = await keyRes.json();
+        const pubKey = keyJson?.data?.publicKey;
+        if (!pubKey) return;
+
+        const padded = pubKey.replace(/-/g, '+').replace(/_/g, '/');
+        const normalized = padded.padEnd(Math.ceil(padded.length / 4) * 4, '=');
+        const binary = atob(normalized);
+        const keyBytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) keyBytes[i] = binary.charCodeAt(i);
+
+        const newSub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes,
+        });
+        console.log('[SW Push] PushManager re-subscrito com sucesso:', newSub.endpoint);
+      } catch (err) {
+        console.warn('[SW Push] Falha no pushsubscriptionchange:', err);
+      }
     })()
   );
 });
@@ -127,3 +267,4 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
