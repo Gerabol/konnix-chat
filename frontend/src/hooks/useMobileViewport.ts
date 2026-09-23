@@ -90,21 +90,23 @@ export function useMobileViewport() {
       document.documentElement.style.setProperty('--app-height', `${vh}px`)
       document.documentElement.style.setProperty('--app-top', `${vt}px`)
       document.documentElement.style.setProperty('--app-left', `${vl}px`)
-      // Height the app would occupy with the virtual keyboard hidden. Modals
-      // (which cover the full screen) must use this, not the keyboard-reduced
-      // height, so they look the same regardless of how they were opened.
-      const fullHeight = Math.max(
-        vh,
-        window.innerHeight,
-        window.screen?.height ? Math.round(window.screen.height) : 0,
-      )
-      document.documentElement.style.setProperty('--app-height-full', `${fullHeight}px`)
 
       // Detect whether virtual keyboard is open
       const isMobile =
         isMobilePlatform() ||
         window.matchMedia('(pointer: coarse)').matches ||
         window.matchMedia('(max-width: 768px)').matches
+
+      // Height the app would occupy with the virtual keyboard hidden. Modals
+      // (which cover the full screen) must use this, not the keyboard-reduced
+      // height, so they look the same regardless of how they were opened.
+      // On desktop an absolute screen height is larger than the window, which
+      // would make tall modals overflow past the bottom (losing the 20px gap),
+      // so only use it on mobile where the keyboard can shrink the viewport.
+      const fullHeight = isMobile
+        ? Math.max(vh, window.innerHeight, window.screen?.height ? Math.round(window.screen.height) : 0)
+        : window.innerHeight
+      document.documentElement.style.setProperty('--app-height-full', `${fullHeight}px`)
 
       const activeEl = typeof document !== 'undefined' ? document.activeElement : null
       const isInputFocused =
