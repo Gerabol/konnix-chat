@@ -252,7 +252,7 @@ export function RoomView({
   }, [])
 
   const addPendingAttachments = useCallback((files: File[]) => {
-    if (files.length === 0) return
+    if (files.length === 0 || editingMessage) return
     setPendingAttachments((current) => {
       const next = [...current]
       for (const file of files) {
@@ -267,7 +267,7 @@ export function RoomView({
       }
       return next
     })
-  }, [])
+  }, [editingMessage])
 
   const audioRecorder = useAudioRecorder({
     resetKey: audioResetKey,
@@ -828,6 +828,7 @@ export function RoomView({
     } else {
       stopTyping()
       setComposerExpanded(false)
+      setCodeBlock(null)
     }
     if (room.type === 'DIRECT') {
       setMention(null)
@@ -1747,7 +1748,7 @@ export function RoomView({
               type="button"
               className="composer-action"
               onClick={() => fileInputRef.current?.click()}
-              disabled={muted}
+              disabled={muted || Boolean(editingMessage)}
               title="Anexar arquivo"
             >
               <IconClip size={15} />
@@ -1755,7 +1756,7 @@ export function RoomView({
             </button>
             <AudioRecordButton
               recording={audioRecorder.recording}
-              disabled={muted}
+              disabled={muted || Boolean(editingMessage)}
               onClick={audioRecorder.toggle}
             />
             {(room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP' || room.type === 'CHANNEL') &&
@@ -1783,7 +1784,7 @@ export function RoomView({
             {editingMessage && (
               <button
                 type="button"
-                className="composer-action"
+                className="composer-action clear-draft"
                 onClick={cancelEditing}
                 disabled={muted}
                 title="Cancelar edição"

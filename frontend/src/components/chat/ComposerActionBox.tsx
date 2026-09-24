@@ -88,6 +88,10 @@ export function ComposerActionBox({
     }
   }, [open])
 
+  useEffect(() => {
+    if (editing) setOpen(false)
+  }, [editing])
+
   const showPoll =
     (roomType === 'PRIVATE_GROUP' || roomType === 'PUBLIC_GROUP' || roomType === 'CHANNEL') &&
     !readOnlyAccount &&
@@ -97,19 +101,26 @@ export function ComposerActionBox({
     <div className="composer-action-box" ref={ref}>
       <button
         type="button"
-        className="composer-action-trigger"
-        aria-label="Mais ações"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        title="Mais ações"
+        className={`composer-action-trigger ${editing ? 'composer-action-trigger-cancel' : ''}`}
+        aria-label={editing ? 'Cancelar edição' : 'Mais ações'}
+        aria-expanded={editing ? undefined : open}
+        aria-haspopup={editing ? undefined : 'menu'}
+        title={editing ? 'Cancelar edição' : 'Mais ações'}
         disabled={muted}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (editing) {
+            onCancelEdit()
+            setOpen(false)
+          } else {
+            setOpen((o) => !o)
+          }
+        }}
       >
-        <IconPlus size={22} />
+        {editing ? <IconX size={22} /> : <IconPlus size={22} />}
       </button>
       {open && (
         <div className="composer-actions-popover" role="menu" aria-label="Mais ações">
-          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted}>
+          <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onAttach(); setOpen(false) }} disabled={muted || editing}>
             <span className="composer-action-box-icon"><IconClip size={18} /></span>
             <span>Anexar Arquivo</span>
           </button>
@@ -118,7 +129,7 @@ export function ComposerActionBox({
             role="menuitem"
             className={`composer-action-box-item ${recordingAudio ? 'composer-action-box-item-recording' : ''}`}
             onClick={() => { onRecordAudio(); setOpen(false) }}
-            disabled={muted}
+            disabled={muted || editing}
           >
             <span className="composer-action-box-icon">
               {recordingAudio ? <IconStop size={18} /> : <IconMic size={18} />}
@@ -139,12 +150,6 @@ export function ComposerActionBox({
             <span className="composer-action-box-icon"><IconTrash size={18} /></span>
             <span>Limpar Mensagem</span>
           </button>
-          {editing && (
-            <button type="button" role="menuitem" className="composer-action-box-item" onClick={() => { onCancelEdit(); setOpen(false) }} disabled={muted}>
-              <span className="composer-action-box-icon"><IconX size={18} /></span>
-              <span>Cancelar Edição</span>
-            </button>
-          )}
         </div>
       )}
     </div>
