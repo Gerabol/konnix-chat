@@ -87,6 +87,7 @@ export type Message = {
   messageType: string
   parentMessageId: string | null
   attachment: Attachment | null
+  attachments?: Attachment[]
   createdAt: string
   updatedAt: string
   editedAt: string | null

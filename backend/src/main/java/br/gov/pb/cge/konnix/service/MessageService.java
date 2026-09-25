@@ -322,7 +322,7 @@ public class MessageService {
     }
 
     public MessageResponse responseFor(Message message, UUID actorId) {
-        Attachment attachment = attachmentRepository.findByMessageId(message.getId()).orElse(null);
+        List<Attachment> attachments = attachmentRepository.findAllByMessageIdIn(List.of(message.getId()));
         List<MessageReactionResponse> reactions = reactionRepository.findByMessageIdIn(List.of(message.getId())).stream()
                 .map(MessageReactionResponse::from)
                 .toList();
@@ -342,7 +342,7 @@ public class MessageService {
                     .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
             roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
         }
-        return MessageResponse.from(message, attachment, readBy, reactions, pollFor(message, actorId), roles);
+        return MessageResponse.fromAttachments(message, attachments, readBy, reactions, pollFor(message, actorId), roles);
     }
 
     public Map<UUID, MessageResponse> responsesForMessages(List<Message> messages, UUID actorId) {
@@ -350,8 +350,8 @@ public class MessageService {
             return Map.of();
         }
         List<UUID> ids = messages.stream().map(Message::getId).toList();
-        Map<UUID, Attachment> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
-                .collect(Collectors.toMap(a -> a.getMessage().getId(), a -> a, (a, b) -> a));
+        Map<UUID, List<Attachment>> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(a -> a.getMessage().getId()));
         Map<UUID, List<ReadReceiptResponse>> readsByMessage = messageReadRepository.findByMessageIdIn(ids).stream()
                 .collect(Collectors.groupingBy(read -> read.getMessage().getId(),
                         Collectors.mapping(ReadReceiptResponse::from, Collectors.toList())));
@@ -420,7 +420,7 @@ public class MessageService {
                         .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
                 roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
             }
-            result.put(m.getId(), MessageResponse.from(
+            result.put(m.getId(), MessageResponse.fromAttachments(
                     m,
                     attachmentsByMessage.get(m.getId()),
                     enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
@@ -438,8 +438,8 @@ public class MessageService {
             return List.of();
         }
         List<UUID> ids = messages.stream().map(Message::getId).toList();
-        Map<UUID, Attachment> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
-                .collect(Collectors.toMap(a -> a.getMessage().getId(), a -> a));
+        Map<UUID, List<Attachment>> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(a -> a.getMessage().getId()));
         Map<UUID, List<ReadReceiptResponse>> readsByMessage = messageReadRepository.findByMessageIdIn(ids).stream()
                 .collect(Collectors.groupingBy(read -> read.getMessage().getId(),
                         Collectors.mapping(ReadReceiptResponse::from, Collectors.toList())));
@@ -468,7 +468,7 @@ public class MessageService {
                         .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
                 roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
             }
-            return MessageResponse.from(m, attachmentsByMessage.get(m.getId()),
+            return MessageResponse.fromAttachments(m, attachmentsByMessage.get(m.getId()),
                 enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
                         ? readsByMessage.getOrDefault(m.getId(), List.of()) : List.of(),
                 reactionsByMessage.getOrDefault(m.getId(), List.of()), pollFor(m, actorId), roles);

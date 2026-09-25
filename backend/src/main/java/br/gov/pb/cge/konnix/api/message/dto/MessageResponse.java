@@ -26,7 +26,8 @@ public record MessageResponse(
         List<MessageReactionResponse> reactions,
         String forwardedFromUsername,
         PollData poll,
-        List<String> roles) {
+        List<String> roles,
+        List<AttachmentMetadata> attachments) {
 
     public record QuotedMessage(UUID id, String username, String content) {}
 
@@ -34,7 +35,7 @@ public record MessageResponse(
                            String messageType, UUID parentMessageId, AttachmentMetadata attachment,
                            Instant createdAt, Instant updatedAt, Instant editedAt, Instant deletedAt) {
         this(id, roomId, userId, username, content, messageType, parentMessageId, attachment,
-                createdAt, updatedAt, editedAt, deletedAt, List.of(), null, List.of(), null, null, List.of());
+                createdAt, updatedAt, editedAt, deletedAt, List.of(), null, List.of(), null, null, List.of(), attachment == null ? List.of() : List.of(attachment));
     }
 
     public record PollData(UUID id, String question, boolean allowMultiple, int totalMembers,
@@ -77,6 +78,16 @@ public record MessageResponse(
                                        List<MessageReactionResponse> reactions,
                                        PollData poll,
                                        List<String> roles) {
+        return fromAttachments(message, attachment == null ? List.of() : List.of(attachment), readBy, reactions, poll, roles);
+    }
+
+    public static MessageResponse fromAttachments(Message message, List<Attachment> attachments,
+                                       List<ReadReceiptResponse> readBy,
+                                       List<MessageReactionResponse> reactions, PollData poll, List<String> roles) {
+        List<AttachmentMetadata> metadata = (attachments == null ? List.<Attachment>of() : attachments).stream()
+                .sorted(java.util.Comparator.comparing(Attachment::getId))
+                .map(a -> new AttachmentMetadata(a.getId(), a.getOriginalName(), a.getMimeType(), a.getSize()))
+                .toList();
         return new MessageResponse(
                 message.getId(),
                 message.getRoom().getId(),
@@ -85,9 +96,7 @@ public record MessageResponse(
                 message.getContent(),
                 message.getMessageType(),
                 message.getParentMessage() != null ? message.getParentMessage().getId() : null,
-                attachment != null
-                        ? new AttachmentMetadata(attachment.getId(), attachment.getOriginalName(), attachment.getMimeType(), attachment.getSize())
-                        : null,
+                metadata.isEmpty() ? null : metadata.getFirst(),
                 message.getCreatedAt(),
                 message.getUpdatedAt(),
                 message.getEditedAt(),
@@ -99,7 +108,7 @@ public record MessageResponse(
                  reactions,
                   message.getForwardedFromUser() == null ? null : message.getForwardedFromUser().getUsername(),
                   poll,
-                  roles);
+                  roles, metadata);
     }
 
     /**

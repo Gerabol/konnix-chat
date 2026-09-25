@@ -257,7 +257,9 @@ function MessageRowComponent({
                 <span>{msg.quotedMessage.content || 'Anexo'}</span>
               </button>
             )}
-            {msg.attachment && <AttachmentView msg={msg} />}
+            {(msg.attachments ?? (msg.attachment ? [msg.attachment] : [])).map((attachment) => (
+              <AttachmentView key={attachment.id} msg={{ ...msg, attachment }} />
+            ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
             {!msg.poll && msg.content && (
               <div className="message-content">{renderMessageContent(msg.content, currentUsername)}</div>

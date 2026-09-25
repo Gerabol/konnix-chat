@@ -160,4 +160,25 @@ class MessageServiceTest {
         assertThat(responses.get(m2.getId()).attachment()).isNull();
         assertThat(responses.get(m2.getId()).roles()).contains("OWNER");
     }
+    @Test
+    void preservesMultipleAttachmentsInHistoryBatchAndSingleResponses() {
+        Room room = new Room(); room.setId(UUID.randomUUID());
+        Message message = new Message(); message.setId(UUID.randomUUID()); message.setRoom(room);
+        Attachment first = new Attachment(); first.setId(UUID.randomUUID()); first.setMessage(message);
+        first.setOriginalName("first.txt");
+        Attachment second = new Attachment(); second.setId(UUID.randomUUID()); second.setMessage(message);
+        second.setOriginalName("second.txt");
+        when(attachmentRepository.findAllByMessageIdIn(List.of(message.getId())))
+                .thenReturn(List.of(first, second));
+        UUID actor = UUID.randomUUID();
+        List<MessageResponse> history = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                messageService, "toResponses", List.of(message), actor);
+        MessageResponse batch = messageService.responsesForMessages(List.of(message), actor).get(message.getId());
+        MessageResponse single = messageService.responseFor(message, actor);
+        for (MessageResponse response : List.of(history.getFirst(), batch, single)) {
+            assertThat(response.attachments()).extracting(MessageResponse.AttachmentMetadata::id)
+                    .containsExactlyInAnyOrder(first.getId(), second.getId());
+            assertThat(response.attachment()).isEqualTo(response.attachments().getFirst());
+        }
+    }
 }
