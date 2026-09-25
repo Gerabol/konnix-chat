@@ -820,6 +820,7 @@ button:disabled {
 /* ---- Sidebar ---- */
 .sidebar {
   width: var(--sidebar-w);
+  min-height: 0;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1200,12 +1201,25 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* Keep the scrollbar visible so long conversation lists remain discoverable. */
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scrollbar-color: color-mix(in srgb, var(--konnix-sidebar-soft) 65%, transparent) transparent;
+  overscroll-behavior-y: contain;
   padding: 0 0.5rem 0.5rem;
 }
 
-.sidebar-nav::-webkit-scrollbar { display: none; }
+.sidebar-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--konnix-sidebar-soft) 65%, transparent);
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background-color: var(--konnix-sidebar-ink);
+}
 
 [data-theme$="-strong"] .sidebar {
   background: linear-gradient(180deg, var(--sidebar-strong-light) 0%, var(--konnix-sidebar) 46%, var(--sidebar-strong-dark) 100%) !important;
