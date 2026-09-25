@@ -16,3 +16,7 @@ dist/
 backend/data/
 *.csv
 migracao/
+
+# Ferramentas descartáveis de migração (somente locais)
+/migrator/
+/migrator.zip
