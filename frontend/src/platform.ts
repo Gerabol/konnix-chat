@@ -1,3 +1,5 @@
+import { playNotificationSound } from './utils/notificationSound.ts'
+
 export type AppEnvironment = 'web' | 'pwa' | 'tauri'
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -14,18 +16,43 @@ export async function notifyDesktop(title: string, body: string, roomId?: string
     ? `konnix-msg-${messageId}`
     : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`)
 
+  playNotificationSound(messageId)
+
+  if (isTauri) {
+    try {
+      const { sendNotification } = await import('@tauri-apps/plugin-notification')
+      sendNotification({
+        title,
+        body,
+        extra: roomId ? { roomId } : undefined,
+      })
+      return
+    } catch {
+      /* fallback para Notification() */
+    }
+  }
+
   // Em navegadores mobile (ex: Android Chrome), `new Notification()` no contexto da janela é proibido
   // e lança TypeError. O caminho padrão e suportado é ServiceWorkerRegistration.showNotification().
   if (!isTauri && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.ready
       if (reg && 'showNotification' in reg) {
+        // Se o Service Worker (Web Push) já exibiu esta exata notificação milissegundos antes,
+        // não sobrescrevemos a mesma tag para não cancelar o som/animação no macOS e Windows.
+        if ('getNotifications' in reg && typeof reg.getNotifications === 'function') {
+          const existing = await reg.getNotifications({ tag }).catch(() => [])
+          if (existing.length > 0) {
+            return
+          }
+        }
         await reg.showNotification(title, {
           body,
           tag,
           icon: '/icons/icon-192.png',
           badge: '/icons/icon-192.png',
           renotify: true,
+          silent: false,
           data: { roomId, messageId, url: roomId ? `/room/${roomId}` : '/' },
         } as NotificationOptions)
         return
@@ -40,6 +67,7 @@ export async function notifyDesktop(title: string, body: string, roomId?: string
       body,
       tag,
       icon: '/icons/icon-192.png',
+      silent: false,
     })
     notification.onclick = () => {
       window.focus()
