@@ -53,12 +53,11 @@ export function ForwardMessageModal({
     setBusy(true)
     try {
       const roomId = destination.type === 'user' ? (await api.createDm(destination.id)).id : destination.id
-      await api.sendMessage(
-        roomId,
-        message.content || `Anexo encaminhado: ${message.attachment?.originalName || 'arquivo'}`,
-        undefined,
-        message.id
-      )
+      // O anexo é replicado pelo backend; o texto segue o original. A API exige
+      // conteúdo não vazio, então usamos o nome do arquivo como fallback — o
+      // serviço descarta a legenda redundante quando ela coincide com o anexo.
+      const content = message.content || message.attachment?.originalName || 'Mensagem encaminhada'
+      await api.sendMessage(roomId, content, undefined, message.id)
       notify(`Mensagem encaminhada para ${destination.name}`)
       onClose()
     } catch (error) {

@@ -47,12 +47,12 @@ export function NotificationButton() {
         setError('Permissão de notificação negada no navegador. Desbloqueie as notificações do site nas configurações do navegador para ativar esta opção.')
         return
       }
-      const success = await syncPushSubscription()
-      if (success) {
+      const result = await syncPushSubscription()
+      if (result.ok) {
         setSubscribed(true)
         setNativeOn(true)
       } else {
-        setError('Não foi possível registrar as notificações push no servidor.')
+        setError(result.reason)
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao ativar')
@@ -110,7 +110,11 @@ export function NotificationButton() {
           {on ? 'Desativar' : 'Ativar'}
         </button>
       )}
-      {error && <span className="notif-error">{error}</span>}
+      {error && (
+        <p className="notif-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

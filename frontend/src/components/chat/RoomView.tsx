@@ -4,6 +4,7 @@ import { api, ApiError, formatDay, roomAvatarPath, userAvatarPath } from '../../
 import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import type { DmPartner, TypingUser } from '../../types'
+import { resolvePaste } from '../../utils/clipboard'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
 import {
@@ -35,6 +36,7 @@ import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndic
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 
 const SEARCH_DEBOUNCE_MS = 400
+const LOAD_PREVIOUS_SCROLL_THRESHOLD = 96
 
 export interface RoomViewProps {
   room: Room
@@ -43,7 +45,7 @@ export interface RoomViewProps {
   loading: boolean
   forceScrollRequest: number
   hasMore: boolean
-  loadMore: () => void
+  loadMore: () => Promise<boolean>
   composing: boolean
   online: boolean
   me: User
@@ -193,6 +195,8 @@ export function RoomView({
   const forceScrollToBottomRef = useRef(false)
   const wasNearBottomRef = useRef(true)
   const [loadingPrevious, setLoadingPrevious] = useState(false)
+  const loadingPreviousRef = useRef(false)
+  const loadPreviousRequestRef = useRef(0)
   const [audioResetKey, setAudioResetKey] = useState(0)
   const [audioMode, setAudioMode] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
@@ -326,6 +330,9 @@ export function RoomView({
     forceScrollToBottomRef.current = false
     wasNearBottomRef.current = true
     pendingOlderScrollRef.current = null
+    loadPreviousRequestRef.current += 1
+    loadingPreviousRef.current = false
+    setLoadingPrevious(false)
     setConversationReady(false)
   }, [room.id])
 
@@ -933,14 +940,21 @@ export function RoomView({
   }
 
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData.items)
+    const clipboard = e.clipboardData
+    if (!clipboard) return
+
+    const itemFiles = Array.from(clipboard.items)
       .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null)
-    const clipboardFiles = files.length > 0 ? files : Array.from(e.clipboardData.files)
-    if (clipboardFiles.length > 0) {
+    const action = resolvePaste({
+      plainText: clipboard.getData('text/plain'),
+      files: itemFiles.length > 0 ? itemFiles : Array.from(clipboard.files),
+    })
+
+    if (action.type === 'files') {
       e.preventDefault()
-      addPendingAttachments(clipboardFiles)
+      addPendingAttachments(action.files)
     }
   }
 
@@ -1012,6 +1026,33 @@ export function RoomView({
     },
     [room.pinnedMessage?.id, handleUnpin, handlePin],
   )
+
+  const loadPrevious = useCallback(async () => {
+    if (!conversationReady || !hasMore || loadingPreviousRef.current) return false
+
+    const container = messageListRef.current
+    if (!container) return false
+
+    const requestId = ++loadPreviousRequestRef.current
+    loadingPreviousRef.current = true
+    setLoadingPrevious(true)
+    pendingOlderScrollRef.current = {
+      oldScrollHeight: container.scrollHeight,
+      oldScrollTop: container.scrollTop,
+    }
+
+    try {
+      const loaded = await loadMore()
+      if (requestId !== loadPreviousRequestRef.current) return false
+      if (!loaded) pendingOlderScrollRef.current = null
+      return loaded
+    } finally {
+      if (requestId === loadPreviousRequestRef.current) {
+        loadingPreviousRef.current = false
+        setLoadingPrevious(false)
+      }
+    }
+  }, [conversationReady, hasMore, loadMore])
 
   return (
     <div
@@ -1226,8 +1267,8 @@ export function RoomView({
                             )
                             .catch(() => notify('Não foi possível atualizar o favorito'))
                   }
-                  title={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}
-                  aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}
+                  title={room.favorite ? 'Remover dos favoritos' : 'Favoritar sala'}
+                  aria-label={room.favorite ? 'Remover dos favoritos' : 'Favoritar sala'}
                   aria-pressed={room.favorite}
                 >
                   {room.favorite ? '★' : '☆'}
@@ -1345,7 +1386,7 @@ export function RoomView({
                       <span aria-hidden="true" style={{ fontSize: '1rem' }}>
                         {room.favorite ? '★' : '☆'}
                       </span>
-                      <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
+                      <span>{room.favorite ? 'Remover dos favoritos' : 'Favoritar sala'}</span>
                     </button>
                     <button
                       className="room-header-dropdown-item"
@@ -1422,6 +1463,9 @@ export function RoomView({
           }
           const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
           wasNearBottomRef.current = nearBottom
+          if (container.scrollTop <= LOAD_PREVIOUS_SCROLL_THRESHOLD) {
+            void loadPrevious()
+          }
         }}
       >
         <div className="message-list-content">
@@ -1430,19 +1474,9 @@ export function RoomView({
             <button
               className="btn-link"
               disabled={loadingPrevious}
-              onClick={async (event) => {
-                if (loadingPrevious) return
+              onClick={(event) => {
                 event.currentTarget.blur()
-                const container = messageListRef.current
-                if (container) {
-                  pendingOlderScrollRef.current = {
-                    oldScrollHeight: container.scrollHeight,
-                    oldScrollTop: container.scrollTop,
-                  }
-                }
-                setLoadingPrevious(true)
-                await loadMore()
-                setLoadingPrevious(false)
+                void loadPrevious()
               }}
             >
               {loadingPrevious ? 'Carregando mensagens anteriores…' : 'Carregar mensagens anteriores'}

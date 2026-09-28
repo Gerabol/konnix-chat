@@ -63,6 +63,7 @@ function MessageRowComponent({
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
   const [actionDismissed, setActionDismissed] = useState(false)
+  const [mouseHovered, setMouseHovered] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
   const [longPressed, setLongPressed] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -90,13 +91,13 @@ function MessageRowComponent({
   }
 
   const beginLongPress = (event: ReactPointerEvent) => {
-    const target = event.target as HTMLElement | null
-    if (target?.closest('.message-content')) {
-      return
-    }
+    if (event.pointerType === 'mouse' && event.button !== 0) return
     longPressStart.current = { x: event.clientX, y: event.clientY }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
-    longPressTimer.current = window.setTimeout(() => setLongPressed(true), 500)
+    longPressTimer.current = window.setTimeout(() => {
+      setActionDismissed(false)
+      setLongPressed(true)
+    }, 500)
   }
 
   const cancelLongPress = () => {
@@ -145,18 +146,26 @@ function MessageRowComponent({
       ref={rowRef}
       data-message-id={msg.id}
       onMouseEnter={() => setActionDismissed(false)}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse' || event.pointerType === 'pen') setMouseHovered(true)
+      }}
       onPointerDown={beginLongPress}
       onPointerMove={moveLongPress}
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
-      onPointerLeave={cancelLongPress}
+      onPointerLeave={(event) => {
+        cancelLongPress()
+        if (event.pointerType === 'mouse' || event.pointerType === 'pen') setMouseHovered(false)
+      }}
       onContextMenu={(e) => {
         const target = e.target as HTMLElement | null
-        if (!target?.closest('.message-content')) {
+        if (!deleted && canWrite && !target?.closest('.message-content')) {
           e.preventDefault()
+          setActionDismissed(false)
+          setLongPressed(true)
         }
       }}
-      className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}
+      className={`message ${isMine ? 'mine' : ''} ${deleted ? 'deleted' : ''} ${actionPinned ? 'action-pinned' : ''} ${actionDismissed ? 'action-dismissed' : ''} ${mouseHovered ? 'mouse-hovered' : ''} ${longPressed ? 'long-pressed' : ''} ${highlighted ? 'message-highlighted' : ''}`}
     >
       {!deleted && (
         <button

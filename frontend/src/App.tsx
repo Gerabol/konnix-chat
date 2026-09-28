@@ -7,8 +7,10 @@ import { getActiveServerId, getDesktopServers } from './desktop/servers/serverSt
 import { isTauri, listenDesktopNotificationAction } from './platform'
 import type { Session } from './types'
 import { applyTheme, cachedTheme, cacheTheme, clearCachedTheme, readThemeCookie } from './utils/theme'
+import { markPremiereSeen, shouldRememberPremiereExit, shouldShowPremiere } from './utils/premiere'
 import { DesktopShell } from './components/auth/DesktopShell'
 import { LoginView } from './components/auth/LoginView'
+import { PremiereOverlay } from './components/auth/PremiereOverlay'
 import { RequiredPasswordChangeView } from './components/auth/RequiredPasswordChangeView'
 import { ChatView } from './components/chat/ChatView'
 import { useMobileViewport } from './hooks/useMobileViewport'
@@ -43,6 +45,7 @@ export default function App() {
   const [activeDesktopId, setActiveDesktopId] = useState<string | null>(initialDesktopServer?.id ?? null)
   const [pathname, setPathname] = useState(() => window.location.pathname)
   const [authInitializing, setAuthInitializing] = useState(() => Boolean(getAuthToken()))
+  const [premiereDismissed, setPremiereDismissed] = useState(() => !shouldShowPremiere())
   const [session, setSession] = useState<Session | null>(() => {
     const token = getAuthToken()
     return token ? ({ token, user: null as unknown as User } as Session) : null
@@ -178,6 +181,17 @@ export default function App() {
 
   if (isTauri && desktopServers.length === 0) {
     return <ServerSetup onConnected={(server) => connectDesktopServer(server)} />
+  }
+
+  if (!premiereDismissed) {
+    return (
+      <PremiereOverlay
+        onDismiss={(exit) => {
+          if (shouldRememberPremiereExit(exit)) markPremiereSeen(new Date())
+          setPremiereDismissed(true)
+        }}
+      />
+    )
   }
 
   if (authInitializing) {

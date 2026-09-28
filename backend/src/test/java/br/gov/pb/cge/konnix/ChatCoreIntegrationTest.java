@@ -596,6 +596,104 @@ class ChatCoreIntegrationTest {
                 .andExpect(jsonPath("$.error.code").value("MESSAGE_ROOM_MISMATCH"));
     }
 
+    @Test
+    void favoritarGrupoPrivadoPersisteNaListagemEAposReleitura() throws Exception {
+        createUser("fav-grupo-dono");
+        String token = login("fav-grupo-dono", PASSWORD);
+        String roomId = createRoom(token, "fav-grupo-01", "PRIVATE_GROUP");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(true));
+
+        assertThat(favoriteInRoomList(token, roomId)).isTrue();
+
+        mockMvc.perform(get("/api/v1/rooms/{id}", roomId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(true));
+    }
+
+    @Test
+    void favoritarCanalPersisteNaListagem() throws Exception {
+        String roomId = createRoom(adminToken, "fav-canal-01", "CHANNEL");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(true));
+
+        assertThat(favoriteInRoomList(adminToken, roomId)).isTrue();
+    }
+
+    @Test
+    void desfavoritarGrupoPrivadoVoltaAoEstadoNaoFavorito() throws Exception {
+        createUser("fav-grupo-alternado");
+        String token = login("fav-grupo-alternado", PASSWORD);
+        String roomId = createRoom(token, "fav-grupo-02", "PRIVATE_GROUP");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(true));
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(false));
+
+        assertThat(favoriteInRoomList(token, roomId)).isFalse();
+    }
+
+    @Test
+    void favoritoDeGrupoPrivadoNaoAfetaOutrosMembros() throws Exception {
+        createUser("fav-grupo-dono-2");
+        String ownerToken = login("fav-grupo-dono-2", PASSWORD);
+        String roomId = createRoom(ownerToken, "fav-grupo-03", "PRIVATE_GROUP");
+        String membroId = createUser("fav-grupo-membro");
+        String membroToken = login("fav-grupo-membro", PASSWORD);
+        addMember(ownerToken, roomId, membroId);
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.favorite").value(true));
+
+        assertThat(favoriteInRoomList(membroToken, roomId)).isFalse();
+    }
+
+    @Test
+    void naoMembroNaoFavoritaGrupoPrivado() throws Exception {
+        createUser("fav-grupo-estranho");
+        String token = login("fav-grupo-estranho", PASSWORD);
+        String roomId = createRoom(adminToken, "fav-grupo-04", "PRIVATE_GROUP");
+
+        mockMvc.perform(post("/api/v1/rooms/{id}/favorite", roomId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_ROOM_MEMBER"));
+    }
+
+    private boolean favoriteInRoomList(String token, String roomId) {
+        try {
+            MvcResult result = mockMvc.perform(get("/api/v1/rooms")
+                            .header("Authorization", "Bearer " + token))
+                    .andReturn();
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            for (JsonNode room : body.path("data")) {
+                if (roomId.equals(room.path("id").asText())) {
+                    return room.path("favorite").asBoolean();
+                }
+            }
+            throw new AssertionError("Sala " + roomId + " ausente da listagem do usuário");
+        } catch (AssertionError e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private String login(String username, String password) {
         try {
             MvcResult result = mockMvc.perform(post("/api/v1/auth/login")

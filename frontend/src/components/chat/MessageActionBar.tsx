@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
+import { IconPin } from '../icons'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 export function MessageActionBar({
@@ -84,7 +85,9 @@ export function MessageActionBar({
         <button
           ref={btnRef}
           type="button"
-          title="Emoji"
+          title="Reagir à mensagem"
+          aria-label="Reagir à mensagem"
+          aria-expanded={open}
           onClick={() => {
             onPin(true)
             setOpen((value) => !value)
@@ -125,7 +128,7 @@ export function MessageActionBar({
             onTogglePin()
           }}
         >
-          📌
+          <IconPin />
         </button>
       )}
       {onRespond && (

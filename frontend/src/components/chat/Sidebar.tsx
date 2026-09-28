@@ -443,9 +443,16 @@ export const Sidebar = memo(function Sidebar({
                             </span>
                           </span>
                         ) : (
-                          <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                            {getRoomIcon(room)}
-                          </span>
+                          <AvatarImage
+                            path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                            className="room-thumb"
+                            fallback={
+                              <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                                {getRoomIcon(room)}
+                              </span>
+                            }
+                            alt={roomDisplayName(room)}
+                          />
                         )}
                         <span className="room-name">{roomDisplayName(room)}</span>
                         {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}

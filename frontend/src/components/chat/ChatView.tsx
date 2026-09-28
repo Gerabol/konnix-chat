@@ -115,6 +115,9 @@ export function ChatView({
 
   const registerInteraction = useCallback(() => {
     if (presenceStatusRef.current !== 'away' || presenceUpdateInFlightRef.current) return
+    // Se o usuário selecionou "Volto logo" manualmente, não mudar automaticamente
+    const manual = readManualPresence()
+    if (manual === 'away') return
     presenceUpdateInFlightRef.current = true
     void onPresenceChange('online')
       .catch(() => undefined)
@@ -386,15 +389,24 @@ export function ChatView({
 
   const loadMore = useCallback(async () => {
     if (isInitializingConversationRef.current || !activeRoomId || !nextBefore) {
-      return
+      return false
     }
+    const roomId = activeRoomId
+    const requestId = roomLoadRequestRef.current
     try {
-      const res = await api.messages(activeRoomId, 50, nextBefore)
+      const res = await api.messages(roomId, 50, nextBefore)
+      if (requestId !== roomLoadRequestRef.current || activeRoomIdRef.current !== roomId) {
+        return false
+      }
       setMessages((prev) => [...res.messages, ...prev])
       setHasMore(res.hasMore)
       setNextBefore(res.nextBefore)
+      return true
     } catch {
-      showToast('Falha ao carregar mais mensagens')
+      if (requestId === roomLoadRequestRef.current && activeRoomIdRef.current === roomId) {
+        showToast('Falha ao carregar mais mensagens')
+      }
+      return false
     }
   }, [activeRoomId, nextBefore, showToast])
 

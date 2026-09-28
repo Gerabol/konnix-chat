@@ -84,7 +84,11 @@ public record MessageResponse(
     public static MessageResponse fromAttachments(Message message, List<Attachment> attachments,
                                        List<ReadReceiptResponse> readBy,
                                        List<MessageReactionResponse> reactions, PollData poll, List<String> roles) {
-        List<AttachmentMetadata> metadata = (attachments == null ? List.<Attachment>of() : attachments).stream()
+        List<Attachment> files = attachments == null ? List.of() : attachments;
+        boolean hasOriginal = files.stream().anyMatch(a -> !a.isPreview());
+        List<AttachmentMetadata> metadata = files.stream()
+                // Preserve a preview as a fallback when no original is available.
+                .filter(a -> !hasOriginal || !a.isPreview())
                 .sorted(java.util.Comparator.comparing(Attachment::getId))
                 .map(a -> new AttachmentMetadata(a.getId(), a.getOriginalName(), a.getMimeType(), a.getSize()))
                 .toList();

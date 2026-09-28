@@ -29,6 +29,7 @@ import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
+import br.gov.pb.cge.konnix.storage.FileStorageService;
 import br.gov.pb.cge.konnix.push.PushNotificationService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -37,6 +38,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,6 +75,7 @@ public class MessageService {
     private final PollOptionRepository pollOptionRepository;
     private final PollVoteRepository pollVoteRepository;
     private final RoomAccessService roomAccessService;
+    private final FileStorageService storageService;
 
     public MessageService(MessageRepository messageRepository,
                           RoomRepository roomRepository,
@@ -87,7 +91,8 @@ public class MessageService {
                           PollRepository pollRepository,
                           PollOptionRepository pollOptionRepository,
                           PollVoteRepository pollVoteRepository,
-                          RoomAccessService roomAccessService) {
+                          RoomAccessService roomAccessService,
+                          FileStorageService storageService) {
         this.messageRepository = messageRepository;
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
@@ -103,6 +108,7 @@ public class MessageService {
         this.pollOptionRepository = pollOptionRepository;
         this.pollVoteRepository = pollVoteRepository;
         this.roomAccessService = roomAccessService;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -114,9 +120,10 @@ public class MessageService {
             throw ApiExceptions.roomReadOnly();
         }
 
+        User author = actorUser(actor.id());
         Message message = new Message();
         message.setRoom(room);
-        message.setUser(actorUser(actor.id()));
+        message.setUser(author);
         message.setContent(request.content().trim());
         message.setMessageType("USER");
 
@@ -129,22 +136,75 @@ public class MessageService {
             }
             message.setParentMessage(parent);
         }
+        List<Attachment> forwardedFiles = List.of();
         if (request.forwardedMessageId() != null) {
             Message original = messageRepository.findById(request.forwardedMessageId())
                     .filter(m -> m.getDeletedAt() == null)
                     .orElseThrow(() -> ApiExceptions.notFound("message/" + request.forwardedMessageId()));
             requireMember(original.getRoom(), actor);
             message.setForwardedFromUser(original.getUser());
+            forwardedFiles = attachmentRepository.findOriginalsByMessageId(original.getId());
+            if (!forwardedFiles.isEmpty()) {
+                message.setMessageType("FILE");
+                if (isGeneratedCaption(message.getContent(), forwardedFiles.get(0))) {
+                    // O upload sem legenda repete o nome do arquivo; evita duplicar o texto na tela.
+                    message.setContent("");
+                }
+            }
         }
 
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         messageRepository.save(message);
-        auditService.record("MESSAGE_CREATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
+        if (!forwardedFiles.isEmpty()) {
+            copyForwardedFiles(message, forwardedFiles, author, ipAddress);
+        }
+        auditService.record("MESSAGE_CREATED", author, "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
         pushNotificationService.notifyNewMessage(roomId, response, displayName(room));
         return response;
+    }
+
+    /** O texto padrão de um anexo é o próprio nome do arquivo. */
+    private static boolean isGeneratedCaption(String content, Attachment source) {
+        if (content == null || content.isBlank()) {
+            return true;
+        }
+        String name = source.getOriginalName();
+        return name != null && name.equals(content.trim());
+    }
+
+    /**
+     * Replica os arquivos anexados na mensagem de origem. Cada cópia vira um
+     * arquivo próprio, para que apagar a mensagem de origem não afete a cópia.
+     */
+    private void copyForwardedFiles(Message message, List<Attachment> sources, User author, String ipAddress) {
+        List<String> storedPaths = new ArrayList<>();
+        try {
+            for (Attachment source : sources) {
+                byte[] data = Files.readAllBytes(storageService.fileFor(source.getStoragePath()).toPath());
+                FileStorageService.StoredFile stored = storageService.store(data);
+                storedPaths.add(stored.storagePath());
+                Attachment copy = new Attachment();
+                copy.setMessage(message);
+                copy.setUser(author);
+                copy.setOriginalName(source.getOriginalName());
+                copy.setStoredName(stored.storedName());
+                copy.setMimeType(source.getMimeType());
+                copy.setSize(stored.size());
+                copy.setStoragePath(stored.storagePath());
+                copy.setSha256(stored.sha256());
+                attachmentRepository.save(copy);
+            }
+        } catch (IOException e) {
+            storedPaths.forEach(storageService::delete);
+            throw ApiExceptions.storageError();
+        } catch (RuntimeException e) {
+            storedPaths.forEach(storageService::delete);
+            throw e;
+        }
+        auditService.record("MESSAGE_FORWARDED", author, "message", message.getId().toString(), ipAddress);
     }
 
     @Transactional(readOnly = true)

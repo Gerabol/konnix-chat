@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, formatBytes } from '../../api'
 import type { Attachment, Message } from '../../api'
+import { ImageLightbox } from '../modals/ImageLightbox'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 
 export function attachmentExtension(att: Attachment): string {
@@ -33,6 +34,7 @@ export function AttachmentView({ msg }: { msg: Message }) {
   const isImage = !!att && att.mimeType.startsWith('image/')
   const isAudio = !!att && att.mimeType.startsWith('audio/')
   const cachedUrl = att ? attachmentBlobCache.get(att.id) : undefined
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const [state, setState] = useState<{ status: 'loading' } | { status: 'ready'; url: string } | { status: 'error'; error: string }>(
     cachedUrl ? { status: 'ready', url: cachedUrl } : { status: 'loading' },
   )
@@ -99,13 +101,15 @@ export function AttachmentView({ msg }: { msg: Message }) {
   if (isImage) {
     return (
       <div className="attachment-image">
-        <img
-          src={state.url}
-          alt={att.originalName}
-          className="attachment-img"
-          onClick={() => window.open(state.url, '_blank')}
+        <button
+          type="button"
+          className="attachment-img-btn"
+          onClick={() => setLightboxOpen(true)}
           title="Clique para ampliar"
-        />
+          aria-label={`Ampliar imagem ${att.originalName}`}
+        >
+          <img src={state.url} alt={att.originalName} className="attachment-img" />
+        </button>
         <span className="attachment-image-meta">
           <strong>{att.originalName}</strong>
           <small>{formatBytes(att.size)}</small>
@@ -113,6 +117,9 @@ export function AttachmentView({ msg }: { msg: Message }) {
             Baixar
           </a>
         </span>
+        {lightboxOpen && (
+          <ImageLightbox src={state.url} alt={att.originalName} onClose={() => setLightboxOpen(false)} />
+        )}
       </div>
     )
   }

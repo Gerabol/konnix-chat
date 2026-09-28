@@ -70,7 +70,7 @@ services:
       VITE_WS_URL: ""
 
     ports:
-      - "5174:5173"
+      - "3010:5173"
 
     volumes:
       - ./frontend:/app
