@@ -1,5 +1,6 @@
 package br.gov.pb.cge.konnix.websocket;
 
+import br.gov.pb.cge.konnix.domain.user.PresenceStatus;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -104,10 +105,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     pendingDisconnects.remove(user.getId());
                     if (sessionRegistry.sessionsOf(user.getId()).isEmpty()) {
                         userRepository.findById(user.getId()).ifPresent(current -> {
-                            if (!"offline".equals(current.getPresenceStatus())) {
-                                current.setPresenceStatus("offline");
+                            if (!PresenceStatus.OFFLINE_VALUE.equals(current.getPresenceStatus())) {
+                                current.setPresenceStatus(PresenceStatus.OFFLINE_VALUE);
                                 userRepository.save(current);
-                                eventPublisher.publishPresence(current.getId(), current.getUsername(), "offline");
+                                eventPublisher.publishPresence(current.getId(), current.getUsername(), PresenceStatus.OFFLINE_VALUE);
                                 log.debug("Usuário {} marcado como offline após período de carência", current.getUsername());
                             }
                         });
@@ -123,15 +124,19 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (pending != null) {
             pending.cancel(false);
         }
-        if (sessionRegistry.sessionsOf(userId).isEmpty()) {
-            userRepository.findById(userId).ifPresent(current -> {
-                if (!"offline".equals(current.getPresenceStatus())) {
-                    current.setPresenceStatus("offline");
-                    userRepository.save(current);
-                    eventPublisher.publishPresence(current.getId(), current.getUsername(), "offline");
-                }
-            });
+        for (WebSocketSession session : sessionRegistry.sessionsOf(userId)) {
+            try {
+                session.close(CloseStatus.NORMAL);
+            } catch (Exception ignored) {
+            }
         }
+        userRepository.findById(userId).ifPresent(current -> {
+            if (!PresenceStatus.OFFLINE_VALUE.equals(current.getPresenceStatus())) {
+                current.setPresenceStatus(PresenceStatus.OFFLINE_VALUE);
+                userRepository.save(current);
+                eventPublisher.publishPresence(current.getId(), current.getUsername(), PresenceStatus.OFFLINE_VALUE);
+            }
+        });
     }
 
     @Override

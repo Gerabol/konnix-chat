@@ -60,6 +60,17 @@ public class Attachment {
     @Column(name = "legacy_id", length = 255)
     private String legacyId;
 
+    @Column(name = "is_preview", nullable = false)
+    private boolean preview;
+
+    public boolean isPreview() {
+        return preview;
+    }
+
+    public void setPreview(boolean preview) {
+        this.preview = preview;
+    }
+
     public UUID getId() {
         return id;
     }

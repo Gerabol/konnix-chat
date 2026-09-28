@@ -87,6 +87,7 @@ export type Message = {
   messageType: string
   parentMessageId: string | null
   attachment: Attachment | null
+  attachments?: Attachment[]
   createdAt: string
   updatedAt: string
   editedAt: string | null
@@ -191,16 +192,45 @@ export type MessageTimeSeriesResponse = {
 export type AppSettings = { name: string; maxUploadBytes: number }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
 
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+const configuredApiUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ? import.meta.env.VITE_API_URL.trim() : undefined
 let activeServerBaseUrl: string | null = null
 const API_BASE: string = configuredApiUrl
   ? configuredApiUrl.replace(/\/$/, '')
-  : window.location.origin
+  : (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '')
 
 let token: string | null = null
 let authTokenKey = 'konnix.auth-token'
 const isDesktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-const authStorage = isDesktopRuntime ? localStorage : sessionStorage
+// Web e PWA: cookie persistente (sobrevive a reload e ao fechamento do app).
+// Desktop: localStorage por servidor (também persistente entre execuções).
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+function readStoredToken(key: string): string | null {
+  if (isDesktopRuntime) return localStorage.getItem(key)
+  const value = document.cookie
+    .split('; ')
+    .find((entry) => entry.startsWith(`${key}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=')
+  return value ? decodeURIComponent(value) : null
+}
+
+function writeStoredToken(key: string, value: string): void {
+  if (isDesktopRuntime) {
+    localStorage.setItem(key, value)
+    return
+  }
+  document.cookie = `${key}=${encodeURIComponent(value)}; Max-Age=${AUTH_COOKIE_MAX_AGE}; Path=/; SameSite=Lax`
+}
+
+function clearStoredToken(key: string): void {
+  if (isDesktopRuntime) {
+    localStorage.removeItem(key)
+    return
+  }
+  document.cookie = `${key}=; Max-Age=0; Path=/; SameSite=Lax`
+}
 
 export function setActiveServer(baseUrl: string | null, serverId?: string): void {
   activeServerBaseUrl = baseUrl ? baseUrl.replace(/\/$/, '') : null
@@ -214,16 +244,13 @@ function apiBase(): string {
 
 export function setAuthToken(next: string | null): void {
   token = next
-  if (next) {
-    authStorage.setItem(authTokenKey, next)
-  } else {
-    authStorage.removeItem(authTokenKey)
-  }
+  if (next) writeStoredToken(authTokenKey, next)
+  else clearStoredToken(authTokenKey)
 }
 
 export function getAuthToken(): string | null {
   if (token) return token
-  token = authStorage.getItem(authTokenKey)
+  token = readStoredToken(authTokenKey)
   return token
 }
 
@@ -238,15 +265,16 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, bearerToken?: string): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   }
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+  const activeToken = bearerToken ?? getAuthToken()
+  if (activeToken) {
+    headers.Authorization = `Bearer ${activeToken}`
   }
   const res = await fetch(`${apiBase()}${path}`, { ...options, headers })
   const text = await res.text()
@@ -266,13 +294,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 async function requestWithBearer<T>(rawToken: string, path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { ...(options.headers as Record<string, string>), Authorization: `Bearer ${rawToken}` }
-  if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
-  const res = await fetch(`${apiBase()}${path}`, { ...options, headers })
-  const text = await res.text()
-  const body = text ? JSON.parse(text) as { data?: T; error?: { code?: string; message?: string } } : null
-  if (!res.ok) throw new ApiError(res.status, body?.error?.code ?? 'REQUEST_FAILED', body?.error?.message ?? `Erro ${res.status}`)
-  return body?.data as T
+  return request<T>(path, options, rawToken)
 }
 
 export function validateBearerToken(rawToken: string) {
@@ -285,7 +307,8 @@ export function revokeBearerToken(rawToken: string) {
 
 async function fetchBlob(path: string): Promise<Blob> {
   const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
+  const activeToken = getAuthToken()
+  if (activeToken) headers.Authorization = `Bearer ${activeToken}`
   const res = await fetch(`${apiBase()}${path}`, { headers })
   if (!res.ok) {
     let message = `Erro ${res.status}`
@@ -627,7 +650,7 @@ export const api = {
 
 export function wsUrl(): string {
   const base = apiBase().replace(/^http/, 'ws')
-  return `${base}/ws?token=${encodeURIComponent(token ?? '')}`
+  return `${base}/ws?token=${encodeURIComponent(getAuthToken() ?? '')}`
 }
 
 export function formatBytes(bytes: number): string {

@@ -13,6 +13,18 @@ public interface AttachmentRepository extends JpaRepository<Attachment, UUID> {
 
     Optional<Attachment> findByMessageId(UUID messageId);
 
+    /**
+     * Anexos enviados pelo usuário (ignora miniaturas geradas), na ordem em que
+     * foram gravados. Usado ao encaminhar para não devolver a thumbnail junto.
+     */
+    @Query("""
+            select a from Attachment a
+            where a.message.id = :messageId
+              and a.preview = false
+            order by a.createdAt, a.id
+            """)
+    List<Attachment> findOriginalsByMessageId(@Param("messageId") UUID messageId);
+
     List<Attachment> findAllByMessageIdIn(Collection<UUID> messageIds);
 
     @Query("""

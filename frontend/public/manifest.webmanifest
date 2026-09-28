@@ -4,12 +4,19 @@
   "description": "Chat corporativo da CGE",
   "lang": "pt-BR",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "theme_color": "#5B4CF0",
   "background_color": "#F7F8FC",
   "categories": ["business", "social", "communication"],
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "/manifest.webmanifest"
+    }
+  ],
   "icons": [
     {
       "src": "/icons/icon-192.png",

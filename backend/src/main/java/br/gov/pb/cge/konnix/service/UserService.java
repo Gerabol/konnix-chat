@@ -18,6 +18,7 @@ import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserTheme;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.domain.session.SessionRepository;
+import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.data.domain.PageRequest;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -45,26 +47,28 @@ public class UserService {
     private final AuditService auditService;
     private final SessionRepository sessionRepository;
     private final TransactionTemplate transactionTemplate;
+    private final ChatEventPublisher chatEventPublisher;
 
     public UserService(UserRepository userRepository,
                        RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
                        AuditService auditService,
                        SessionRepository sessionRepository,
-                       PlatformTransactionManager transactionManager) {
+                       PlatformTransactionManager transactionManager,
+                       ChatEventPublisher chatEventPublisher) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
         this.sessionRepository = sessionRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.chatEventPublisher = chatEventPublisher;
     }
 
     @Transactional(readOnly = true)
     public List<UserResponse> list() {
-        return userRepository.findAll().stream()
+        return userRepository.findAllByOrderByUsernameAsc().stream()
                 .map(UserResponse::from)
-                .sorted(Comparator.comparing(UserResponse::username))
                 .toList();
     }
 
@@ -99,16 +103,9 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserDirectoryResponse> directory(String query) {
-        String q = query == null ? null : query.trim().toLowerCase();
-        return userRepository.findAll().stream()
-                .filter(user -> !user.isDisabled())
-                .filter(u -> q == null || q.isBlank()
-                        || (u.getName() != null && u.getName().toLowerCase().contains(q))
-                        || (u.getUsername() != null && u.getUsername().toLowerCase().contains(q))
-                        || (u.getEmail() != null && u.getEmail().toLowerCase().contains(q)))
+        String q = query == null || query.isBlank() ? null : query.trim();
+        return userRepository.searchDirectory(q).stream()
                 .map(UserDirectoryResponse::from)
-                .sorted(Comparator.comparing(UserDirectoryResponse::name, String.CASE_INSENSITIVE_ORDER)
-                        .thenComparing(UserDirectoryResponse::username))
                 .toList();
     }
 
@@ -275,8 +272,10 @@ public class UserService {
     @Transactional
     public UserResponse avatarUpdated(UUID id, UUID actorId, String ipAddress) {
         User user = findOrThrow(id);
+        user.setUpdatedAt(Instant.now());
         userRepository.save(user);
         auditService.record("USER_UPDATED", actor(actorId), "user", user.getId().toString(), ipAddress);
+        chatEventPublisher.publishAvatarUpdated(user.getId());
         return UserResponse.from(user);
     }
 

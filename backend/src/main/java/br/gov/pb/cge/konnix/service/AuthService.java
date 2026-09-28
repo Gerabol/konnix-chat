@@ -8,12 +8,15 @@ import br.gov.pb.cge.konnix.api.auth.ProfileUpdateRequest;
 import br.gov.pb.cge.konnix.api.auth.ThemeUpdateRequest;
 import br.gov.pb.cge.konnix.api.auth.RequiredPasswordChangeRequest;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
+import br.gov.pb.cge.konnix.domain.user.PresenceStatus;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
 import br.gov.pb.cge.konnix.security.LoginAttemptService;
 import br.gov.pb.cge.konnix.security.TokenService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
+import br.gov.pb.cge.konnix.websocket.ChatWebSocketHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +31,26 @@ public class AuthService {
     private final LoginAttemptService loginAttemptService;
     private final UserService userService;
     private final ChatEventPublisher eventPublisher;
+    private final ChatWebSocketHandler chatWebSocketHandler;
+
+    @Autowired
+    public AuthService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       TokenService tokenService,
+                       AuditService auditService,
+                       LoginAttemptService loginAttemptService,
+                       UserService userService,
+                       ChatEventPublisher eventPublisher,
+                       ChatWebSocketHandler chatWebSocketHandler) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.tokenService = tokenService;
+        this.auditService = auditService;
+        this.loginAttemptService = loginAttemptService;
+        this.userService = userService;
+        this.eventPublisher = eventPublisher;
+        this.chatWebSocketHandler = chatWebSocketHandler;
+    }
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -36,13 +59,7 @@ public class AuthService {
                        LoginAttemptService loginAttemptService,
                        UserService userService,
                        ChatEventPublisher eventPublisher) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.tokenService = tokenService;
-        this.auditService = auditService;
-        this.loginAttemptService = loginAttemptService;
-        this.userService = userService;
-        this.eventPublisher = eventPublisher;
+        this(userRepository, passwordEncoder, tokenService, auditService, loginAttemptService, userService, eventPublisher, null);
     }
 
     @Transactional
@@ -77,9 +94,9 @@ public class AuthService {
         }
 
         loginAttemptService.clear(username);
-        user.setPresenceStatus("online");
+        user.setPresenceStatus(PresenceStatus.ONLINE_VALUE);
         userRepository.save(user);
-        eventPublisher.publishPresence(user.getId(), user.getUsername(), "online");
+        eventPublisher.publishPresence(user.getId(), user.getUsername(), PresenceStatus.ONLINE_VALUE);
         TokenService.IssuedToken issued = tokenService.issue(user);
         auditService.record("LOGIN_SUCCESS", user, "auth", user.getUsername(), ipAddress);
         return new LoginResponse(issued.rawToken(), UserResponse.from(user));
@@ -93,6 +110,9 @@ public class AuthService {
         tokenService.revoke(rawToken);
         if (user != null) {
             auditService.record("LOGOUT", user, "auth", user.getUsername(), ipAddress);
+            if (chatWebSocketHandler != null) {
+                chatWebSocketHandler.markUserOfflineImmediately(user.getId());
+            }
         }
     }
 
@@ -100,10 +120,10 @@ public class AuthService {
     public UserResponse me(AuthenticatedUser principal) {
         User user = userRepository.findById(principal.id())
                 .orElseThrow(() -> ApiExceptions.unauthorized("Sessão inválida"));
-        if ("offline".equals(user.getPresenceStatus()) || user.getPresenceStatus() == null) {
-            user.setPresenceStatus("online");
+        if (PresenceStatus.OFFLINE_VALUE.equals(user.getPresenceStatus()) || user.getPresenceStatus() == null) {
+            user.setPresenceStatus(PresenceStatus.ONLINE_VALUE);
             userRepository.save(user);
-            eventPublisher.publishPresence(user.getId(), user.getUsername(), "online");
+            eventPublisher.publishPresence(user.getId(), user.getUsername(), PresenceStatus.ONLINE_VALUE);
         }
         return UserResponse.from(user);
     }

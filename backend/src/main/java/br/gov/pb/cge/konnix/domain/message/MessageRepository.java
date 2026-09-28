@@ -102,4 +102,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             """)
     List<Object[]> countUnreadByRoomIds(@Param("roomIds") List<UUID> roomIds,
                                         @Param("userId") UUID userId);
+
+    @Query("""
+            select count(m) from Message m
+            where m.room.id in (select rm.room.id from RoomMember rm where rm.user.id = :userId and rm.active = true)
+              and m.deletedAt is null
+              and m.user is not null and m.user.id <> :userId
+              and not exists (select mr.id from MessageRead mr
+                              where mr.message.id = m.id and mr.user.id = :userId)
+            """)
+    long countTotalUnreadByUserId(@Param("userId") UUID userId);
 }
+

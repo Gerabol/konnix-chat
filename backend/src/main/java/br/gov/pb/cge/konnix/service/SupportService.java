@@ -84,7 +84,7 @@ public class SupportService {
         eventPublisher.publish(room.getId(), "message.created", response);
 
         if (files != null && !files.isEmpty()) {
-            long configuredMax = systemSettingService.maxUploadBytes(62914560L);
+            long configuredMax = systemSettingService.maxUploadBytes(FileService.DEFAULT_MAX_FILE_SIZE);
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) {
                     continue;
@@ -177,7 +177,7 @@ public class SupportService {
         }
 
         if (hasFiles) {
-            long configuredMax = systemSettingService.maxUploadBytes(62914560L);
+            long configuredMax = systemSettingService.maxUploadBytes(FileService.DEFAULT_MAX_FILE_SIZE);
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) {
                     continue;

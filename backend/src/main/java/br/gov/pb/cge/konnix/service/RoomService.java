@@ -81,7 +81,14 @@ public class RoomService {
                 ? messageRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
                     .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()))
                 : Map.of();
-        return roomRepository.findAllById(roomIds).stream()
+        List<Room> rooms = roomRepository.findAllById(roomIds);
+        List<Message> pinnedMessages = rooms.stream()
+                .map(Room::getPinnedMessage)
+                .filter(m -> m != null && m.getDeletedAt() == null)
+                .toList();
+        Map<UUID, MessageResponse> pinnedResponses = messageService.responsesForMessages(pinnedMessages, actor.id());
+
+        return rooms.stream()
                 .filter(room -> !TYPE_DIRECT.equals(room.getType()) || lastMessageByRoom.containsKey(room.getId()))
                 .map(room -> RoomResponse.from(room,
                         partnerOf(room, actor.id(),
@@ -89,9 +96,9 @@ public class RoomService {
                         lastMessageByRoom.getOrDefault(room.getId(), room.getUpdatedAt() != null
                                 ? room.getUpdatedAt() : room.getCreatedAt()),
                         unreadByRoom.getOrDefault(room.getId(), 0L),
-                        favoriteOf(room, actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
+                        favoriteOf(actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
                         room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                                ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null))
+                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null))
                 .filter(response -> response.directPartner() == null
                         || !"DISABLED".equals(response.directPartner().accountStatus()))
                 .sorted(Comparator.comparing(RoomResponse::lastActivityAt,
@@ -124,7 +131,7 @@ public class RoomService {
         requireMember(room, actor);
         List<RoomMember> members = roomMemberRepository.findByRoomId(id);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(room, actor.id(), members),
+                favoriteOf(actor.id(), members),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
                         ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
     }
@@ -372,7 +379,7 @@ public class RoomService {
         chatEventPublisher.publishPinnedMessage(roomId, pinnedResponse);
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(room, actor.id(), members), pinnedResponse);
+                favoriteOf(actor.id(), members), pinnedResponse);
     }
 
     @Transactional
@@ -388,7 +395,7 @@ public class RoomService {
         }
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(room, actor.id(), members), null);
+                favoriteOf(actor.id(), members), null);
     }
 
     @Transactional
@@ -494,8 +501,8 @@ public class RoomService {
         return roomMemberRepository.save(member);
     }
 
-    private boolean favoriteOf(Room room, UUID userId, List<RoomMember> members) {
-        return TYPE_DIRECT.equals(room.getType()) && members.stream()
+    private boolean favoriteOf(UUID userId, List<RoomMember> members) {
+        return members.stream()
                 .anyMatch(member -> member.getUser().getId().equals(userId) && member.isActive() && member.isFavorite());
     }
 

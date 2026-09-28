@@ -47,6 +47,8 @@ public class FileService {
 
     private final FileStorageService storageService;
     private final AttachmentRepository attachmentRepository;
+    public static final long DEFAULT_MAX_FILE_SIZE = 62914560L; // 60MB
+
     private final MessageRepository messageRepository;
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;

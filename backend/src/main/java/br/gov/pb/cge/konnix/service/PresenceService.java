@@ -2,6 +2,7 @@ package br.gov.pb.cge.konnix.service;
 
 import br.gov.pb.cge.konnix.api.exception.ApiExceptions;
 import br.gov.pb.cge.konnix.api.user.dto.UserResponse;
+import br.gov.pb.cge.konnix.domain.user.PresenceStatus;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
@@ -13,7 +14,7 @@ import java.util.Set;
 
 @Service
 public class PresenceService {
-    public static final Set<String> STATUSES = Set.of("online", "away", "busy", "offline", "mission", "vacation");
+    public static final Set<String> STATUSES = PresenceStatus.ALL_VALUES;
 
     private final UserRepository userRepository;
     private final ChatEventPublisher eventPublisher;
@@ -26,7 +27,7 @@ public class PresenceService {
     @Transactional
     public UserResponse update(AuthenticatedUser actor, String status) {
         String normalized = status == null ? "" : status.trim().toLowerCase();
-        if (!STATUSES.contains(normalized)) {
+        if (!PresenceStatus.isValid(normalized)) {
             throw ApiExceptions.conflict("PRESENCE_STATUS_INVALID", "Status de presença inválido");
         }
         User user = userRepository.findById(actor.id())

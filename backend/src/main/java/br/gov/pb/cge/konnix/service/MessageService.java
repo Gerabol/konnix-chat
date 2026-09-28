@@ -23,11 +23,13 @@ import br.gov.pb.cge.konnix.domain.poll.PollVote;
 import br.gov.pb.cge.konnix.domain.poll.PollVoteRepository;
 import br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse;
 import br.gov.pb.cge.konnix.domain.room.Room;
+import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
 import br.gov.pb.cge.konnix.security.AuthenticatedUser;
+import br.gov.pb.cge.konnix.storage.FileStorageService;
 import br.gov.pb.cge.konnix.push.PushNotificationService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -36,11 +38,15 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -69,6 +75,7 @@ public class MessageService {
     private final PollOptionRepository pollOptionRepository;
     private final PollVoteRepository pollVoteRepository;
     private final RoomAccessService roomAccessService;
+    private final FileStorageService storageService;
 
     public MessageService(MessageRepository messageRepository,
                           RoomRepository roomRepository,
@@ -84,7 +91,8 @@ public class MessageService {
                           PollRepository pollRepository,
                           PollOptionRepository pollOptionRepository,
                           PollVoteRepository pollVoteRepository,
-                          RoomAccessService roomAccessService) {
+                          RoomAccessService roomAccessService,
+                          FileStorageService storageService) {
         this.messageRepository = messageRepository;
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
@@ -100,6 +108,7 @@ public class MessageService {
         this.pollOptionRepository = pollOptionRepository;
         this.pollVoteRepository = pollVoteRepository;
         this.roomAccessService = roomAccessService;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -111,9 +120,10 @@ public class MessageService {
             throw ApiExceptions.roomReadOnly();
         }
 
+        User author = actorUser(actor.id());
         Message message = new Message();
         message.setRoom(room);
-        message.setUser(actorUser(actor.id()));
+        message.setUser(author);
         message.setContent(request.content().trim());
         message.setMessageType("USER");
 
@@ -126,22 +136,75 @@ public class MessageService {
             }
             message.setParentMessage(parent);
         }
+        List<Attachment> forwardedFiles = List.of();
         if (request.forwardedMessageId() != null) {
             Message original = messageRepository.findById(request.forwardedMessageId())
                     .filter(m -> m.getDeletedAt() == null)
                     .orElseThrow(() -> ApiExceptions.notFound("message/" + request.forwardedMessageId()));
             requireMember(original.getRoom(), actor);
             message.setForwardedFromUser(original.getUser());
+            forwardedFiles = attachmentRepository.findOriginalsByMessageId(original.getId());
+            if (!forwardedFiles.isEmpty()) {
+                message.setMessageType("FILE");
+                if (isGeneratedCaption(message.getContent(), forwardedFiles.get(0))) {
+                    // O upload sem legenda repete o nome do arquivo; evita duplicar o texto na tela.
+                    message.setContent("");
+                }
+            }
         }
 
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         messageRepository.save(message);
-        auditService.record("MESSAGE_CREATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
+        if (!forwardedFiles.isEmpty()) {
+            copyForwardedFiles(message, forwardedFiles, author, ipAddress);
+        }
+        auditService.record("MESSAGE_CREATED", author, "message", message.getId().toString(), ipAddress);
         MessageResponse response = responseFor(message, actor.id());
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
         pushNotificationService.notifyNewMessage(roomId, response, displayName(room));
         return response;
+    }
+
+    /** O texto padrão de um anexo é o próprio nome do arquivo. */
+    private static boolean isGeneratedCaption(String content, Attachment source) {
+        if (content == null || content.isBlank()) {
+            return true;
+        }
+        String name = source.getOriginalName();
+        return name != null && name.equals(content.trim());
+    }
+
+    /**
+     * Replica os arquivos anexados na mensagem de origem. Cada cópia vira um
+     * arquivo próprio, para que apagar a mensagem de origem não afete a cópia.
+     */
+    private void copyForwardedFiles(Message message, List<Attachment> sources, User author, String ipAddress) {
+        List<String> storedPaths = new ArrayList<>();
+        try {
+            for (Attachment source : sources) {
+                byte[] data = Files.readAllBytes(storageService.fileFor(source.getStoragePath()).toPath());
+                FileStorageService.StoredFile stored = storageService.store(data);
+                storedPaths.add(stored.storagePath());
+                Attachment copy = new Attachment();
+                copy.setMessage(message);
+                copy.setUser(author);
+                copy.setOriginalName(source.getOriginalName());
+                copy.setStoredName(stored.storedName());
+                copy.setMimeType(source.getMimeType());
+                copy.setSize(stored.size());
+                copy.setStoragePath(stored.storagePath());
+                copy.setSha256(stored.sha256());
+                attachmentRepository.save(copy);
+            }
+        } catch (IOException e) {
+            storedPaths.forEach(storageService::delete);
+            throw ApiExceptions.storageError();
+        } catch (RuntimeException e) {
+            storedPaths.forEach(storageService::delete);
+            throw e;
+        }
+        auditService.record("MESSAGE_FORWARDED", author, "message", message.getId().toString(), ipAddress);
     }
 
     @Transactional(readOnly = true)
@@ -319,7 +382,7 @@ public class MessageService {
     }
 
     public MessageResponse responseFor(Message message, UUID actorId) {
-        Attachment attachment = attachmentRepository.findByMessageId(message.getId()).orElse(null);
+        List<Attachment> attachments = attachmentRepository.findAllByMessageIdIn(List.of(message.getId()));
         List<MessageReactionResponse> reactions = reactionRepository.findByMessageIdIn(List.of(message.getId())).stream()
                 .map(MessageReactionResponse::from)
                 .toList();
@@ -339,7 +402,95 @@ public class MessageService {
                     .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
             roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
         }
-        return MessageResponse.from(message, attachment, readBy, reactions, pollFor(message, actorId), roles);
+        return MessageResponse.fromAttachments(message, attachments, readBy, reactions, pollFor(message, actorId), roles);
+    }
+
+    public Map<UUID, MessageResponse> responsesForMessages(List<Message> messages, UUID actorId) {
+        if (messages == null || messages.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = messages.stream().map(Message::getId).toList();
+        Map<UUID, List<Attachment>> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(a -> a.getMessage().getId()));
+        Map<UUID, List<ReadReceiptResponse>> readsByMessage = messageReadRepository.findByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(read -> read.getMessage().getId(),
+                        Collectors.mapping(ReadReceiptResponse::from, Collectors.toList())));
+        Map<UUID, List<MessageReactionResponse>> reactionsByMessage = reactionRepository.findByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(reaction -> reaction.getMessage().getId(),
+                        Collectors.mapping(MessageReactionResponse::from, Collectors.toList())));
+        boolean enabled = systemSettingService.readReceiptsEnabled();
+
+        List<UUID> roomIds = messages.stream().map(m -> m.getRoom().getId()).distinct().toList();
+        List<RoomMember> allMembers = roomMemberRepository.findByRoomIdIn(roomIds);
+        Map<UUID, Long> memberCountByRoom = allMembers.stream()
+                .collect(Collectors.groupingBy(rm -> rm.getRoom().getId(), Collectors.counting()));
+        Map<String, String> roleByRoomAndUser = allMembers.stream()
+                .collect(Collectors.toMap(
+                        rm -> rm.getRoom().getId() + "_" + rm.getUser().getId(),
+                        RoomMember::getRole,
+                        (a, b) -> a
+                ));
+
+        Map<UUID, MessageResponse.PollData> pollsByMessageId = new HashMap<>();
+        List<Poll> polls = pollRepository.findByMessageIdIn(ids);
+        if (!polls.isEmpty()) {
+            List<UUID> pollIds = polls.stream().map(Poll::getId).toList();
+            Map<UUID, List<PollOption>> optionsByPoll = pollOptionRepository.findByPollIdInOrderByPositionAsc(pollIds).stream()
+                    .collect(Collectors.groupingBy(opt -> opt.getPoll().getId()));
+            Map<UUID, List<PollVote>> votesByPoll = pollVoteRepository.findByPollIdIn(pollIds).stream()
+                    .collect(Collectors.groupingBy(vote -> vote.getPoll().getId()));
+
+            for (Poll poll : polls) {
+                List<PollOption> options = optionsByPoll.getOrDefault(poll.getId(), List.of());
+                List<PollVote> votes = votesByPoll.getOrDefault(poll.getId(), List.of());
+                int totalMembers = memberCountByRoom.getOrDefault(poll.getMessage().getRoom().getId(), 0L).intValue();
+                int totalVoters = (int) votes.stream().map(vote -> vote.getUser().getId()).distinct().count();
+                MessageResponse.PollData pollData = new MessageResponse.PollData(
+                        poll.getId(),
+                        poll.getQuestion(),
+                        poll.isAllowMultiple(),
+                        totalMembers,
+                        totalVoters,
+                        options.stream().map(option -> new MessageResponse.PollOptionData(
+                                option.getId(),
+                                option.getLabel(),
+                                votes.stream().filter(vote -> vote.getOption().getId().equals(option.getId())).count(),
+                                votes.stream().anyMatch(vote -> vote.getOption().getId().equals(option.getId())
+                                        && actorId != null && vote.getUser().getId().equals(actorId)),
+                                votes.stream().filter(vote -> vote.getOption().getId().equals(option.getId()))
+                                        .map(vote -> new MessageResponse.PollVoterData(
+                                                vote.getUser().getId(),
+                                                vote.getUser().getUsername(),
+                                                vote.getUser().getName(),
+                                                vote.getCreatedAt()))
+                                        .toList()
+                        )).toList()
+                );
+                pollsByMessageId.put(poll.getMessage().getId(), pollData);
+            }
+        }
+
+        Map<UUID, MessageResponse> result = new HashMap<>();
+        for (Message m : messages) {
+            List<String> roles = List.of();
+            if (m.getUser() != null) {
+                String key = m.getRoom().getId() + "_" + m.getUser().getId();
+                String roomMemberRole = roleByRoomAndUser.getOrDefault(key, "MEMBER");
+                boolean isGlobalAdmin = m.getUser().getRoles().stream()
+                        .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+                roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
+            }
+            result.put(m.getId(), MessageResponse.fromAttachments(
+                    m,
+                    attachmentsByMessage.get(m.getId()),
+                    enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
+                            ? readsByMessage.getOrDefault(m.getId(), List.of()) : List.of(),
+                    reactionsByMessage.getOrDefault(m.getId(), List.of()),
+                    pollsByMessageId.get(m.getId()),
+                    roles
+            ));
+        }
+        return result;
     }
 
     private List<MessageResponse> toResponses(List<Message> messages, UUID actorId) {
@@ -347,8 +498,8 @@ public class MessageService {
             return List.of();
         }
         List<UUID> ids = messages.stream().map(Message::getId).toList();
-        Map<UUID, Attachment> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
-                .collect(Collectors.toMap(a -> a.getMessage().getId(), a -> a));
+        Map<UUID, List<Attachment>> attachmentsByMessage = attachmentRepository.findAllByMessageIdIn(ids).stream()
+                .collect(Collectors.groupingBy(a -> a.getMessage().getId()));
         Map<UUID, List<ReadReceiptResponse>> readsByMessage = messageReadRepository.findByMessageIdIn(ids).stream()
                 .collect(Collectors.groupingBy(read -> read.getMessage().getId(),
                         Collectors.mapping(ReadReceiptResponse::from, Collectors.toList())));
@@ -377,7 +528,7 @@ public class MessageService {
                         .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
                 roles = MessageResponse.buildRoles(roomMemberRole, isGlobalAdmin);
             }
-            return MessageResponse.from(m, attachmentsByMessage.get(m.getId()),
+            return MessageResponse.fromAttachments(m, attachmentsByMessage.get(m.getId()),
                 enabled && m.getUser() != null && m.getUser().getId().equals(actorId)
                         ? readsByMessage.getOrDefault(m.getId(), List.of()) : List.of(),
                 reactionsByMessage.getOrDefault(m.getId(), List.of()), pollFor(m, actorId), roles);
