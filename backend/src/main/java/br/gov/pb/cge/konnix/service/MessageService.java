@@ -299,7 +299,11 @@ public class MessageService {
         if (message.getForwardedFromUser() != null) {
             throw ApiExceptions.cannotEditMessage();
         }
-        message.setContent(request.content().trim());
+        String content = request.content() == null ? "" : request.content().trim();
+        if (content.isEmpty() && attachmentRepository.findByMessageId(message.getId()).isEmpty()) {
+            throw ApiExceptions.messageContentRequired();
+        }
+        message.setContent(content);
         message.setEditedAt(Instant.now());
         messageRepository.save(message);
         auditService.record("MESSAGE_UPDATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);

@@ -21,6 +21,7 @@ export interface MessageRowProps {
   onEdit: (message: Message) => void
   onShowProfile: (userId: string, event?: ReactMouseEvent) => void
   onQuote: (msg: Message) => void
+  onCopy?: (msg: Message) => void
   onForward: (msg: Message) => void
   onReaction: (msg: Message, emoji: string) => void
   onRespond?: (msg: Message) => void
@@ -47,6 +48,7 @@ function MessageRowComponent({
   onEdit,
   onShowProfile,
   onQuote,
+  onCopy,
   onForward,
   onReaction,
   onRespond,
@@ -62,6 +64,8 @@ function MessageRowComponent({
   onTogglePin,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
+  const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
+  const hasAttachments = messageAttachments.length > 0
   const [actionDismissed, setActionDismissed] = useState(false)
   const [mouseHovered, setMouseHovered] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
@@ -92,6 +96,13 @@ function MessageRowComponent({
 
   const beginLongPress = (event: ReactPointerEvent) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    // Segurar sobre o texto precisa iniciar a seleção nativa do celular. Abrir a
+    // barra de ações aqui rouba o gesto e a seleção nunca aparece. Mesmo critério
+    // já usado no onContextMenu abaixo.
+    if ((event.target as HTMLElement | null)?.closest('.message-content')) {
+      cancelLongPress()
+      return
+    }
     longPressStart.current = { x: event.clientX, y: event.clientY }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
     longPressTimer.current = window.setTimeout(() => {
@@ -242,8 +253,13 @@ function MessageRowComponent({
             pinned={actionPinned}
             onPin={(pinned) => onPinAction(msg.id, pinned)}
             onQuote={() => onQuote(msg)}
+            onCopy={onCopy ? () => onCopy(msg) : undefined}
             onForward={() => onForward(msg)}
-            onEdit={isMine && !msg.forwardedFromUsername && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEdit={
+              isMine && !msg.forwardedFromUsername && !msg.poll && (!!msg.content || hasAttachments)
+                ? () => onEdit(msg)
+                : undefined
+            }
             onEmoji={(emoji) => {
               setActionDismissed(true)
               onReaction(msg, emoji)
@@ -266,7 +282,7 @@ function MessageRowComponent({
                 <span>{msg.quotedMessage.content || 'Anexo'}</span>
               </button>
             )}
-            {(msg.attachments ?? (msg.attachment ? [msg.attachment] : [])).map((attachment) => (
+            {messageAttachments.map((attachment) => (
               <AttachmentView key={attachment.id} msg={{ ...msg, attachment }} />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}

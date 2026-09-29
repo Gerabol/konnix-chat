@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
-import { IconPin } from '../icons'
+import { IconCopy, IconPin } from '../icons'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 export function MessageActionBar({
   pinned,
   onPin,
   onQuote,
+  onCopy,
   onForward,
   onEdit,
   onEmoji,
@@ -19,6 +20,7 @@ export function MessageActionBar({
   pinned: boolean
   onPin: (pinned: boolean) => void
   onQuote: () => void
+  onCopy?: () => void
   onForward: () => void
   onEdit?: () => void
   onEmoji: (emoji: string) => void
@@ -167,6 +169,20 @@ export function MessageActionBar({
       >
         ❝
       </button>
+      {onCopy && (
+        <button
+          type="button"
+          className="message-action-copy"
+          title="Copiar mensagem"
+          aria-label="Copiar mensagem"
+          onClick={() => {
+            onPin(false)
+            onCopy()
+          }}
+        >
+          <IconCopy />
+        </button>
+      )}
       <button
         type="button"
         title="Encaminhar mensagem"

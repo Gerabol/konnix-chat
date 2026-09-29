@@ -2882,7 +2882,7 @@ button:disabled {
 .message-actions > button:hover, .message-emoji-action > button:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
 .message-emoji-action > button { font-size: 1.2rem; }
-.message-actions > button.message-action-pin { display: inline-flex; align-items: center; justify-content: center; }
+.message-actions > button.message-action-pin, .message-actions > button.message-action-copy { display: inline-flex; align-items: center; justify-content: center; }
 .message-emoji-menu {
   display: flex;
   flex-direction: column;

@@ -28,3 +28,40 @@ export const resolvePaste = ({ plainText, files }: ClipboardContent): PasteActio
   if (files.length > 0) return { type: 'files', files }
   return { type: 'none' }
 }
+
+/**
+ * Caminho legado paraplo navegadores sem `navigator.clipboard`, que só existe em
+ * contexto seguro. Sem ele, copiar quebra em instalações acessadas por HTTP na
+ * rede interna, comum em servidores on-premise.
+ */
+function copyWithTextarea(text: string): boolean {
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.top = '-1000px'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  try {
+    area.select()
+    area.setSelectionRange(0, text.length)
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+  }
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      /* permissão negada ou contexto inseguro: tenta o caminho legado */
+    }
+  }
+  return copyWithTextarea(text)
+}
+

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatBytes } from '../../api'
-import type { Room } from '../../api'
+import type { Attachment, Room } from '../../api'
 import { IconClip, IconCode, IconMic, IconPlus, IconStop, IconTrash, IconX } from '../icons'
 
 export function ComposerPendingAttachments({
@@ -34,6 +34,29 @@ export function ComposerPendingAttachments({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * Anexos da mensagem em edição. Não há como trocar o arquivo, então são apenas
+ * exibidos para dar contexto de qual arquivo a legenda em edição pertence.
+ */
+export function ComposerEditingAttachments({ attachments }: { attachments: Attachment[] }) {
+  if (attachments.length === 0) return null
+  return (
+    <div className="composer-pending-attachments" aria-label="Anexos da mensagem em edição">
+      {attachments.map((attachment) => (
+        <div className="composer-pending-attachment composer-pending-file" key={attachment.id}>
+          <span className="composer-pending-icon" aria-hidden="true">
+            {attachment.mimeType?.startsWith('audio/') ? '🎵' : '📎'}
+          </span>
+          <span className="composer-pending-details" title={attachment.originalName}>
+            <strong>{attachment.originalName}</strong>
+            <small>{formatBytes(attachment.size)}</small>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
