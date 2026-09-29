@@ -1,7 +1,9 @@
 package br.gov.pb.cge.konnix.service;
 
+import br.gov.pb.cge.konnix.api.exception.ApiException;
 import br.gov.pb.cge.konnix.api.message.dto.CreateMessageRequest;
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
+import br.gov.pb.cge.konnix.api.message.dto.UpdateMessageRequest;
 import br.gov.pb.cge.konnix.domain.attachment.Attachment;
 import br.gov.pb.cge.konnix.domain.attachment.AttachmentRepository;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
@@ -466,6 +468,110 @@ class MessageServiceTest {
 
         assertThat(response.content()).isEqualTo("Olha esse print");
         verify(attachmentRepository).save(any(Attachment.class));
+    }
+
+    private Message editableMessage(UUID authorId, String content) {
+        Room room = new Room();
+        room.setId(UUID.randomUUID());
+
+        User author = new User();
+        author.setId(authorId);
+        author.setUsername("ana");
+        author.setName("Ana");
+        author.setRoles(Set.of());
+
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+        message.setUser(author);
+        message.setContent(content);
+        message.setMessageType("USER");
+        return message;
+    }
+
+    private void stubResponseDependencies() {
+        when(attachmentRepository.findAllByMessageIdIn(any())).thenReturn(List.of());
+        when(reactionRepository.findByMessageIdIn(any())).thenReturn(List.of());
+        when(pollRepository.findByMessageId(any())).thenReturn(Optional.empty());
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(false);
+        when(roomMemberRepository.findByRoomIdAndUserId(any(), any())).thenReturn(Optional.empty());
+        when(messageRepository.save(any(Message.class))).thenAnswer(call -> call.getArgument(0));
+    }
+
+    @Test
+    void updatesCaptionOfMessageWithAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "print.png");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        stubResponseDependencies();
+
+        MessageResponse response = messageService.update(
+                message.getId(), new UpdateMessageRequest("Relatório do trimestre"), principal, null);
+
+        assertThat(response.content()).isEqualTo("Relatório do trimestre");
+        assertThat(message.getContent()).isEqualTo("Relatório do trimestre");
+        assertThat(message.getEditedAt()).isNotNull();
+    }
+
+    @Test
+    void allowsClearingCaptionWhenMessageHasAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "print.png");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.of(new Attachment()));
+        stubResponseDependencies();
+
+        MessageResponse response = messageService.update(message.getId(), new UpdateMessageRequest("   "), principal, null);
+
+        assertThat(response.content()).isEmpty();
+    }
+
+    @Test
+    void rejectsClearingTextOfMessageWithoutAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "Bom dia");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.update(message.getId(), new UpdateMessageRequest(""), principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("MESSAGE_CONTENT_REQUIRED");
+
+        assertThat(message.getContent()).isEqualTo("Bom dia");
+    }
+
+    @Test
+    void rejectsNullContentOnMessageWithoutAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "Bom dia");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.update(message.getId(), new UpdateMessageRequest(null), principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("MESSAGE_CONTENT_REQUIRED");
     }
 
 }

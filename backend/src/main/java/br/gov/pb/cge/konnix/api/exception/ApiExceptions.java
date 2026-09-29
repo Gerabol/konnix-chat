@@ -103,6 +103,11 @@ public final class ApiExceptions {
         return new ApiException(HttpStatus.FORBIDDEN, "CANNOT_DELETE_MESSAGE", "Só é possível excluir a própria mensagem");
     }
 
+    public static ApiException messageContentRequired() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "MESSAGE_CONTENT_REQUIRED",
+                "A mensagem precisa de texto ou de um anexo");
+    }
+
     public static ApiException fileTooLarge(long maxBytes) {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
                 "Arquivo excede o limite permitido de " + formatSize(maxBytes) + " (" + maxBytes + " bytes)");

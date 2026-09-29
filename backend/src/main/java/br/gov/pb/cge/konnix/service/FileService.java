@@ -59,6 +59,7 @@ public class FileService {
     private final SystemSettingService systemSettingService;
     private final long maxFileSize;
     private final RoomAccessService roomAccessService;
+    private final MessageService messageService;
 
     public FileService(FileStorageService storageService,
                        AttachmentRepository attachmentRepository,
@@ -71,6 +72,7 @@ public class FileService {
                        PushNotificationService pushNotificationService,
                        SystemSettingService systemSettingService,
                        RoomAccessService roomAccessService,
+                       MessageService messageService,
                        @Value("${konnix.files.max-size:62914560}") long maxFileSize) {
         this.storageService = storageService;
         this.attachmentRepository = attachmentRepository;
@@ -83,6 +85,7 @@ public class FileService {
         this.pushNotificationService = pushNotificationService;
         this.systemSettingService = systemSettingService;
         this.roomAccessService = roomAccessService;
+        this.messageService = messageService;
         this.maxFileSize = maxFileSize;
     }
 
@@ -154,7 +157,10 @@ public class FileService {
 
             auditService.record("FILE_UPLOADED", actorUser, "attachment",
                     room.getId() + ":" + attachment.getId(), ipAddress);
-            MessageResponse response = MessageResponse.from(message, attachment);
+            // responseFor relê os anexos do banco, o que dispara o flush e popula
+            // o @CreationTimestamp da mensagem. Montar a resposta direto da entidade
+            // em memória devolveria createdAt nulo (exibido como 31/12/1969).
+            MessageResponse response = messageService.responseFor(message, actor.id());
             eventPublisher.publish(room.getId(), MessageService.EVENT_MESSAGE_CREATED, response);
             pushNotificationService.notifyNewMessage(room.getId(), response, displayName(room));
             return response;

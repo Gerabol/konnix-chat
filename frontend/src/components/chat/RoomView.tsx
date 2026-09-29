@@ -3,8 +3,9 @@ import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMo
 import { api, ApiError, formatDay, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
+import { copyText, resolvePaste } from '../../utils/clipboard'
+import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
 import type { DmPartner, PendingUploadItem, TypingUser } from '../../types'
-import { resolvePaste } from '../../utils/clipboard'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
 import {
@@ -28,7 +29,7 @@ import { RespondToReportModal } from '../modals/ReportIssueModal'
 import { RoomEditModal } from '../modals/RoomEditModal'
 import { AudioRecordButton, useAudioRecorder } from './AudioRecordButton'
 import { AvatarImage, initials } from './AvatarImage'
-import { ComposerActionBox, ComposerPendingAttachments } from './ComposerActionBox'
+import { ComposerActionBox, ComposerEditingAttachments, ComposerPendingAttachments } from './ComposerActionBox'
 import { EmojiButton } from './EmojiButton'
 import { MessageRow } from './MessageRow'
 import { RoomFilesPanel } from './RoomFilesPanel'
@@ -36,6 +37,7 @@ import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndic
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 
 const SEARCH_DEBOUNCE_MS = 400
+const DRAFT_SAVE_DEBOUNCE_MS = 400
 const LOAD_PREVIOUS_SCROLL_THRESHOLD = 96
 
 export interface RoomViewProps {
@@ -157,6 +159,12 @@ export function RoomView({
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
   const [pendingAttachmentUrls, setPendingAttachmentUrls] = useState<string[]>([])
+  const latestDraftRef = useRef(draft)
+  const latestAttachmentsRef = useRef(pendingAttachments)
+  const draftRoomRef = useRef(room.id)
+  const draftUserRef = useRef(me.id)
+  const editingDraftRef = useRef(false)
+  const hydratedDraftScopeRef = useRef<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -221,7 +229,10 @@ export function RoomView({
   const isAdmin = me.roles.includes('ADMIN')
   const muted = readOnlyAccount || (room.readOnly && !isAdmin && !isRoomOwner) || !online
   const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
-  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
+  // Em edição, uma mensagem com anexo pode ser salva sem legenda, já que o
+  // arquivo continua na mensagem.
+  const editingAttachments = editingMessage?.attachments ?? (editingMessage?.attachment ? [editingMessage.attachment] : [])
+  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0 || editingAttachments.length > 0) && !emptyCodeBlock
   const isBugReportsRoom = room.name === 'bug-reports'
   const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
   const canRespondToReport = isBugReportsRoom && isAdmin
@@ -310,10 +321,6 @@ export function RoomView({
     setPendingAttachmentUrls(urls)
     return () => urls.forEach((url) => URL.revokeObjectURL(url))
   }, [pendingAttachments])
-
-  useEffect(() => {
-    setPendingAttachments([])
-  }, [room.id])
 
   useEffect(() => {
     if (room.type === 'DIRECT') {
@@ -505,7 +512,22 @@ export function RoomView({
   }, [loading, messages, room.id, onInitialPositioned])
 
   useEffect(() => {
+    latestDraftRef.current = draft
+    latestAttachmentsRef.current = pendingAttachments
+    editingDraftRef.current = editingMessage !== null
+  }, [draft, pendingAttachments, editingMessage])
+
+  useEffect(() => {
+    // Salva o rascunho da conversa que está sendo deixada antes de hidratar a próxima.
+    if ((draftRoomRef.current !== room.id || draftUserRef.current !== me.id) && !editingDraftRef.current) {
+      void saveRoomDraft(draftUserRef.current, draftRoomRef.current, latestDraftRef.current, latestAttachmentsRef.current)
+    }
+    draftRoomRef.current = room.id
+    draftUserRef.current = me.id
+    hydratedDraftScopeRef.current = null
     setDraft('')
+    setPendingAttachments([])
+    setEditingMessage(null)
     setComposerExpanded(false)
     setQuotedMessage(null)
     setForwardMessage(null)
@@ -528,7 +550,38 @@ export function RoomView({
     setFilesQuery('')
     setFilesType('ALL')
     setRoomInfoOpen(false)
-  }, [room.id])
+
+    // O rascunho mora em IndexedDB, então a hidratação é assíncrona: só liberamos a
+    // persistência depois de aplicar o conteúdo, evitando sobrescrever o rascunho
+    // salvo da sala com o estado vazio do compositor.
+    let active = true
+    readRoomDraft(me.id, room.id).then((stored) => {
+      if (!active) return
+      hydratedDraftScopeRef.current = `${me.id}::${room.id}`
+      setDraft(stored.text)
+      setPendingAttachments(stored.attachments)
+    })
+    return () => {
+      active = false
+    }
+  }, [room.id, me.id])
+
+  useEffect(() => {
+    if (editingMessage) return
+    if (hydratedDraftScopeRef.current !== `${me.id}::${room.id}`) return
+    const timer = window.setTimeout(
+      () => void saveRoomDraft(me.id, room.id, draft, pendingAttachments),
+      DRAFT_SAVE_DEBOUNCE_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [draft, pendingAttachments, room.id, me.id, editingMessage])
+
+  useEffect(() => {
+    return () => {
+      if (editingDraftRef.current) return
+      void saveRoomDraft(me.id, room.id, latestDraftRef.current, latestAttachmentsRef.current)
+    }
+  }, [me.id, room.id])
 
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)
@@ -731,9 +784,9 @@ export function RoomView({
 
   const submit = async () => {
     stopTyping(true)
-    if ((!draft.trim() && pendingAttachments.length === 0) || muted || composing) return
-    const sendingAttachments = pendingAttachments.length > 0
+    if (muted || composing) return
     if (editingMessage) {
+      if (!canSubmit) return
       try {
         const updated = await api.updateMessage(editingMessage.id, draft.trim())
         onMessageUpdated(updated)
@@ -746,6 +799,8 @@ export function RoomView({
       }
       return
     }
+    if (!draft.trim() && pendingAttachments.length === 0) return
+    const sendingAttachments = pendingAttachments.length > 0
     forceScrollToBottomRef.current = true
     const content = draft
     const attachmentList = pendingAttachments
@@ -761,8 +816,11 @@ export function RoomView({
       setDraft(content)
       setPendingAttachments(attachmentList)
       setQuotedMessage(quoted)
-    } else if (sendingAttachments) {
-      forceScrollToBottomRef.current = true
+    } else {
+      void clearRoomDraft(me.id, room.id)
+      if (sendingAttachments) {
+        forceScrollToBottomRef.current = true
+      }
     }
   }
 
@@ -946,6 +1004,7 @@ export function RoomView({
 
   const clearDraft = () => {
     setDraft('')
+    void clearRoomDraft(me.id, room.id)
     setPendingAttachments([])
     setEditingMessage(null)
     setComposerExpanded(false)
@@ -1003,6 +1062,20 @@ export function RoomView({
   const handleForward = useCallback((m: Message) => {
     setForwardMessage(m)
   }, [])
+
+  const handleCopyMessage = useCallback(
+    (m: Message) => {
+      const attachments = m.attachments ?? (m.attachment ? [m.attachment] : [])
+      // Anexo sem legenda tem o nome do arquivo no lugar do texto; nesse caso o
+      // nome do arquivo é o que o usuário espera levar junto.
+      const text = m.content.trim() || attachments.map((item) => item.originalName).join('\n')
+      if (!text) return
+      void copyText(text).then((copied) =>
+        notify(copied ? 'Mensagem copiada' : 'Não foi possível copiar a mensagem'),
+      )
+    },
+    [notify],
+  )
 
   const handlePinAction = useCallback((msgId: string, pinned: boolean) => {
     setPinnedActionId(pinned ? msgId : null)
@@ -1518,6 +1591,7 @@ export function RoomView({
                   onEdit={startEditing}
                   onShowProfile={showProfile}
                   onQuote={handleQuote}
+                  onCopy={handleCopyMessage}
                   onForward={handleForward}
                   onRespond={canRespondToReport ? handleRespond : undefined}
                   onReaction={handleReactionMessage}
@@ -1642,11 +1716,15 @@ export function RoomView({
               <span>Você pode consultar esta conversa, mas não enviar mensagens.</span>
             </div>
           )}
-          <ComposerPendingAttachments
-            files={pendingAttachments}
-            urls={pendingAttachmentUrls}
-            onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-          />
+          {editingMessage ? (
+            <ComposerEditingAttachments attachments={editingAttachments} />
+          ) : (
+            <ComposerPendingAttachments
+              files={pendingAttachments}
+              urls={pendingAttachmentUrls}
+              onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            />
+          )}
           {quotedMessage && (
             <div className="quote-preview">
               <div>
