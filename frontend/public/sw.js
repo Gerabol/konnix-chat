@@ -147,7 +147,6 @@ self.addEventListener('push', (event) => {
           badge: '/icons/icon-192.png',
           tag: notificationTag,
           renotify: !alreadyDisplayed,
-          silent: alreadyDisplayed,
           data: {
             ...(payload.data || {}),
             unreadCount,

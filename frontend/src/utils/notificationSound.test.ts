@@ -80,4 +80,16 @@ describe('notificationSound utils', () => {
     })
     assert.equal(imageWithoutCaption, '📷 Enviou uma foto')
   })
+
+  it('não reproduz som quando konnix-system-notifications está configurado como false no localStorage', () => {
+    const origStorage = globalThis.localStorage
+    try {
+      ;(globalThis as unknown as { localStorage: Partial<Storage> }).localStorage = {
+        getItem: (key: string) => (key === 'konnix-system-notifications' ? 'false' : null),
+      }
+      assert.equal(playNotificationSound('msg-999'), false)
+    } finally {
+      ;(globalThis as unknown as { localStorage: Storage }).localStorage = origStorage
+    }
+  })
 })

@@ -5,10 +5,25 @@ const DEDUP_WINDOW_MS = 1500
 const COOLDOWN_MS = 350
 
 let cachedWavUrl: string | null = null
+let sharedAudioElement: HTMLAudioElement | null = null
 let sharedAudioContext: AudioContext | null = null
 let audioUnlocked = false
 let lastPlayedAt = 0
 const playedMessageIds = new Map<string, number>()
+
+/**
+ * Verifica se o som de notificação não foi explicitamente desativado pelo usuário.
+ */
+export function isNotificationSoundEnabled(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem('konnix-system-notifications') !== 'false'
+    }
+  } catch {
+    /* ignore storage errors */
+  }
+  return true
+}
 
 /**
  * Gera em memória um arquivo WAV PCM 16-bit (44.1kHz) contendo um chime duplo
@@ -84,6 +99,25 @@ function getOrCreateWavUrl(): string | null {
   }
 }
 
+function getOrCreateAudioElement(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null
+  if (sharedAudioElement) return sharedAudioElement
+  const wavUrl = getOrCreateWavUrl()
+  if (!wavUrl) return null
+  try {
+    const audio = new Audio(wavUrl)
+    audio.preload = 'auto'
+    audio.volume = 0.75
+    if (typeof audio.load === 'function') {
+      audio.load()
+    }
+    sharedAudioElement = audio
+    return audio
+  } catch {
+    return null
+  }
+}
+
 function getAudioContextConstructor(): typeof AudioContext | null {
   if (typeof window === 'undefined') return null
   const win = window as unknown as {
@@ -110,7 +144,7 @@ export function unlockNotificationSound(): void {
         void sharedAudioContext.resume().catch(() => undefined)
       }
     }
-    getOrCreateWavUrl()
+    getOrCreateAudioElement()
     audioUnlocked = true
   } catch {
     /* ignore audio unlock errors */
@@ -151,10 +185,14 @@ function playViaWebAudioFallback(): void {
 
 /**
  * Reproduz o efeito sonoro de notificação com desduplicação por `messageId` e cooldown.
- * Tenta prioritariamente via HTMLAudioElement (que funciona em abas em background no Chrome macOS/Windows)
- * e aciona fallback via Web Audio API se necessário.
+ * Tenta prioritariamente via HTMLAudioElement reutilizável (que funciona em abas em background
+ * no Chrome macOS/Windows) e aciona fallback via Web Audio API se necessário.
  */
 export function playNotificationSound(messageId?: string | null): boolean {
+  if (!isNotificationSoundEnabled()) {
+    return false
+  }
+
   const now = Date.now()
 
   // Limpa IDs antigos do cache de desduplicação
@@ -178,19 +216,21 @@ export function playNotificationSound(messageId?: string | null): boolean {
   lastPlayedAt = now
 
   try {
-    if (typeof Audio !== 'undefined') {
-      const wavUrl = getOrCreateWavUrl()
-      if (wavUrl) {
-        const audio = new Audio(wavUrl)
-        audio.volume = 0.75
-        const playPromise = audio.play()
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {
-            playViaWebAudioFallback()
-          })
-        }
-        return true
+    const audio = getOrCreateAudioElement()
+    if (audio) {
+      try {
+        audio.currentTime = 0
+      } catch {
+        /* ignore currentTime reset if not yet loaded */
       }
+      audio.volume = 0.75
+      const playPromise = audio.play()
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          playViaWebAudioFallback()
+        })
+      }
+      return true
     }
   } catch {
     /* fallback para Web Audio API */
@@ -207,6 +247,7 @@ export function resetNotificationSoundStateForTests(): void {
   lastPlayedAt = 0
   playedMessageIds.clear()
   audioUnlocked = false
+  sharedAudioElement = null
 }
 
 /**
