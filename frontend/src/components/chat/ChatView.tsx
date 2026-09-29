@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, wsUrl } from '../../api'
+import { api, ApiError, formatUploadSize, wsUrl } from '../../api'
 import type { DirectoryUser, Message, MessageReaction, PresenceStatus, ReadReceipt, Room, Theme, User } from '../../api'
 import { useOnline } from '../../hooks/useOnline'
 import { usePwaInstall } from '../../hooks/usePwaInstall'
@@ -387,6 +387,7 @@ export function ChatView({
       .readReceiptSetting()
       .then((setting) => setReadReceiptsEnabled(setting.enabled))
       .catch(() => undefined)
+    api.serverInfo().catch(() => undefined)
   }, [])
 
   const loadMore = useCallback(async () => {
@@ -878,6 +879,15 @@ export function ChatView({
       if (attachments.length === 0) {
         createdMessages = [await api.sendMessage(roomId, content.trim(), parentMessageId)]
       } else {
+        await api.serverInfo().catch(() => undefined)
+        const maxUploadBytes = api.getMaxUploadBytes()
+        const oversized = attachments.find((file) => file.size > maxUploadBytes)
+        if (oversized) {
+          showToast(
+            `O arquivo "${oversized.name}" (${formatUploadSize(oversized.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+          )
+          return false
+        }
         createdMessages = await Promise.all(
           attachments.map(async (file, index) => {
             const created = await api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)

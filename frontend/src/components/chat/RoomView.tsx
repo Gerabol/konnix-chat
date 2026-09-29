@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { api, ApiError, formatDay, roomAvatarPath, userAvatarPath } from '../../api'
+import { api, ApiError, formatDay, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import type { DmPartner, TypingUser } from '../../types'
@@ -257,9 +257,21 @@ export function RoomView({
 
   const addPendingAttachments = useCallback((files: File[]) => {
     if (files.length === 0 || editingMessage) return
+    const maxUploadBytes = api.getMaxUploadBytes()
+    const validFiles: File[] = []
+    for (const file of files) {
+      if (file.size > maxUploadBytes) {
+        notify(
+          `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+        )
+      } else {
+        validFiles.push(file)
+      }
+    }
+    if (validFiles.length === 0) return
     setPendingAttachments((current) => {
       const next = [...current]
-      for (const file of files) {
+      for (const file of validFiles) {
         if (next.length >= 10) break
         if (
           !next.some(
@@ -271,7 +283,7 @@ export function RoomView({
       }
       return next
     })
-  }, [editingMessage])
+  }, [editingMessage, notify])
 
   const audioRecorder = useAudioRecorder({
     resetKey: audioResetKey,

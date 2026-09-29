@@ -190,7 +190,19 @@ export type MessageTimeSeriesResponse = {
 }
 
 export type AppSettings = { name: string; maxUploadBytes: number }
+export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
+
+export const DEFAULT_MAX_UPLOAD_BYTES = 62914560
+let cachedMaxUploadBytes: number = DEFAULT_MAX_UPLOAD_BYTES
+
+export function formatUploadSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / Math.pow(1024, idx)
+  return `${value.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`
+}
 
 const configuredApiUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ? import.meta.env.VITE_API_URL.trim() : undefined
 let activeServerBaseUrl: string | null = null
@@ -498,11 +510,34 @@ export const api = {
   adminMessageTimeSeries(period: MessageTimeSeriesPeriod = 'DAYS_7') {
     return request<MessageTimeSeriesResponse>(`/api/v1/admin/monitoring/messages-timeseries?period=${period}`)
   },
-  adminSettings() {
-    return request<AppSettings>('/api/v1/admin/settings')
+  getMaxUploadBytes() {
+    return cachedMaxUploadBytes
   },
-  adminUpdateSettings(input: AppSettings) {
-    return request<AppSettings>('/api/v1/admin/settings', { method: 'PUT', body: JSON.stringify(input) })
+  setMaxUploadBytes(bytes: number) {
+    if (Number.isFinite(bytes) && bytes > 0) {
+      cachedMaxUploadBytes = bytes
+    }
+  },
+  async serverInfo() {
+    const info = await request<ServerInfo>('/api/public/server-info')
+    if (typeof info.maxUploadBytes === 'number' && info.maxUploadBytes > 0) {
+      cachedMaxUploadBytes = info.maxUploadBytes
+    }
+    return info
+  },
+  async adminSettings() {
+    const settings = await request<AppSettings>('/api/v1/admin/settings')
+    if (typeof settings.maxUploadBytes === 'number' && settings.maxUploadBytes > 0) {
+      cachedMaxUploadBytes = settings.maxUploadBytes
+    }
+    return settings
+  },
+  async adminUpdateSettings(input: AppSettings) {
+    const settings = await request<AppSettings>('/api/v1/admin/settings', { method: 'PUT', body: JSON.stringify(input) })
+    if (typeof settings.maxUploadBytes === 'number' && settings.maxUploadBytes > 0) {
+      cachedMaxUploadBytes = settings.maxUploadBytes
+    }
+    return settings
   },
   userDirectory(q?: string) {
     const url = q && q.trim() ? `/api/v1/users/directory?q=${encodeURIComponent(q.trim())}` : '/api/v1/users/directory'
