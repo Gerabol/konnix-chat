@@ -3089,13 +3089,81 @@ button:disabled {
 
 .attachment-retry {
   align-self: flex-start;
-  border: 0;
-  background: transparent;
+  border: 1px solid var(--konnix-primary);
+  border-radius: 6px;
+  background: var(--konnix-surface);
   color: var(--konnix-primary);
-  font-size: 0.8rem;
-  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
   margin-top: 0.2rem;
-  text-decoration: underline;
+  cursor: pointer;
+}
+
+.attachment-retry:hover {
+  background: var(--konnix-primary);
+  color: var(--konnix-surface);
+}
+
+.attachment-cancel-btn {
+  align-self: flex-start;
+  border: 1px solid var(--konnix-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--konnix-ink-soft);
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  margin-top: 0.2rem;
+  cursor: pointer;
+}
+
+.attachment-cancel-btn:hover {
+  border-color: var(--konnix-danger);
+  color: var(--konnix-danger);
+}
+
+.attachment-upload-box {
+  min-width: min(320px, 75vw);
+}
+
+.upload-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--konnix-line);
+  overflow: hidden;
+  margin: 0.35rem 0 0.2rem;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--konnix-primary);
+  transition: width 160ms ease-out;
+}
+
+.upload-progress-fill.processing {
+  opacity: 0.85;
+}
+
+.upload-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.upload-status-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--konnix-ink-soft);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--konnix-surface-alt);
+}
+
+.message-upload-failed .upload-status-pill {
+  color: var(--konnix-danger);
 }
 
 .attachment-image {

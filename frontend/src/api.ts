@@ -635,13 +635,83 @@ export const api = {
       body: JSON.stringify({ content }),
     })
   },
-  uploadFile(roomId: string, file: File, content?: string) {
+  uploadFile(
+    roomId: string,
+    file: File,
+    content?: string,
+    options?: {
+      onProgress?: (loaded: number, total: number, percent: number) => void
+      signal?: AbortSignal
+    },
+  ): Promise<Message> {
     const form = new FormData()
     form.append('file', file)
     if (content?.trim()) form.append('content', content.trim())
-    return request<Message>(`/api/v1/rooms/${roomId}/files`, {
-      method: 'POST',
-      body: form,
+
+    return new Promise<Message>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${apiBase()}/api/v1/rooms/${roomId}/files`, true)
+
+      const activeToken = getAuthToken()
+      if (activeToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${activeToken}`)
+      }
+
+      if (options?.signal) {
+        if (options.signal.aborted) {
+          reject(new ApiError(0, 'UPLOAD_ABORTED', 'Envio cancelado'))
+          return
+        }
+        options.signal.addEventListener(
+          'abort',
+          () => {
+            xhr.abort()
+          },
+          { once: true },
+        )
+      }
+
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable && event.total > 0 ? event.total : file.size
+        const loaded = Math.min(event.loaded, total)
+        const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
+        options?.onProgress?.(loaded, total, percent)
+      }
+
+      xhr.onload = () => {
+        let body: { data?: Message; error?: { code?: string; message?: string } } | null = null
+        if (xhr.responseText) {
+          try {
+            body = JSON.parse(xhr.responseText)
+          } catch {
+            body = null
+          }
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && body?.data) {
+          resolve(body.data)
+          return
+        }
+        const err = body?.error
+        const fallbackMsg =
+          xhr.status === 413
+            ? 'Arquivo excede o limite de tamanho permitido'
+            : `Falha ao enviar arquivo (Erro ${xhr.status || 'de rede'})`
+        reject(new ApiError(xhr.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? fallbackMsg))
+      }
+
+      xhr.onerror = () => {
+        reject(new ApiError(0, 'NETWORK_ERROR', 'Falha na conexão durante o envio do arquivo'))
+      }
+
+      xhr.ontimeout = () => {
+        reject(new ApiError(0, 'TIMEOUT', 'Tempo limite esgotado durante o envio do arquivo'))
+      }
+
+      xhr.onabort = () => {
+        reject(new ApiError(0, 'UPLOAD_ABORTED', 'Envio cancelado'))
+      }
+
+      xhr.send(form)
     })
   },
   async downloadFile(fileId: string): Promise<Blob> {
