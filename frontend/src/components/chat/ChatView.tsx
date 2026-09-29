@@ -7,6 +7,7 @@ import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
 import type { DmPartner, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { isMobilePlatform } from '../../utils/pwa'
+import { formatNotificationSnippet, playNotificationSound, unlockNotificationSound } from '../../utils/notificationSound'
 import { syncPushSubscription } from '../../utils/push'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
@@ -149,6 +150,7 @@ export function ChatView({
       lastInteraction = Date.now()
       scheduleAway()
       registerInteraction()
+      unlockNotificationSound()
     }
 
     const events: (keyof DocumentEventMap)[] = ['pointerdown', 'keydown', 'input', 'touchstart']
@@ -494,19 +496,7 @@ export function ChatView({
               const isDirect = room?.type === 'DIRECT'
               const notifTitle = isDirect ? (msg.username || 'Konnix Chat') : `${label} • ${msg.username}`
 
-              let snippet = msg.content?.replace(/\s+/g, ' ').trim() || ''
-              if (!snippet && msg.attachment) {
-                if (msg.attachment.mimeType?.startsWith('audio/')) {
-                  snippet = '🎤 Mensagem de áudio'
-                } else if (msg.attachment.mimeType?.startsWith('image/')) {
-                  snippet = '📷 Enviou uma foto'
-                } else {
-                  snippet = `📎 Arquivo: ${msg.attachment.originalName || 'Anexo'}`
-                }
-              } else if (!snippet && msg.poll) {
-                snippet = `📊 Enquete: ${msg.poll.question}`
-              }
-              const notifBody = snippet || 'Nova mensagem'
+              const notifBody = formatNotificationSnippet(msg)
 
               // Respeitar status de presença: se ocupado ou em missão, só notifica DM ou menção direta
               const currentPresence = presenceStatusRef.current
@@ -520,10 +510,21 @@ export function ChatView({
 
               if (appInBackground && !suppressNotification) {
                 let enabled = false
+                let explicitlyDisabled = false
                 try {
-                  enabled = localStorage.getItem('konnix-system-notifications') === 'true'
+                  const stored = localStorage.getItem('konnix-system-notifications')
+                  explicitlyDisabled = stored === 'false'
+                  enabled =
+                    stored === 'true' ||
+                    (!isTauri &&
+                      stored !== 'false' &&
+                      typeof Notification !== 'undefined' &&
+                      Notification.permission === 'granted')
                 } catch {
                   /* preferência opcional */
+                }
+                if (!explicitlyDisabled) {
+                  playNotificationSound(msg.id)
                 }
                 if (enabled) {
                   if (isTauri) {
@@ -533,6 +534,7 @@ export function ChatView({
                   }
                 }
               } else if (!isActiveRoom && !suppressNotification) {
+                playNotificationSound(msg.id)
                 showToast(`${notifTitle}: ${notifBody}`)
               }
             }
@@ -768,9 +770,16 @@ export function ChatView({
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const data = e.data as { type?: string; roomId?: string } | null
-      if (data && data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
+      const data = e.data as { type?: string; roomId?: string; messageId?: string } | null
+      if (!data) return
+      if (data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
         openRoom(data.roomId)
+      } else if (data.type === 'konnix:push-received') {
+        const currentPresence = presenceStatusRef.current
+        if (currentPresence !== 'busy' && currentPresence !== 'mission' && currentPresence !== 'vacation') {
+          playNotificationSound(data.messageId)
+        }
+        void loadRooms()
       }
     }
     const onDesktopNotification = (e: Event) => {
