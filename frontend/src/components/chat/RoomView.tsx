@@ -5,6 +5,7 @@ import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import type { DmPartner, TypingUser } from '../../types'
 import { resolvePaste } from '../../utils/clipboard'
+import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
 import {
@@ -36,6 +37,7 @@ import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndic
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 
 const SEARCH_DEBOUNCE_MS = 400
+const DRAFT_SAVE_DEBOUNCE_MS = 400
 const LOAD_PREVIOUS_SCROLL_THRESHOLD = 96
 
 export interface RoomViewProps {
@@ -147,7 +149,11 @@ export function RoomView({
     }
   }, [room.id, stopTyping])
 
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => readRoomDraft(me.id, room.id))
+  const latestDraftRef = useRef(draft)
+  const draftRoomRef = useRef(room.id)
+  const editingDraftRef = useRef(false)
+  const skipPersistRoomRef = useRef<string | null>(null)
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
   const [pendingAttachmentUrls, setPendingAttachmentUrls] = useState<string[]>([])
@@ -487,7 +493,19 @@ export function RoomView({
   }, [loading, messages, room.id, onInitialPositioned])
 
   useEffect(() => {
-    setDraft('')
+    latestDraftRef.current = draft
+    editingDraftRef.current = editingMessage !== null
+  }, [draft, editingMessage])
+
+  useEffect(() => {
+    // Salva o rascunho da conversa que está sendo deixada antes de hidratar a próxima.
+    if (!editingDraftRef.current) {
+      saveRoomDraft(me.id, draftRoomRef.current, latestDraftRef.current)
+    }
+    draftRoomRef.current = room.id
+    skipPersistRoomRef.current = room.id
+    setDraft(readRoomDraft(me.id, room.id))
+    setEditingMessage(null)
     setComposerExpanded(false)
     setQuotedMessage(null)
     setForwardMessage(null)
@@ -510,7 +528,25 @@ export function RoomView({
     setFilesQuery('')
     setFilesType('ALL')
     setRoomInfoOpen(false)
-  }, [room.id])
+  }, [room.id, me.id])
+
+  useEffect(() => {
+    // No commit em que a conversa troca o rascunho exibido ainda é o da sala anterior.
+    if (skipPersistRoomRef.current === room.id) {
+      skipPersistRoomRef.current = null
+      return
+    }
+    if (editingMessage) return
+    const timer = window.setTimeout(() => saveRoomDraft(me.id, room.id, draft), DRAFT_SAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [draft, room.id, me.id, editingMessage])
+
+  useEffect(() => {
+    return () => {
+      if (editingDraftRef.current) return
+      saveRoomDraft(me.id, draftRoomRef.current, latestDraftRef.current)
+    }
+  }, [me.id])
 
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)
@@ -743,8 +779,11 @@ export function RoomView({
       setDraft(content)
       setPendingAttachments(attachmentList)
       setQuotedMessage(quoted)
-    } else if (sendingAttachments) {
-      forceScrollToBottomRef.current = true
+    } else {
+      clearRoomDraft(me.id, room.id)
+      if (sendingAttachments) {
+        forceScrollToBottomRef.current = true
+      }
     }
   }
 
@@ -928,6 +967,7 @@ export function RoomView({
 
   const clearDraft = () => {
     setDraft('')
+    clearRoomDraft(me.id, room.id)
     setPendingAttachments([])
     setEditingMessage(null)
     setComposerExpanded(false)
