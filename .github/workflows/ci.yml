@@ -16,6 +16,23 @@ jobs:
   backend-ci:
     name: Backend CI (Java 21 / Spring Boot)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: konnix_test
+          POSTGRES_USER: konnix
+          POSTGRES_PASSWORD: konnix
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konnix -d konnix_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -31,6 +48,9 @@ jobs:
         working-directory: ./backend
         env:
           KONNIX_UPLOADS_DIR: target/test-uploads
+          KONNIX_TEST_DB_URL: jdbc:postgresql://localhost:5432/konnix_test
+          KONNIX_TEST_DB_USER: konnix
+          KONNIX_TEST_DB_PASSWORD: konnix
         run: |
           mvn -B clean verify
 
