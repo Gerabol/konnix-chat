@@ -110,7 +110,20 @@ public final class ApiExceptions {
 
     public static ApiException fileTooLarge(long maxBytes) {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
-                "Arquivo excede o limite de " + maxBytes + " bytes");
+                "Arquivo excede o limite permitido de " + formatSize(maxBytes) + " (" + maxBytes + " bytes)");
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes >= 1024L * 1024L * 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+        }
+        if (bytes >= 1024L * 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f MB", bytes / (1024.0 * 1024.0));
+        }
+        if (bytes >= 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f KB", bytes / 1024.0);
+        }
+        return bytes + " B";
     }
 
     public static ApiException fileEmpty() {

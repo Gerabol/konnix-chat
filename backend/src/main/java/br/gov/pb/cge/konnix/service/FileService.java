@@ -116,11 +116,21 @@ public class FileService {
 
         String mimeType = file.getContentType();
         byte[] data = readBytes(file);
-        if (isAudio(file, mimeType) && !"audio/mpeg".equalsIgnoreCase(mimeType)) {
-            ConvertedAudio converted = convertToMp3(data, originalName);
-            data = converted.data();
-            originalName = converted.originalName();
-            mimeType = "audio/mpeg";
+        if (isAudio(file, mimeType)) {
+            if (isAlreadyMp3(originalName, mimeType)) {
+                mimeType = "audio/mpeg";
+            } else if (data.length <= 15 * 1024 * 1024) {
+                try {
+                    ConvertedAudio converted = convertToMp3(data, originalName);
+                    data = converted.data();
+                    originalName = converted.originalName();
+                    mimeType = "audio/mpeg";
+                } catch (RuntimeException ignored) {
+                    mimeType = inferAudioMimeType(originalName, mimeType);
+                }
+            } else {
+                mimeType = inferAudioMimeType(originalName, mimeType);
+            }
         }
         FileStorageService.StoredFile stored = storageService.store(data);
         try {
@@ -218,6 +228,28 @@ public class FileService {
         return (mimeType != null && mimeType.toLowerCase(Locale.ROOT).startsWith("audio/"))
                 || (file.getOriginalFilename() != null
                 && file.getOriginalFilename().toLowerCase(Locale.ROOT).matches(".*\\.(webm|mp4|m4a|wav|ogg|oga|aac|flac|mp3)$"));
+    }
+
+    private boolean isAlreadyMp3(String originalName, String mimeType) {
+        if ("audio/mpeg".equalsIgnoreCase(mimeType) || "audio/mp3".equalsIgnoreCase(mimeType)) {
+            return true;
+        }
+        return originalName != null && originalName.toLowerCase(Locale.ROOT).endsWith(".mp3");
+    }
+
+    private String inferAudioMimeType(String originalName, String currentMime) {
+        if (currentMime != null && currentMime.toLowerCase(Locale.ROOT).startsWith("audio/")) {
+            return currentMime;
+        }
+        String lower = originalName == null ? "" : originalName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
+        if (lower.endsWith(".m4a") || lower.endsWith(".mp4")) return "audio/mp4";
+        if (lower.endsWith(".aac")) return "audio/aac";
+        if (lower.endsWith(".flac")) return "audio/flac";
+        if (lower.endsWith(".webm")) return "audio/webm";
+        return "audio/mpeg";
     }
 
     private ConvertedAudio convertToMp3(byte[] data, String originalName) {

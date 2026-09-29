@@ -1405,11 +1405,23 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
 }
 
 function SettingsPanel({ notify }: { notify: (text: string) => void }) {
-  const [settings, setSettings] = useState<AppSettings>({ name: '', maxUploadBytes: 62914560 })
+  const [settings, setSettings] = useState<AppSettings>({ name: 'Konnix Chat', maxUploadBytes: 62914560 })
   const [readEnabled, setReadEnabled] = useState(true)
   useEffect(() => { api.adminSettings().then(setSettings).catch(() => undefined) }, [])
   useEffect(() => { api.readReceiptSetting().then((setting) => setReadEnabled(setting.enabled)).catch(() => undefined) }, [])
-  const saveApp = async (input: AppSettings) => { try { setSettings(await api.adminUpdateSettings(input)); notify('Configuração salva') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao salvar configuração') } }
+  const saveApp = async (input: AppSettings) => {
+    try {
+      const payload: AppSettings = {
+        name: input.name.trim() || 'Konnix Chat',
+        maxUploadBytes: Math.max(1, Math.floor(Number(input.maxUploadBytes) || 0)),
+      }
+      const saved = await api.adminUpdateSettings(payload)
+      setSettings(saved)
+      notify(`Configuração salva (${formatBytes(saved.maxUploadBytes)})`)
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao salvar configuração')
+    }
+  }
   const toggleRead = async () => { try { const result = await api.setReadReceiptSetting(!readEnabled); setReadEnabled(result.enabled); notify('Confirmação de leitura atualizada') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao alterar confirmação de leitura') } }
   return <section className="admin-panel"><div className="admin-panel-title"><div><h1>Configurações</h1><p>Cada configuração pode ser alterada de forma independente.</p></div></div><div className="settings-table-wrap"><table className="admin-table settings-table"><thead><tr><th>Configuração</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead><tbody><tr><td><strong>Nome da aplicação</strong><small className="admin-subline">Nome exibido no sistema</small></td><td><input className="input settings-value" value={settings.name} onChange={(event) => setSettings({ ...settings, name: event.target.value })} /></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Limite máximo de upload</strong><small className="admin-subline">Tamanho permitido para arquivos</small></td><td><div className="settings-upload-value"><input className="input settings-value" type="number" min={1} value={settings.maxUploadBytes} onChange={(event) => setSettings({ ...settings, maxUploadBytes: Number(event.target.value) })} /><small>{formatBytes(settings.maxUploadBytes)}</small></div></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Confirmação de leitura</strong><small className="admin-subline">Permite registrar e consultar quem leu mensagens</small></td><td><span className={`admin-status ${readEnabled ? 'active' : 'inactive'}`}>{readEnabled ? 'Ativa' : 'Desativada'}</span></td><td><span className={`admin-status ${readEnabled ? 'active' : 'inactive'}`}>{readEnabled ? 'Ativa' : 'Desativada'}</span></td><td><button className={`settings-toggle ${readEnabled ? 'on' : 'off'}`} onClick={toggleRead}>{readEnabled ? 'Desativar' : 'Ativar'}</button></td></tr></tbody></table></div></section>
 }

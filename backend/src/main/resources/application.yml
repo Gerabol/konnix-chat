@@ -1,5 +1,7 @@
 server:
   port: 8080
+  tomcat:
+    max-swallow-size: -1
 
 spring:
   application:
@@ -21,14 +23,14 @@ spring:
     baseline-on-migrate: false
   servlet:
     multipart:
-       max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:20MB}
-       max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:100MB}
+      max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:-1}
+      max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:-1}
 
 konnix:
   uploads:
     dir: ${KONNIX_UPLOADS_DIR:./uploads}
   files:
-     max-size: ${KONNIX_MAX_FILE_SIZE:20971520}
+    max-size: ${KONNIX_MAX_FILE_SIZE:62914560}
   vapid:
     public-key: ${KONNIX_VAPID_PUBLIC_KEY:}
     private-key: ${KONNIX_VAPID_PRIVATE_KEY:}

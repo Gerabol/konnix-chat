@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, wsUrl } from '../../api'
+import { api, ApiError, formatUploadSize, wsUrl } from '../../api'
 import type { DirectoryUser, Message, MessageReaction, PresenceStatus, ReadReceipt, Room, Theme, User } from '../../api'
 import { useOnline } from '../../hooks/useOnline'
 import { usePwaInstall } from '../../hooks/usePwaInstall'
 import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
-import type { DmPartner, Session, TypingUser } from '../../types'
+import type { DmPartner, PendingUploadItem, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { isMobilePlatform } from '../../utils/pwa'
+import { formatNotificationSnippet, playNotificationSound, unlockNotificationSound } from '../../utils/notificationSound'
 import { syncPushSubscription } from '../../utils/push'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
@@ -149,6 +150,7 @@ export function ChatView({
       lastInteraction = Date.now()
       scheduleAway()
       registerInteraction()
+      unlockNotificationSound()
     }
 
     const events: (keyof DocumentEventMap)[] = ['pointerdown', 'keydown', 'input', 'touchstart']
@@ -385,6 +387,7 @@ export function ChatView({
       .readReceiptSetting()
       .then((setting) => setReadReceiptsEnabled(setting.enabled))
       .catch(() => undefined)
+    api.serverInfo().catch(() => undefined)
   }, [])
 
   const loadMore = useCallback(async () => {
@@ -494,19 +497,7 @@ export function ChatView({
               const isDirect = room?.type === 'DIRECT'
               const notifTitle = isDirect ? (msg.username || 'Konnix Chat') : `${label} • ${msg.username}`
 
-              let snippet = msg.content?.replace(/\s+/g, ' ').trim() || ''
-              if (!snippet && msg.attachment) {
-                if (msg.attachment.mimeType?.startsWith('audio/')) {
-                  snippet = '🎤 Mensagem de áudio'
-                } else if (msg.attachment.mimeType?.startsWith('image/')) {
-                  snippet = '📷 Enviou uma foto'
-                } else {
-                  snippet = `📎 Arquivo: ${msg.attachment.originalName || 'Anexo'}`
-                }
-              } else if (!snippet && msg.poll) {
-                snippet = `📊 Enquete: ${msg.poll.question}`
-              }
-              const notifBody = snippet || 'Nova mensagem'
+              const notifBody = formatNotificationSnippet(msg)
 
               // Respeitar status de presença: se ocupado ou em missão, só notifica DM ou menção direta
               const currentPresence = presenceStatusRef.current
@@ -520,10 +511,21 @@ export function ChatView({
 
               if (appInBackground && !suppressNotification) {
                 let enabled = false
+                let explicitlyDisabled = false
                 try {
-                  enabled = localStorage.getItem('konnix-system-notifications') === 'true'
+                  const stored = localStorage.getItem('konnix-system-notifications')
+                  explicitlyDisabled = stored === 'false'
+                  enabled =
+                    stored === 'true' ||
+                    (!isTauri &&
+                      stored !== 'false' &&
+                      typeof Notification !== 'undefined' &&
+                      Notification.permission === 'granted')
                 } catch {
                   /* preferência opcional */
+                }
+                if (!explicitlyDisabled) {
+                  playNotificationSound(msg.id)
                 }
                 if (enabled) {
                   if (isTauri) {
@@ -533,6 +535,7 @@ export function ChatView({
                   }
                 }
               } else if (!isActiveRoom && !suppressNotification) {
+                playNotificationSound(msg.id)
                 showToast(`${notifTitle}: ${notifBody}`)
               }
             }
@@ -768,9 +771,16 @@ export function ChatView({
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const data = e.data as { type?: string; roomId?: string } | null
-      if (data && data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
+      const data = e.data as { type?: string; roomId?: string; messageId?: string } | null
+      if (!data) return
+      if (data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
         openRoom(data.roomId)
+      } else if (data.type === 'konnix:push-received') {
+        const currentPresence = presenceStatusRef.current
+        if (currentPresence !== 'busy' && currentPresence !== 'mission' && currentPresence !== 'vacation') {
+          playNotificationSound(data.messageId)
+        }
+        void loadRooms()
       }
     }
     const onDesktopNotification = (e: Event) => {
@@ -835,14 +845,98 @@ export function ChatView({
     }
   }, [standalone, installApp])
 
+  const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([])
+  const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map())
+
+  const executeFileUpload = useCallback(async (item: PendingUploadItem) => {
+    const controller = new AbortController()
+    uploadAbortControllersRef.current.set(item.tempId, controller)
+
+    setPendingUploads((prev) =>
+      prev.map((entry) =>
+        entry.tempId === item.tempId
+          ? { ...entry, status: 'uploading', progress: 0, loadedBytes: 0, errorMessage: undefined }
+          : entry,
+      ),
+    )
+
+    try {
+      const created = await api.uploadFile(item.roomId, item.file, item.content, {
+        signal: controller.signal,
+        onProgress: (loaded, total, percent) => {
+          setPendingUploads((prev) =>
+            prev.map((entry) =>
+              entry.tempId === item.tempId
+                ? {
+                    ...entry,
+                    loadedBytes: loaded,
+                    totalBytes: total,
+                    progress: percent,
+                    status: percent >= 100 ? 'processing' : 'uploading',
+                  }
+                : entry,
+            ),
+          )
+        },
+      })
+
+      uploadAbortControllersRef.current.delete(item.tempId)
+      if (created.attachment?.id) {
+        const localUrl = URL.createObjectURL(item.file)
+        attachmentBlobCache.set(created.attachment.id, localUrl)
+      }
+
+      setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== item.tempId))
+      setRooms((prev) =>
+        prev.map((room) => (room.id === item.roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
+      )
+      if (activeRoomIdRef.current === item.roomId) {
+        setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
+      }
+    } catch (err) {
+      uploadAbortControllersRef.current.delete(item.tempId)
+      if (err instanceof ApiError && err.code === 'UPLOAD_ABORTED') {
+        setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== item.tempId))
+        return
+      }
+      const errorMessage = err instanceof ApiError ? err.message : 'Falha ao enviar arquivo'
+      setPendingUploads((prev) =>
+        prev.map((entry) =>
+          entry.tempId === item.tempId
+            ? { ...entry, status: 'error', errorMessage }
+            : entry,
+        ),
+      )
+    }
+  }, [])
+
+  const retryUpload = useCallback(
+    (tempId: string) => {
+      const target = pendingUploads.find((item) => item.tempId === tempId)
+      if (!target) return
+      void executeFileUpload(target)
+    },
+    [pendingUploads, executeFileUpload],
+  )
+
+  const cancelUpload = useCallback((tempId: string) => {
+    const controller = uploadAbortControllersRef.current.get(tempId)
+    if (controller) {
+      controller.abort()
+      uploadAbortControllersRef.current.delete(tempId)
+    }
+    setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== tempId))
+  }, [])
+
   const sendMessage = async (
     content: string,
     parentMessageId?: string,
     attachments: File[] = [],
   ): Promise<boolean> => {
     let roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY')
+    if (!roomId || (!content.trim() && attachments.length === 0) || !online || me.accountStatus === 'READ_ONLY')
       return false
+    if (attachments.length === 0 && composing) return false
     if (roomId.startsWith('pending:')) {
       const user = pendingDmRef.current
       if (!user) return false
@@ -861,31 +955,51 @@ export function ChatView({
         showToast(err instanceof ApiError ? err.message : 'Não foi possível iniciar a conversa')
         setComposing(false)
         return false
+      } finally {
+        setComposing(false)
       }
     }
+
+    if (attachments.length > 0) {
+      void api.serverInfo().catch(() => undefined)
+      const maxUploadBytes = api.getMaxUploadBytes()
+      const oversized = attachments.find((file) => file.size > maxUploadBytes)
+      if (oversized) {
+        showToast(
+          `O arquivo "${oversized.name}" (${formatUploadSize(oversized.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+        )
+        return false
+      }
+
+      const targetRoomId = roomId
+      const nowIso = new Date().toISOString()
+      const newUploadItems: PendingUploadItem[] = attachments.map((file, index) => ({
+        tempId: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
+        roomId: targetRoomId,
+        file,
+        content: index === 0 && content.trim() ? content.trim() : undefined,
+        createdAt: nowIso,
+        progress: 0,
+        loadedBytes: 0,
+        totalBytes: file.size,
+        status: 'uploading',
+      }))
+
+      setPendingUploads((prev) => [...prev, ...newUploadItems])
+      setForceScrollRequest((prev) => prev + 1)
+      for (const item of newUploadItems) {
+        void executeFileUpload(item)
+      }
+      return true
+    }
+
     setComposing(true)
     try {
-      let createdMessages: Message[]
-      if (attachments.length === 0) {
-        createdMessages = [await api.sendMessage(roomId, content.trim(), parentMessageId)]
-      } else {
-        createdMessages = await Promise.all(
-          attachments.map(async (file, index) => {
-            const created = await api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)
-            if (created.attachment?.id) {
-              const localUrl = URL.createObjectURL(file)
-              attachmentBlobCache.set(created.attachment.id, localUrl)
-            }
-            return created
-          }),
-        )
-      }
-      for (const created of createdMessages) {
-        setRooms((prev) =>
-          prev.map((room) => (room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
-        )
-        setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
-      }
+      const created = await api.sendMessage(roomId, content.trim(), parentMessageId)
+      setRooms((prev) =>
+        prev.map((room) => (room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
+      )
+      setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
       return true
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Falha ao enviar mensagem')
@@ -1107,6 +1221,9 @@ export function ChatView({
                 setRooms((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
               }
               onOpenRoom={openRoom}
+              pendingUploads={pendingUploads.filter((u) => u.roomId === activeRoom.id)}
+              onRetryUpload={retryUpload}
+              onCancelUpload={cancelUpload}
             />
           )}
         </main>

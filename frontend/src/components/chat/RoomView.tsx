@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { api, ApiError, formatDay, roomAvatarPath, userAvatarPath } from '../../api'
+import { api, ApiError, formatDay, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
-import type { DmPartner, TypingUser } from '../../types'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
+import type { DmPartner, PendingUploadItem, TypingUser } from '../../types'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
 import {
@@ -68,6 +68,9 @@ export interface RoomViewProps {
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
   onOpenRoom: (roomId: string) => void
+  pendingUploads?: PendingUploadItem[]
+  onRetryUpload?: (tempId: string) => void
+  onCancelUpload?: (tempId: string) => void
 }
 
 export function RoomView({
@@ -98,6 +101,9 @@ export function RoomView({
   onPollUpdated,
   onRoomUpdated,
   onOpenRoom,
+  pendingUploads = [],
+  onRetryUpload,
+  onCancelUpload,
 }: RoomViewProps) {
   const isPendingDm = room.id.startsWith('pending:')
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
@@ -268,9 +274,21 @@ export function RoomView({
 
   const addPendingAttachments = useCallback((files: File[]) => {
     if (files.length === 0 || editingMessage) return
+    const maxUploadBytes = api.getMaxUploadBytes()
+    const validFiles: File[] = []
+    for (const file of files) {
+      if (file.size > maxUploadBytes) {
+        notify(
+          `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+        )
+      } else {
+        validFiles.push(file)
+      }
+    }
+    if (validFiles.length === 0) return
     setPendingAttachments((current) => {
       const next = [...current]
-      for (const file of files) {
+      for (const file of validFiles) {
         if (next.length >= 10) break
         if (
           !next.some(
@@ -282,7 +300,7 @@ export function RoomView({
       }
       return next
     })
-  }, [editingMessage])
+  }, [editingMessage, notify])
 
   const audioRecorder = useAudioRecorder({
     resetKey: audioResetKey,
@@ -1591,6 +1609,102 @@ export function RoomView({
               ))}
             </div>
           ))}
+          {pendingUploads.map((upload) => {
+            const isAudioFile =
+              upload.file.type.startsWith('audio/') ||
+              /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm)$/i.test(upload.file.name)
+            const isImageFile = upload.file.type.startsWith('image/')
+            const icon = isAudioFile ? '🎵' : isImageFile ? '🖼' : '📎'
+            return (
+              <div
+                key={upload.tempId}
+                className={`message mine message-uploading ${upload.status === 'error' ? 'message-upload-failed' : ''}`}
+              >
+                <div className="message-avatar-button" aria-hidden="true">
+                  <AvatarImage
+                    path={`${userAvatarPath(me.id)}?v=${encodeURIComponent(myAvatarVersion)}`}
+                    className="msg-avatar"
+                    fallback={<span className="msg-avatar">{initials(me.username)}</span>}
+                    alt={me.username}
+                  />
+                </div>
+                <div className="message-body">
+                  <div className="message-meta">
+                    <span className="message-time">{formatTime(upload.createdAt)}</span>
+                    <span className="message-author-wrap">
+                      <span className="message-author">{me.username}</span>
+                    </span>
+                    <span className="upload-status-pill">
+                      {upload.status === 'error'
+                        ? '⚠ Falha no envio'
+                        : upload.status === 'processing'
+                        ? 'Processando…'
+                        : `Enviando ${upload.progress}%`}
+                    </span>
+                  </div>
+                  <div className={`attachment attachment-upload-box ${upload.status === 'error' ? 'attachment-error' : ''}`}>
+                    <span className={`attachment-icon ${isAudioFile ? 'audio' : 'generic'}`}>{icon}</span>
+                    <span className="attachment-body">
+                      <strong>{upload.file.name}</strong>
+                      {upload.status !== 'error' ? (
+                        <>
+                          <small>
+                            {upload.status === 'processing'
+                              ? `100% (${formatUploadSize(upload.totalBytes)}) • Finalizando no servidor…`
+                              : `${upload.progress}% • ${formatUploadSize(upload.loadedBytes)} de ${formatUploadSize(upload.totalBytes)}`}
+                          </small>
+                          <div
+                            className="upload-progress-track"
+                            role="progressbar"
+                            aria-valuenow={upload.progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                          >
+                            <div
+                              className={`upload-progress-fill ${upload.status === 'processing' ? 'processing' : ''}`}
+                              style={{ width: `${Math.max(4, upload.progress)}%` }}
+                            />
+                          </div>
+                          <div className="upload-actions-row">
+                            <button
+                              type="button"
+                              className="attachment-cancel-btn"
+                              onClick={() => onCancelUpload?.(upload.tempId)}
+                            >
+                              Cancelar envio
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <small className="attachment-errmsg">
+                            {upload.errorMessage || 'Não foi possível concluir o envio deste arquivo.'}
+                          </small>
+                          <div className="upload-actions-row">
+                            <button
+                              type="button"
+                              className="attachment-retry"
+                              onClick={() => onRetryUpload?.(upload.tempId)}
+                            >
+                              🔄 Tentar novamente
+                            </button>
+                            <button
+                              type="button"
+                              className="attachment-cancel-btn"
+                              onClick={() => onCancelUpload?.(upload.tempId)}
+                            >
+                              ✕ Remover
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {upload.content && <div className="message-content">{upload.content}</div>}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
