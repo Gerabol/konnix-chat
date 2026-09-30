@@ -7,7 +7,15 @@ import { getRoomIcon, roomDisplayName } from '../../utils/room'
 import { isTauri } from '../../platform'
 import { isMobilePlatform } from '../../utils/pwa'
 import { isWhiteSidebarLogoTheme } from '../../utils/theme'
-import { IconSearch, IconSettings } from '../icons'
+import {
+  IconCheck,
+  IconChevronDown,
+  IconMail,
+  IconSearch,
+  IconSettings,
+  IconStar,
+  IconStarFilled,
+} from '../icons'
 import { PresenceSelector } from '../settings/PresenceSelector'
 import { UserSettingsMenuContent } from '../settings/UserSettingsMenuContent'
 import { AvatarImage, initials } from './AvatarImage'
@@ -226,14 +234,28 @@ export const Sidebar = memo(function Sidebar({
   const handleContextMenu = (roomId: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setRoomContextMenu({ roomId, x: e.clientX, y: e.clientY })
+    const menuHeight = 90
+    const menuWidth = 190
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 8)
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8)
+    setRoomContextMenu({ roomId, x, y })
   }
 
   const handleMoreClick = (roomId: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    if (roomContextMenu?.roomId === roomId) {
+      setRoomContextMenu(null)
+      return
+    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setRoomContextMenu({ roomId, x: Math.min(rect.left, window.innerWidth - 190), y: rect.bottom + 4 })
+    const menuHeight = 90
+    const menuWidth = 190
+    const y = rect.bottom + menuHeight > window.innerHeight
+      ? Math.max(8, rect.top - menuHeight - 4)
+      : rect.bottom + 4
+    const x = Math.min(Math.max(8, rect.right - menuWidth), window.innerWidth - menuWidth - 8)
+    setRoomContextMenu({ roomId, x, y })
   }
 
   const renderRoomBadge = (room: Room) => {
@@ -262,6 +284,32 @@ export const Sidebar = memo(function Sidebar({
       </span>
     )
   }
+
+  const renderRoomActions = (room: Room) => (
+    <div className="room-item-actions">
+      <span
+        className="room-item-arrow-btn"
+        role="button"
+        tabIndex={0}
+        title="Opções da conversa"
+        aria-label="Opções da conversa"
+        onClick={(e) => {
+          e.stopPropagation()
+          handleMoreClick(room.id, e)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation()
+            e.preventDefault()
+            handleMoreClick(room.id, e as unknown as React.MouseEvent)
+          }
+        }}
+      >
+        <IconChevronDown size={12} />
+      </span>
+      {renderRoomBadge(room)}
+    </div>
+  )
 
   useEffect(() => {
     if (!headerMenuOpen && !footerMenuOpen) return
@@ -486,7 +534,7 @@ export const Sidebar = memo(function Sidebar({
                     {filteredFavorites.map((room) => (
                       <button
                         key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
                         onContextMenu={(e) => handleContextMenu(room.id, e)}
                         onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -517,20 +565,7 @@ export const Sidebar = memo(function Sidebar({
                           </span>
                         )}
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {renderRoomBadge(room)}
-                        <span
-                          className="room-item-more-btn"
-                          role="button"
-                          tabIndex={0}
-                          title="Mais opções"
-                          aria-label="Mais opções"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleMoreClick(room.id, e)
-                          }}
-                        >
-                          ···
-                        </span>
+                        {renderRoomActions(room)}
                       </button>
                     ))}
                   </div>
@@ -546,7 +581,7 @@ export const Sidebar = memo(function Sidebar({
                     {filteredRegularChannels.map((room) => (
                       <button
                         key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
                         onContextMenu={(e) => handleContextMenu(room.id, e)}
                         onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -564,20 +599,7 @@ export const Sidebar = memo(function Sidebar({
                           alt={roomDisplayName(room)}
                         />
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {renderRoomBadge(room)}
-                        <span
-                          className="room-item-more-btn"
-                          role="button"
-                          tabIndex={0}
-                          title="Mais opções"
-                          aria-label="Mais opções"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleMoreClick(room.id, e)
-                          }}
-                        >
-                          ···
-                        </span>
+                        {renderRoomActions(room)}
                       </button>
                     ))}
                   </div>
@@ -593,7 +615,7 @@ export const Sidebar = memo(function Sidebar({
                     {filteredConversations.map((room) => (
                       <button
                         key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
                         onContextMenu={(e) => handleContextMenu(room.id, e)}
                         onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -618,20 +640,7 @@ export const Sidebar = memo(function Sidebar({
                           </span>
                         </span>
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {renderRoomBadge(room)}
-                        <span
-                          className="room-item-more-btn"
-                          role="button"
-                          tabIndex={0}
-                          title="Mais opções"
-                          aria-label="Mais opções"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleMoreClick(room.id, e)
-                          }}
-                        >
-                          ···
-                        </span>
+                        {renderRoomActions(room)}
                       </button>
                     ))}
                   </div>
@@ -663,7 +672,7 @@ export const Sidebar = memo(function Sidebar({
                     {displayFavorites.map((room) => (
                       <button
                         key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                        className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
                         onContextMenu={(e) => handleContextMenu(room.id, e)}
                         onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -709,20 +718,7 @@ export const Sidebar = memo(function Sidebar({
                           />
                         )}
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {renderRoomBadge(room)}
-                        <span
-                          className="room-item-more-btn"
-                          role="button"
-                          tabIndex={0}
-                          title="Mais opções"
-                          aria-label="Mais opções"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleMoreClick(room.id, e)
-                          }}
-                        >
-                          ···
-                        </span>
+                        {renderRoomActions(room)}
                       </button>
                     ))}
                   </div>
@@ -754,7 +750,7 @@ export const Sidebar = memo(function Sidebar({
                       return (
                         <button
                           key={room.id}
-                          className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                          className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                           onClick={() => handleSelectRoom(room.id)}
                           onContextMenu={(e) => handleContextMenu(room.id, e)}
                           onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -782,20 +778,7 @@ export const Sidebar = memo(function Sidebar({
                               </span>
                             )}
                           </span>
-                          {renderRoomBadge(room)}
-                          <span
-                            className="room-item-more-btn"
-                            role="button"
-                            tabIndex={0}
-                            title="Mais opções"
-                            aria-label="Mais opções"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMoreClick(room.id, e)
-                            }}
-                          >
-                            ···
-                          </span>
+                          {renderRoomActions(room)}
                         </button>
                       )
                     })}
@@ -852,7 +835,7 @@ export const Sidebar = memo(function Sidebar({
                           return (
                             <button
                               key={room.id}
-                              className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                              className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                               onClick={() => handleSelectRoom(room.id)}
                               onContextMenu={(e) => handleContextMenu(room.id, e)}
                               onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -880,20 +863,7 @@ export const Sidebar = memo(function Sidebar({
                                   </span>
                                 )}
                               </span>
-                              {renderRoomBadge(room)}
-                              <span
-                                className="room-item-more-btn"
-                                role="button"
-                                tabIndex={0}
-                                title="Mais opções"
-                                aria-label="Mais opções"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleMoreClick(room.id, e)
-                                }}
-                              >
-                                ···
-                              </span>
+                              {renderRoomActions(room)}
                             </button>
                           )
                         })}
@@ -936,7 +906,7 @@ export const Sidebar = memo(function Sidebar({
                           return (
                             <button
                               key={room.id}
-                              className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                              className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
                               onClick={() => handleSelectRoom(room.id)}
                               onContextMenu={(e) => handleContextMenu(room.id, e)}
                               onTouchStart={(e) => handleTouchStart(room.id, e)}
@@ -979,20 +949,7 @@ export const Sidebar = memo(function Sidebar({
                                   </span>
                                 )}
                               </span>
-                              {renderRoomBadge(room)}
-                              <span
-                                className="room-item-more-btn"
-                                role="button"
-                                tabIndex={0}
-                                title="Mais opções"
-                                aria-label="Mais opções"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleMoreClick(room.id, e)
-                                }}
-                              >
-                                ···
-                              </span>
+                              {renderRoomActions(room)}
                             </button>
                           )
                         })}
@@ -1088,7 +1045,9 @@ export const Sidebar = memo(function Sidebar({
                 onMarkRoomRead?.(id)
               }}
             >
-              <span className="room-context-menu-icon">✓</span>
+              <span className="room-context-menu-icon">
+                <IconCheck size={16} />
+              </span>
               <span>Marcar como lida</span>
             </button>
           ) : (
@@ -1101,7 +1060,9 @@ export const Sidebar = memo(function Sidebar({
                 onMarkRoomUnread?.(id)
               }}
             >
-              <span className="room-context-menu-icon">✉</span>
+              <span className="room-context-menu-icon">
+                <IconMail size={16} />
+              </span>
               <span>Marcar como não lida</span>
             </button>
           )}
@@ -1115,7 +1076,9 @@ export const Sidebar = memo(function Sidebar({
                 onToggleRoomFavorite(id)
               }}
             >
-              <span className="room-context-menu-icon">{contextRoom.favorite ? '★' : '☆'}</span>
+              <span className="room-context-menu-icon">
+                {contextRoom.favorite ? <IconStarFilled size={16} /> : <IconStar size={16} />}
+              </span>
               <span>{contextRoom.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
             </button>
           )}

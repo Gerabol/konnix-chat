@@ -1894,51 +1894,109 @@ button:disabled {
   color: var(--konnix-sidebar-soft);
 }
 
-/* Room context menu and more button */
-.room-item-more-btn {
+/* Room item actions container: always keeps notification badges pinned to the far right */
+.room-item-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.room-item.menu-open {
+  background: var(--konnix-bg);
+}
+
+/* Bolinha interativa com seta para baixo (v) que desce ao passar o mouse */
+.room-item-arrow-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 0;
   height: 22px;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--konnix-ink) 8%, transparent);
   color: var(--konnix-ink-soft);
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-  flex: none;
   cursor: pointer;
   user-select: none;
+  flex: none;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.8);
+  margin-right: 0;
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              margin-right 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.18s ease,
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.15s ease,
+              color 0.15s ease,
+              border-color 0.15s ease,
+              box-shadow 0.15s ease;
 }
 
-.room-item:hover .room-item-more-btn,
-.room-item:focus-within .room-item-more-btn {
-  opacity: 0.7;
+.room-item:hover .room-item-arrow-btn,
+.room-item:focus-within .room-item-arrow-btn,
+.room-item.menu-open .room-item-arrow-btn {
+  width: 22px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  margin-right: 5px;
 }
 
-.room-item-more-btn:hover {
-  opacity: 1 !important;
-  background: color-mix(in srgb, var(--konnix-ink) 10%, transparent);
-  color: var(--konnix-ink);
+.room-item-arrow-btn:only-child {
+  margin-right: 0 !important;
 }
 
-@media (max-width: 768px), (pointer: coarse) {
-  .room-item-more-btn {
-    opacity: 0.6;
-    width: 28px;
-    height: 28px;
+.room-item-arrow-btn:hover {
+  background: color-mix(in srgb, var(--konnix-primary) 15%, var(--konnix-surface));
+  border-color: color-mix(in srgb, var(--konnix-primary) 30%, transparent);
+  color: var(--konnix-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.room-item-arrow-btn:active {
+  transform: translateY(1px) scale(0.92);
+}
+
+.room-item-arrow-btn svg {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.room-item-arrow-btn:hover svg {
+  transform: translateY(1px);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .room-item-arrow-btn {
+    width: 24px;
+    height: 24px;
+    opacity: 0.65;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+    margin-right: 5px;
+  }
+  .room-item-arrow-btn:only-child {
+    margin-right: 0 !important;
   }
 }
 
-[data-theme$="-strong"] .sidebar .room-item-more-btn {
-  color: var(--konnix-sidebar-soft);
+[data-theme$="-strong"] .sidebar .room-item-arrow-btn {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--konnix-sidebar-ink);
 }
 
-[data-theme$="-strong"] .sidebar .room-item-more-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+[data-theme$="-strong"] .sidebar .room-item-arrow-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.4);
   color: #ffffff;
 }
+
 
 .room-context-menu {
   position: fixed;
