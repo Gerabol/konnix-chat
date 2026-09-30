@@ -107,6 +107,18 @@ export const Sidebar = memo(function Sidebar({
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
   const [filter, setFilter] = useState<SidebarFilterMode>('all')
+  const [filterDirection, setFilterDirection] = useState<'left' | 'right'>('left')
+
+  const handleFilterChange = (newFilter: SidebarFilterMode) => {
+    if (newFilter === filter) return
+    setRoomContextMenu(null)
+    const order: Record<SidebarFilterMode, number> = { all: 0, unread: 1, mentions: 2 }
+    const currentIdx = order[filter] ?? 0
+    const newIdx = order[newFilter] ?? 0
+    setFilterDirection(newIdx >= currentIdx ? 'left' : 'right')
+    setFilter(newFilter)
+  }
+
   const [roomContextMenu, setRoomContextMenu] = useState<{
     roomId: string
     x: number
@@ -180,6 +192,9 @@ export const Sidebar = memo(function Sidebar({
     if (!roomContextMenu) return
     const onDown = (e: MouseEvent | TouchEvent) => {
       const target = e.target as Node
+      if ((target as Element).closest?.('.room-item-arrow-btn')) {
+        return
+      }
       if (contextMenuRef.current && !contextMenuRef.current.contains(target)) {
         setRoomContextMenu(null)
       }
@@ -244,10 +259,6 @@ export const Sidebar = memo(function Sidebar({
   const handleMoreClick = (roomId: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (roomContextMenu?.roomId === roomId) {
-      setRoomContextMenu(null)
-      return
-    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const menuHeight = 90
     const menuWidth = 190
@@ -255,7 +266,7 @@ export const Sidebar = memo(function Sidebar({
       ? Math.max(8, rect.top - menuHeight - 4)
       : rect.bottom + 4
     const x = Math.min(Math.max(8, rect.right - menuWidth), window.innerWidth - menuWidth - 8)
-    setRoomContextMenu({ roomId, x, y })
+    setRoomContextMenu((prev) => (prev?.roomId === roomId ? null : { roomId, x, y }))
   }
 
   const renderRoomBadge = (room: Room) => {
@@ -446,7 +457,7 @@ export const Sidebar = memo(function Sidebar({
             role="tab"
             aria-selected={filter === 'all'}
             className={`sidebar-filter-tab ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
+            onClick={() => handleFilterChange('all')}
           >
             Todos
           </button>
@@ -455,7 +466,7 @@ export const Sidebar = memo(function Sidebar({
             role="tab"
             aria-selected={filter === 'unread'}
             className={`sidebar-filter-tab ${filter === 'unread' ? 'active' : ''}`}
-            onClick={() => setFilter('unread')}
+            onClick={() => handleFilterChange('unread')}
           >
             <span>Não lidas</span>
             {totalUnreadRoomsCount > 0 && (
@@ -467,7 +478,7 @@ export const Sidebar = memo(function Sidebar({
             role="tab"
             aria-selected={filter === 'mentions'}
             className={`sidebar-filter-tab ${filter === 'mentions' ? 'active' : ''}`}
-            onClick={() => setFilter('mentions')}
+            onClick={() => handleFilterChange('mentions')}
           >
             <span>Menções</span>
             {totalMentionedRoomsCount > 0 && (
@@ -649,7 +660,7 @@ export const Sidebar = memo(function Sidebar({
             </>
           )
         ) : (
-          <>
+          <div key={filter} className={`sidebar-filter-content slide-${filterDirection}`}>
             {displayFavorites.length > 0 && (
               <div className="nav-section">
                 <div className="nav-section-head">
@@ -959,7 +970,7 @@ export const Sidebar = memo(function Sidebar({
                 )}
               </>
             )}
-          </>
+          </div>
         )}
       </nav>
 
