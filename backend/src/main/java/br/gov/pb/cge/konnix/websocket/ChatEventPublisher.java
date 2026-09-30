@@ -182,6 +182,10 @@ public class ChatEventPublisher {
             session.sendMessage(new TextMessage(json));
         } catch (IOException e) {
             log.debug("Falha ao enviar evento WebSocket para sessão {}", session.getId(), e);
+            try {
+                session.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 }
