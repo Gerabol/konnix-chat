@@ -4415,11 +4415,17 @@ img.room-header-avatar {
   display: block;
   max-width: 100%;
   max-height: 100%;
+  flex-shrink: 0;
   border-radius: 12px;
   background: var(--konnix-bg);
   box-shadow: var(--konnix-shadow);
   cursor: zoom-in;
   -webkit-user-drag: none;
+}
+
+.lightbox-stage > .lightbox-img[style] {
+  max-width: none;
+  max-height: none;
 }
 
 .lightbox-close {

@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { formatTime, userAvatarPath } from '../../api'
+import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
@@ -216,7 +216,7 @@ function MessageRowComponent({
       )}
       <div className="message-body">
         <div className="message-meta">
-          {isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {isMine && <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>{formatTime(msg.createdAt)}</span>}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
           ) : (
