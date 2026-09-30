@@ -1513,34 +1513,6 @@ button:disabled {
   gap: 0.3rem;
 }
 
-.nav-section-count {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--konnix-primary) 90%, white 10%);
-  color: #fff;
-  font-size: 0.66rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-[data-theme$="-strong"] .sidebar .nav-section-count {
-  background: #fff;
-  color: #111;
-  outline: 1.5px solid rgba(0, 0, 0, 0.15);
-}
-
-[data-theme="green-black"] .sidebar .nav-section-count {
-  background: #25bd70;
-  outline: none;
-}
-
 .nav-add {
   width: 22px;
   height: 22px;
