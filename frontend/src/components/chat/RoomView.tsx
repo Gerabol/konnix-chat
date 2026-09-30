@@ -1596,6 +1596,7 @@ export function RoomView({
                   msg={m}
                   isMine={m.userId === me.id}
                   currentUsername={me.username}
+                  currentUserId={me.id}
                   myAvatarVersion={myAvatarVersion}
                   avatarVersions={avatarVersions}
                   canWrite={!readOnlyAccount}

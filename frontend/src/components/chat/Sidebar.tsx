@@ -21,6 +21,8 @@ import {
   type SidebarFilterMode,
 } from '../../utils/sidebarFilter'
 
+const unreadTotal = (rooms: Room[]) => rooms.reduce((total, room) => total + (room.unreadCount || 0), 0)
+
 export interface SidebarProps {
   me: User
   theme: Theme
@@ -115,7 +117,6 @@ export const Sidebar = memo(function Sidebar({
   const SYSTEM_CHANNEL_NAMES = ['bug-reports']
   const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
   const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
-
   const allRooms = useMemo(() => {
     const map = new Map<string, Room>()
     favoriteRooms.forEach((r) => map.set(r.id, r))
@@ -139,6 +140,10 @@ export const Sidebar = memo(function Sidebar({
     return allRooms.find((r) => r.id === roomContextMenu.roomId) ?? null
   }, [roomContextMenu, allRooms])
 
+  const favoritesUnread = unreadTotal(favoriteRooms)
+  const adminUnread = unreadTotal(systemChannels)
+  const channelsUnread = unreadTotal(regularChannels)
+  const conversationsUnread = unreadTotal(regularConversations)
   const query = search.trim().toLowerCase()
   const showResults = query.length > 0
   const matchesQuery = (room: Room) => {
@@ -651,6 +656,11 @@ export const Sidebar = memo(function Sidebar({
                     <span className={`nav-chevron${favoritesOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Favoritos</span>
                   </button>
+                  {!favoritesOpen && favoritesUnread > 0 && (
+                    <span className="nav-section-count" title={`${favoritesUnread} não lidas`}>
+                      {favoritesUnread}
+                    </span>
+                  )}
                 </div>
                 {favoritesOpen && (
                   <div className="nav-list" id="favorites-list">
@@ -737,6 +747,11 @@ export const Sidebar = memo(function Sidebar({
                     <span className={`nav-chevron${adminOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Administração</span>
                   </button>
+                  {!adminOpen && adminUnread > 0 && (
+                    <span className="nav-section-count" title={`${adminUnread} não lidas`}>
+                      {adminUnread}
+                    </span>
+                  )}
                 </div>
                 {adminOpen && (
                   <div className="nav-list" id="admin-channels-list">
@@ -822,9 +837,16 @@ export const Sidebar = memo(function Sidebar({
                         <span className={`nav-chevron${channelsOpen ? ' open' : ''}`}>›</span>
                         <span className="nav-section-title">Canais e grupos</span>
                       </button>
-                      <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
-                        +
-                      </button>
+                      <div className="nav-section-actions">
+                        {!channelsOpen && channelsUnread > 0 && (
+                          <span className="nav-section-count" title={`${channelsUnread} não lidas`}>
+                            {channelsUnread}
+                          </span>
+                        )}
+                        <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
+                          +
+                        </button>
+                      </div>
                     </div>
                     {channelsOpen && (
                       <div className="nav-list" id="channels-list">
@@ -901,9 +923,16 @@ export const Sidebar = memo(function Sidebar({
                         <span className={`nav-chevron${conversationsOpen ? ' open' : ''}`}>›</span>
                         <span className="nav-section-title">Conversas</span>
                       </button>
-                      <button className="nav-add" onClick={onNewDm} title="Nova conversa">
-                        +
-                      </button>
+                      <div className="nav-section-actions">
+                        {!conversationsOpen && conversationsUnread > 0 && (
+                          <span className="nav-section-count" title={`${conversationsUnread} não lidas`}>
+                            {conversationsUnread}
+                          </span>
+                        )}
+                        <button className="nav-add" onClick={onNewDm} title="Nova conversa">
+                          +
+                        </button>
+                      </div>
                     </div>
                     {conversationsOpen && (
                       <div className="nav-list" id="conversations-list">
