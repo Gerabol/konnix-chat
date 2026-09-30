@@ -21,8 +21,6 @@ import {
   type SidebarFilterMode,
 } from '../../utils/sidebarFilter'
 
-const unreadTotal = (rooms: Room[]) => rooms.reduce((total, room) => total + (room.unreadCount || 0), 0)
-
 export interface SidebarProps {
   me: User
   theme: Theme
@@ -140,10 +138,10 @@ export const Sidebar = memo(function Sidebar({
     return allRooms.find((r) => r.id === roomContextMenu.roomId) ?? null
   }, [roomContextMenu, allRooms])
 
-  const favoritesUnread = unreadTotal(favoriteRooms)
-  const adminUnread = unreadTotal(systemChannels)
-  const channelsUnread = unreadTotal(regularChannels)
-  const conversationsUnread = unreadTotal(regularConversations)
+  const favoritesHaveUnread = favoriteRooms.some(isRoomUnread)
+  const adminHaveUnread = systemChannels.some(isRoomUnread)
+  const channelsHaveUnread = regularChannels.some(isRoomUnread)
+  const conversationsHaveUnread = regularConversations.some(isRoomUnread)
   const query = search.trim().toLowerCase()
   const showResults = query.length > 0
   const matchesQuery = (room: Room) => {
@@ -656,10 +654,8 @@ export const Sidebar = memo(function Sidebar({
                     <span className={`nav-chevron${favoritesOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Favoritos</span>
                   </button>
-                  {!favoritesOpen && favoritesUnread > 0 && (
-                    <span className="nav-section-count" title={`${favoritesUnread} não lidas`}>
-                      {favoritesUnread}
-                    </span>
+                  {!favoritesOpen && favoritesHaveUnread && (
+                    <span className="badge badge-dot" aria-label="Há mensagens não lidas" title="Há mensagens não lidas" />
                   )}
                 </div>
                 {favoritesOpen && (
@@ -747,10 +743,8 @@ export const Sidebar = memo(function Sidebar({
                     <span className={`nav-chevron${adminOpen ? ' open' : ''}`}>›</span>
                     <span className="nav-section-title">Administração</span>
                   </button>
-                  {!adminOpen && adminUnread > 0 && (
-                    <span className="nav-section-count" title={`${adminUnread} não lidas`}>
-                      {adminUnread}
-                    </span>
+                  {!adminOpen && adminHaveUnread && (
+                    <span className="badge badge-dot" aria-label="Há mensagens não lidas" title="Há mensagens não lidas" />
                   )}
                 </div>
                 {adminOpen && (
@@ -838,10 +832,8 @@ export const Sidebar = memo(function Sidebar({
                         <span className="nav-section-title">Canais e grupos</span>
                       </button>
                       <div className="nav-section-actions">
-                        {!channelsOpen && channelsUnread > 0 && (
-                          <span className="nav-section-count" title={`${channelsUnread} não lidas`}>
-                            {channelsUnread}
-                          </span>
+                        {!channelsOpen && channelsHaveUnread && (
+                          <span className="badge badge-dot" aria-label="Há mensagens não lidas" title="Há mensagens não lidas" />
                         )}
                         <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
                           +
@@ -924,10 +916,8 @@ export const Sidebar = memo(function Sidebar({
                         <span className="nav-section-title">Conversas</span>
                       </button>
                       <div className="nav-section-actions">
-                        {!conversationsOpen && conversationsUnread > 0 && (
-                          <span className="nav-section-count" title={`${conversationsUnread} não lidas`}>
-                            {conversationsUnread}
-                          </span>
+                        {!conversationsOpen && conversationsHaveUnread && (
+                          <span className="badge badge-dot" aria-label="Há mensagens não lidas" title="Há mensagens não lidas" />
                         )}
                         <button className="nav-add" onClick={onNewDm} title="Nova conversa">
                           +
