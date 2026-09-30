@@ -287,6 +287,7 @@ export const Sidebar = memo(function Sidebar({
 
   const renderRoomActions = (room: Room) => (
     <div className="room-item-actions">
+      {renderRoomBadge(room)}
       <span
         className="room-item-arrow-btn"
         role="button"
@@ -307,7 +308,6 @@ export const Sidebar = memo(function Sidebar({
       >
         <IconChevronDown size={12} />
       </span>
-      {renderRoomBadge(room)}
     </div>
   )
 
