@@ -3019,6 +3019,19 @@ button:disabled {
   outline: none;
 }
 
+.message-reaction.mine {
+  border-color: color-mix(in srgb, var(--konnix-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--konnix-primary) 12%, transparent);
+  color: var(--konnix-primary-deep);
+  font-weight: 600;
+}
+
+.message-reaction.mine:hover,
+.message-reaction.mine:focus-visible {
+  border-color: var(--konnix-primary);
+  background: color-mix(in srgb, var(--konnix-primary) 20%, transparent);
+}
+
 .message.mine .message-delete {
   right: auto;
   left: 0.5rem;
