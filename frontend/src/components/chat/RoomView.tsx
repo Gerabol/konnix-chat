@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { api, ApiError, formatDay, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
+import { api, ApiError, formatDay, formatFullTimestamp, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { copyText, resolvePaste } from '../../utils/clipboard'
@@ -1223,7 +1223,7 @@ export function RoomView({
                   <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
                     <strong>{result.username}</strong>
                     <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
-                    <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
+                    <small>{formatFullTimestamp(result.createdAt)}</small>
                   </button>
                 ))}
               </div>
@@ -1630,7 +1630,7 @@ export function RoomView({
                 </div>
                 <div className="message-body">
                   <div className="message-meta">
-                    <span className="message-time">{formatTime(upload.createdAt)}</span>
+                    <span className="message-time" title={formatFullTimestamp(upload.createdAt)}>{formatTime(upload.createdAt)}</span>
                     <span className="message-author-wrap">
                       <span className="message-author">{me.username}</span>
                     </span>

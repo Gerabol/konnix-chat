@@ -769,12 +769,31 @@ export function formatTime(iso: string): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+export const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const
+
+export function formatWeekday(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : (WEEKDAYS[d.getDay()] ?? '')
+}
+
 export function formatDay(iso: string): string {
   const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
   const today = new Date()
   const sameDay = d.toDateString() === today.toDateString()
-  if (sameDay) return 'Hoje'
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  if (sameDay) return `hoje, ${dateStr}`
+  const weekday = WEEKDAYS[d.getDay()]
+  return `${weekday}, ${dateStr}`
+}
+
+export function formatFullTimestamp(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const weekday = WEEKDAYS[d.getDay()]
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return `${weekday}, ${dateStr} às ${timeStr}`
 }
 
 export function userAvatarPath(userId: string): string {
