@@ -90,7 +90,6 @@ class RoomServiceUnreadTest {
 
         when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
         when(roomMemberRepository.findByRoomId(roomId)).thenReturn(List.of(member));
-        when(roomMemberRepository.findByRoomIdAndUserId(roomId, userId)).thenReturn(Optional.of(member));
         when(roomMemberRepository.save(any(RoomMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         RoomResponse response = roomService.markAsUnread(roomId, new AuthenticatedUser(userId, "maria", "USER", null));
@@ -114,7 +113,7 @@ class RoomServiceUnreadTest {
         room.setType("PRIVATE_GROUP");
 
         when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
-        when(roomMemberRepository.findByRoomIdAndUserId(roomId, userId)).thenReturn(Optional.empty());
+        when(roomMemberRepository.findByRoomId(roomId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> roomService.markAsUnread(roomId, new AuthenticatedUser(userId, "joao", "USER", null)))
                 .isInstanceOf(ApiException.class)
