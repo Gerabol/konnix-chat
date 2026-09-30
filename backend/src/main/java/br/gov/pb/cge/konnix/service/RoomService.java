@@ -12,6 +12,7 @@ import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.message.Message;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
 import br.gov.pb.cge.konnix.domain.user.User;
@@ -45,15 +46,17 @@ public class RoomService {
     private final MessageService messageService;
     private final SystemSettingService systemSettingService;
     private final ChatEventPublisher chatEventPublisher;
+    private final MessageMentionRepository messageMentionRepository;
 
     public RoomService(RoomRepository roomRepository,
                        RoomMemberRepository roomMemberRepository,
                        MessageRepository messageRepository,
                        UserRepository userRepository,
-                        AuditService auditService,
-                        MessageService messageService,
-                        SystemSettingService systemSettingService,
-                        ChatEventPublisher chatEventPublisher) {
+                       AuditService auditService,
+                       MessageService messageService,
+                       SystemSettingService systemSettingService,
+                       ChatEventPublisher chatEventPublisher,
+                       MessageMentionRepository messageMentionRepository) {
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
         this.messageRepository = messageRepository;
@@ -62,6 +65,7 @@ public class RoomService {
         this.messageService = messageService;
         this.systemSettingService = systemSettingService;
         this.chatEventPublisher = chatEventPublisher;
+        this.messageMentionRepository = messageMentionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -81,6 +85,8 @@ public class RoomService {
                 ? messageRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
                     .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()))
                 : Map.of();
+        Map<UUID, Long> unreadMentionsByRoom = messageMentionRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()));
         List<Room> rooms = roomRepository.findAllById(roomIds);
         List<Message> pinnedMessages = rooms.stream()
                 .map(Room::getPinnedMessage)
@@ -98,7 +104,9 @@ public class RoomService {
                         unreadByRoom.getOrDefault(room.getId(), 0L),
                         favoriteOf(actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
                         room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null))
+                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null,
+                        markedUnreadOf(actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
+                        unreadMentionsByRoom.getOrDefault(room.getId(), 0L)))
                 .filter(response -> response.directPartner() == null
                         || !"DISABLED".equals(response.directPartner().accountStatus()))
                 .sorted(Comparator.comparing(RoomResponse::lastActivityAt,
@@ -130,10 +138,13 @@ public class RoomService {
         Room room = roomOrThrow(id);
         requireMember(room, actor);
         List<RoomMember> members = roomMemberRepository.findByRoomId(id);
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(id, actor.id());
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
                 favoriteOf(actor.id(), members),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                markedUnreadOf(actor.id(), members),
+                unreadMentions);
     }
 
     @Transactional
@@ -147,9 +158,31 @@ public class RoomService {
         membership.setFavorite(!membership.isFavorite());
         roomMemberRepository.save(membership);
         chatEventPublisher.publishFavoriteUpdated(actor.id(), roomId, membership.isFavorite());
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(roomId, actor.id());
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                membership.isMarkedUnread(),
+                unreadMentions);
+    }
+
+    @Transactional
+    public RoomResponse markAsUnread(UUID roomId, AuthenticatedUser actor) {
+        Room room = roomOrThrow(roomId);
+        List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
+        RoomMember membership = members.stream()
+                .filter(member -> member.getUser().getId().equals(actor.id()) && member.isActive())
+                .findFirst()
+                .orElseThrow(ApiExceptions::notRoomMember);
+        membership.setMarkedUnread(true);
+        roomMemberRepository.save(membership);
+        chatEventPublisher.publishUnreadUpdated(actor.id(), roomId, true);
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(roomId, actor.id());
+        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
+                room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                true,
+                unreadMentions);
     }
 
     @Transactional
@@ -379,7 +412,7 @@ public class RoomService {
         chatEventPublisher.publishPinnedMessage(roomId, pinnedResponse);
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(actor.id(), members), pinnedResponse);
+                favoriteOf(actor.id(), members), pinnedResponse, markedUnreadOf(actor.id(), members));
     }
 
     @Transactional
@@ -395,7 +428,7 @@ public class RoomService {
         }
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(actor.id(), members), null);
+                favoriteOf(actor.id(), members), null, markedUnreadOf(actor.id(), members));
     }
 
     @Transactional
@@ -504,6 +537,11 @@ public class RoomService {
     private boolean favoriteOf(UUID userId, List<RoomMember> members) {
         return members.stream()
                 .anyMatch(member -> member.getUser().getId().equals(userId) && member.isActive() && member.isFavorite());
+    }
+
+    private boolean markedUnreadOf(UUID userId, List<RoomMember> members) {
+        return members.stream()
+                .anyMatch(member -> member.getUser().getId().equals(userId) && member.isActive() && member.isMarkedUnread());
     }
 
     private Room roomOrThrow(UUID id) {

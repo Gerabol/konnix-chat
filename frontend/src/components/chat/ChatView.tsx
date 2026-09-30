@@ -260,7 +260,7 @@ export function ChatView({
   const loadRooms = useCallback(async () => {
     try {
       const nextRooms = await api.rooms()
-      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0 } : room)))
+      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -301,7 +301,7 @@ export function ChatView({
       setHasMore(false)
       setNextBefore(null)
       setSidebarOpen(false)
-      setRooms((prev) => prev.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room)))
+      setRooms((prev) => prev.map((room) => (room.id === roomId ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
       setLoadingRoom(true)
       try {
         const res = await api.messages(roomId, 50)
@@ -720,6 +720,26 @@ export function ChatView({
                 prev.map((room) => (room.id === payload.roomId ? { ...room, favorite: payload.favorite } : room)),
               )
             }
+          } else if (evt.type === 'room.unread.updated') {
+            const payload = evt.data as unknown as { roomId: string; markedUnread: boolean }
+            if (payload?.roomId) {
+              setRooms((prev) =>
+                prev.map((room) =>
+                  room.id === payload.roomId ? { ...room, markedUnread: payload.markedUnread } : room,
+                ),
+              )
+            }
+          } else if (evt.type === 'room.mentions.updated') {
+            const payload = evt.data as unknown as { roomId: string; unreadMentionsCount: number }
+            if (payload?.roomId) {
+              setRooms((prev) =>
+                prev.map((room) =>
+                  room.id === payload.roomId
+                    ? { ...room, unreadMentionsCount: payload.unreadMentionsCount }
+                    : room,
+                ),
+              )
+            }
           }
         } catch {
           /* ignora payloads inválidos */
@@ -763,7 +783,7 @@ export function ChatView({
         void loadRooms()
         const activeRoom = activeRoomIdRef.current
         if (activeRoom && !activeRoom.startsWith('pending:')) {
-          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
+          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
           void api.markRoomRead(activeRoom).catch(() => undefined)
           void api.messages(activeRoom, 50).then((res) => {
             if (activeRoomIdRef.current === activeRoom) {
@@ -806,7 +826,7 @@ export function ChatView({
       if (document.visibilityState !== 'visible') return
       const activeRoom = activeRoomIdRef.current
       if (activeRoom && !activeRoom.startsWith('pending:')) {
-        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
+        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
         void api.markRoomRead(activeRoom).catch(() => undefined)
       }
     }, 10_000)
@@ -1161,6 +1181,74 @@ export function ChatView({
     )
   }, [])
 
+  const handleMarkRoomUnread = useCallback(
+    async (roomId: string) => {
+      // Atualização otimista
+      setRooms((prev) =>
+        prev.map((room) => (room.id === roomId ? { ...room, markedUnread: true } : room)),
+      )
+      // Se a sala marcada for a ativa no momento, fecha para não ser lida de imediato
+      if (activeRoomIdRef.current === roomId) {
+        setActiveRoomId(null)
+        setMessages([])
+        setSidebarOpen(true)
+      }
+      try {
+        await api.markRoomUnread(roomId)
+        showToast('Conversa marcada como não lida')
+      } catch {
+        showToast('Não foi possível marcar a conversa como não lida')
+        setRooms((prev) =>
+          prev.map((room) => (room.id === roomId ? { ...room, markedUnread: false } : room)),
+        )
+      }
+    },
+    [showToast],
+  )
+
+  const handleMarkRoomRead = useCallback(
+    async (roomId: string) => {
+      setRooms((prev) =>
+        prev.map((room) =>
+          room.id === roomId ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room,
+        ),
+      )
+      try {
+        await api.markRoomRead(roomId)
+      } catch {
+        // silencioso
+      }
+    },
+    [],
+  )
+
+  const handleToggleRoomFavorite = useCallback(
+    async (roomId: string) => {
+      const room = roomsRef.current.find((r) => r.id === roomId)
+      if (!room) return
+      const nextFavorite = !room.favorite
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, favorite: nextFavorite } : r)),
+      )
+      try {
+        const updated = await api.toggleRoomFavorite(roomId)
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.id === roomId
+              ? { ...r, favorite: updated.favorite, directPartner: updated.directPartner ?? r.directPartner }
+              : r,
+          ),
+        )
+      } catch {
+        showToast('Não foi possível atualizar o favorito')
+        setRooms((prev) =>
+          prev.map((r) => (r.id === roomId ? { ...r, favorite: room.favorite } : r)),
+        )
+      }
+    },
+    [showToast],
+  )
+
   const q = search.trim().toLowerCase()
   const channels = useMemo(
     () =>
@@ -1225,6 +1313,9 @@ export function ChatView({
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
           avatarVersions={avatarVersions}
+          onMarkRoomUnread={handleMarkRoomUnread}
+          onMarkRoomRead={handleMarkRoomRead}
+          onToggleRoomFavorite={handleToggleRoomFavorite}
           onClose={closeSidebar}
         />
 
@@ -1270,6 +1361,7 @@ export function ChatView({
                 setRooms((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
               }
               onOpenRoom={openRoom}
+              onMarkUnread={handleMarkRoomUnread}
               pendingUploads={pendingUploads.filter((u) => u.roomId === activeRoom.id)}
               onRetryUpload={retryUpload}
               onCancelUpload={cancelUpload}

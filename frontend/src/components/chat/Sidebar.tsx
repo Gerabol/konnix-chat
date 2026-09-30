@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { roomAvatarPath, userAvatarPath } from '../../api'
 import type { DirectoryUser, PresenceStatus, Room, Theme, User } from '../../api'
 import type { DmPartner, TypingUser } from '../../types'
@@ -13,6 +13,13 @@ import { UserSettingsMenuContent } from '../settings/UserSettingsMenuContent'
 import { AvatarImage, initials } from './AvatarImage'
 import { SidebarInstallCard } from './SidebarInstallCard'
 import { formatTypingText } from './TypingIndicator'
+import {
+  isRoomUnread,
+  countUniqueUnreadRooms,
+  countUniqueMentionedRooms,
+  filterRoomsByMode,
+  type SidebarFilterMode,
+} from '../../utils/sidebarFilter'
 
 export interface SidebarProps {
   me: User
@@ -44,6 +51,9 @@ export interface SidebarProps {
   typingByRoom: Record<string, Record<string, TypingUser>>
   avatarVersions?: Record<string, string>
   onClose?: () => void
+  onMarkRoomUnread?: (roomId: string) => void
+  onMarkRoomRead?: (roomId: string) => void
+  onToggleRoomFavorite?: (roomId: string) => void
 }
 
 export const Sidebar = memo(function Sidebar({
@@ -76,6 +86,9 @@ export const Sidebar = memo(function Sidebar({
   typingByRoom,
   avatarVersions,
   onClose,
+  onMarkRoomUnread,
+  onMarkRoomRead,
+  onToggleRoomFavorite,
 }: SidebarProps) {
   const sidebarLogo = isWhiteSidebarLogoTheme(theme) ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
   const sidebarLogoSrc = `${sidebarLogo}?theme=${theme}`
@@ -85,6 +98,16 @@ export const Sidebar = memo(function Sidebar({
   const [adminOpen, setAdminOpen] = useState(true)
   const [favoritesOpen, setFavoritesOpen] = useState(true)
   const [conversationsOpen, setConversationsOpen] = useState(true)
+  const [filter, setFilter] = useState<SidebarFilterMode>('all')
+  const [roomContextMenu, setRoomContextMenu] = useState<{
+    roomId: string
+    x: number
+    y: number
+  } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const longPressFiredRef = useRef(false)
   const headerMenuRef = useRef<HTMLDivElement>(null)
   const footerUserRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -92,20 +115,150 @@ export const Sidebar = memo(function Sidebar({
   const SYSTEM_CHANNEL_NAMES = ['bug-reports']
   const systemChannels = channels.filter((room) => SYSTEM_CHANNEL_NAMES.includes(room.name))
   const regularChannels = channels.filter((room) => !SYSTEM_CHANNEL_NAMES.includes(room.name))
+
+  const allRooms = useMemo(() => {
+    const map = new Map<string, Room>()
+    favoriteRooms.forEach((r) => map.set(r.id, r))
+    channels.forEach((r) => map.set(r.id, r))
+    regularConversations.forEach((r) => map.set(r.id, r))
+    return Array.from(map.values())
+  }, [favoriteRooms, channels, regularConversations])
+
+  const totalUnreadRoomsCount = useMemo(
+    () => countUniqueUnreadRooms([favoriteRooms, channels, regularConversations]),
+    [favoriteRooms, channels, regularConversations],
+  )
+
+  const totalMentionedRoomsCount = useMemo(
+    () => countUniqueMentionedRooms([favoriteRooms, channels, regularConversations]),
+    [favoriteRooms, channels, regularConversations],
+  )
+
+  const contextRoom = useMemo(() => {
+    if (!roomContextMenu) return null
+    return allRooms.find((r) => r.id === roomContextMenu.roomId) ?? null
+  }, [roomContextMenu, allRooms])
+
   const query = search.trim().toLowerCase()
   const showResults = query.length > 0
   const matchesQuery = (room: Room) => {
     if (!query) return true
     return (room.displayName || room.name || '').toLowerCase().includes(query)
   }
-  const filteredFavorites = favoriteRooms.filter(matchesQuery)
-  const filteredRegularChannels = regularChannels.filter(matchesQuery)
-  const filteredConversations = regularConversations.filter(matchesQuery)
+  const filteredFavorites = filterRoomsByMode(favoriteRooms.filter(matchesQuery), filter)
+  const filteredRegularChannels = filterRoomsByMode(regularChannels.filter(matchesQuery), filter)
+  const filteredConversations = filterRoomsByMode(regularConversations.filter(matchesQuery), filter)
+  const filteredUserResults = filter === 'all' ? userResults : []
   const hasSearchResults =
-    userResults.length > 0 ||
+    filteredUserResults.length > 0 ||
     filteredFavorites.length > 0 ||
     filteredRegularChannels.length > 0 ||
     filteredConversations.length > 0
+
+  const displayFavorites = filterRoomsByMode(favoriteRooms, filter)
+  const displaySystemChannels = filterRoomsByMode(systemChannels, filter)
+  const displayRegularChannels = filterRoomsByMode(regularChannels, filter)
+  const displayConversations = filterRoomsByMode(regularConversations, filter)
+  const hasAnyInNav =
+    displayFavorites.length > 0 ||
+    displaySystemChannels.length > 0 ||
+    displayRegularChannels.length > 0 ||
+    displayConversations.length > 0
+
+  useEffect(() => {
+    if (!roomContextMenu) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (contextMenuRef.current && !contextMenuRef.current.contains(target)) {
+        setRoomContextMenu(null)
+      }
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRoomContextMenu(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, { passive: true })
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [roomContextMenu])
+
+  const handleTouchStart = (roomId: string, e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    if (!touch) return
+    longPressFiredRef.current = false
+    longPressStartRef.current = { x: touch.clientX, y: touch.clientY }
+    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current)
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true
+      setRoomContextMenu({ roomId, x: touch.clientX, y: touch.clientY })
+      longPressTimerRef.current = null
+    }, 450)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    if (!touch || !longPressStartRef.current) return
+    if (
+      Math.abs(touch.clientX - longPressStartRef.current.x) > 10 ||
+      Math.abs(touch.clientY - longPressStartRef.current.y) > 10
+    ) {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  const handleContextMenu = (roomId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRoomContextMenu({ roomId, x: e.clientX, y: e.clientY })
+  }
+
+  const handleMoreClick = (roomId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setRoomContextMenu({ roomId, x: Math.min(rect.left, window.innerWidth - 190), y: rect.bottom + 4 })
+  }
+
+  const renderRoomBadge = (room: Room) => {
+    const hasMention = Boolean(room.unreadMentionsCount && room.unreadMentionsCount > 0)
+    const hasUnread = room.unreadCount > 0
+    const isMarked = room.markedUnread
+
+    if (!hasMention && !hasUnread && !isMarked) return null
+
+    return (
+      <span className="room-badges" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        {hasMention && (
+          <span
+            className="room-mention-symbol"
+            title={`${room.unreadMentionsCount} menção(ões) não lida(s)`}
+            aria-label="Você foi mencionado"
+          >
+            @{room.unreadMentionsCount! > 1 ? room.unreadMentionsCount : ''}
+          </span>
+        )}
+        {hasUnread ? (
+          <span className="badge">{room.unreadCount}</span>
+        ) : isMarked ? (
+          <span className="badge badge-dot" aria-label="Não lida" title="Não lida" />
+        ) : null}
+      </span>
+    )
+  }
 
   useEffect(() => {
     if (!headerMenuOpen && !footerMenuOpen) return
@@ -135,6 +288,10 @@ export const Sidebar = memo(function Sidebar({
   }, [headerMenuOpen, footerMenuOpen])
 
   const handleSelectRoom = (roomId: string) => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false
+      return
+    }
     onSearch('')
     onOpenRoom(roomId)
   }
@@ -231,6 +388,42 @@ export const Sidebar = memo(function Sidebar({
             </button>
           )}
         </div>
+
+        <div className="sidebar-filter-tabs" role="tablist" aria-label="Filtrar conversas">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'all'}
+            className={`sidebar-filter-tab ${filter === 'all' ? 'active' : ''}`}
+            onClick={() => setFilter('all')}
+          >
+            Todos
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'unread'}
+            className={`sidebar-filter-tab ${filter === 'unread' ? 'active' : ''}`}
+            onClick={() => setFilter('unread')}
+          >
+            <span>Não lidas</span>
+            {totalUnreadRoomsCount > 0 && (
+              <span className="sidebar-filter-dot" aria-label="Há conversas não lidas" />
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'mentions'}
+            className={`sidebar-filter-tab ${filter === 'mentions' ? 'active' : ''}`}
+            onClick={() => setFilter('mentions')}
+          >
+            <span>Menções</span>
+            {totalMentionedRoomsCount > 0 && (
+              <span className="sidebar-filter-dot" aria-label="Há menções não lidas" />
+            )}
+          </button>
+        </div>
       </div>
 
       <nav className="sidebar-nav">
@@ -292,6 +485,10 @@ export const Sidebar = memo(function Sidebar({
                         key={room.id}
                         className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
+                        onContextMenu={(e) => handleContextMenu(room.id, e)}
+                        onTouchStart={(e) => handleTouchStart(room.id, e)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                       >
                         {room.type === 'DIRECT' ? (
                           <span className="room-icon direct">
@@ -317,7 +514,20 @@ export const Sidebar = memo(function Sidebar({
                           </span>
                         )}
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        {renderRoomBadge(room)}
+                        <span
+                          className="room-item-more-btn"
+                          role="button"
+                          tabIndex={0}
+                          title="Mais opções"
+                          aria-label="Mais opções"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleMoreClick(room.id, e)
+                          }}
+                        >
+                          ···
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -335,6 +545,10 @@ export const Sidebar = memo(function Sidebar({
                         key={room.id}
                         className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
+                        onContextMenu={(e) => handleContextMenu(room.id, e)}
+                        onTouchStart={(e) => handleTouchStart(room.id, e)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                       >
                         <AvatarImage
                           path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
@@ -347,7 +561,20 @@ export const Sidebar = memo(function Sidebar({
                           alt={roomDisplayName(room)}
                         />
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        {renderRoomBadge(room)}
+                        <span
+                          className="room-item-more-btn"
+                          role="button"
+                          tabIndex={0}
+                          title="Mais opções"
+                          aria-label="Mais opções"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleMoreClick(room.id, e)
+                          }}
+                        >
+                          ···
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -365,6 +592,10 @@ export const Sidebar = memo(function Sidebar({
                         key={room.id}
                         className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
+                        onContextMenu={(e) => handleContextMenu(room.id, e)}
+                        onTouchStart={(e) => handleTouchStart(room.id, e)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                       >
                         <span className="room-icon direct">
                           <span className="sidebar-avatar-wrap">
@@ -384,7 +615,20 @@ export const Sidebar = memo(function Sidebar({
                           </span>
                         </span>
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        {renderRoomBadge(room)}
+                        <span
+                          className="room-item-more-btn"
+                          role="button"
+                          tabIndex={0}
+                          title="Mais opções"
+                          aria-label="Mais opções"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleMoreClick(room.id, e)
+                          }}
+                        >
+                          ···
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -394,7 +638,7 @@ export const Sidebar = memo(function Sidebar({
           )
         ) : (
           <>
-            {favoriteRooms.length > 0 && (
+            {displayFavorites.length > 0 && (
               <div className="nav-section">
                 <div className="nav-section-head">
                   <button
@@ -410,11 +654,15 @@ export const Sidebar = memo(function Sidebar({
                 </div>
                 {favoritesOpen && (
                   <div className="nav-list" id="favorites-list">
-                    {favoriteRooms.map((room) => (
+                    {displayFavorites.map((room) => (
                       <button
                         key={room.id}
                         className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
                         onClick={() => handleSelectRoom(room.id)}
+                        onContextMenu={(e) => handleContextMenu(room.id, e)}
+                        onTouchStart={(e) => handleTouchStart(room.id, e)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                       >
                         {room.type === 'DIRECT' ? (
                           <span className="room-icon direct">
@@ -455,7 +703,20 @@ export const Sidebar = memo(function Sidebar({
                           />
                         )}
                         <span className="room-name">{roomDisplayName(room)}</span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        {renderRoomBadge(room)}
+                        <span
+                          className="room-item-more-btn"
+                          role="button"
+                          tabIndex={0}
+                          title="Mais opções"
+                          aria-label="Mais opções"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleMoreClick(room.id, e)
+                          }}
+                        >
+                          ···
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -463,7 +724,7 @@ export const Sidebar = memo(function Sidebar({
               </div>
             )}
 
-            {isAdmin && systemChannels.length > 0 && (
+            {isAdmin && displaySystemChannels.length > 0 && (
               <div className="nav-section">
                 <div className="nav-section-head">
                   <button
@@ -479,13 +740,17 @@ export const Sidebar = memo(function Sidebar({
                 </div>
                 {adminOpen && (
                   <div className="nav-list" id="admin-channels-list">
-                    {systemChannels.map((room) => {
+                    {displaySystemChannels.map((room) => {
                       const typingText = formatTypingText(typingByRoom[room.id], false)
                       return (
                         <button
                           key={room.id}
                           className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
                           onClick={() => handleSelectRoom(room.id)}
+                          onContextMenu={(e) => handleContextMenu(room.id, e)}
+                          onTouchStart={(e) => handleTouchStart(room.id, e)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
                         >
                           <AvatarImage
                             path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
@@ -508,7 +773,20 @@ export const Sidebar = memo(function Sidebar({
                               </span>
                             )}
                           </span>
-                          {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                          {renderRoomBadge(room)}
+                          <span
+                            className="room-item-more-btn"
+                            role="button"
+                            tabIndex={0}
+                            title="Mais opções"
+                            aria-label="Mais opções"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleMoreClick(room.id, e)
+                            }}
+                          >
+                            ···
+                          </span>
                         </button>
                       )
                     })}
@@ -517,132 +795,194 @@ export const Sidebar = memo(function Sidebar({
               </div>
             )}
 
-            <div className="nav-section">
-              <div className="nav-section-head">
-                <button
-                  type="button"
-                  className="nav-section-toggle"
-                  onClick={() => setChannelsOpen((open) => !open)}
-                  aria-expanded={channelsOpen}
-                  aria-controls="channels-list"
-                >
-                  <span className={`nav-chevron${channelsOpen ? ' open' : ''}`}>›</span>
-                  <span className="nav-section-title">Canais e grupos</span>
-                </button>
-                <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
-                  +
-                </button>
+            {filter === 'unread' && !hasAnyInNav ? (
+              <div className="sidebar-filter-empty">
+                <div className="sidebar-filter-empty-icon">✓</div>
+                <p className="sidebar-filter-empty-title">Nenhuma conversa não lida</p>
+                <span className="sidebar-filter-empty-subtitle">Você está em dia com todas as conversas</span>
               </div>
-              {channelsOpen && (
-                <div className="nav-list" id="channels-list">
-                  {regularChannels.length === 0 && <span className="nav-empty">Nenhum grupo</span>}
-                  {regularChannels.map((room) => {
-                    const typingText = formatTypingText(typingByRoom[room.id], false)
-                    return (
+            ) : filter === 'mentions' && !hasAnyInNav ? (
+              <div className="sidebar-filter-empty">
+                <div className="sidebar-filter-empty-icon">@</div>
+                <p className="sidebar-filter-empty-title">Nenhuma menção pendente</p>
+                <span className="sidebar-filter-empty-subtitle">Você não possui menções não lidas</span>
+              </div>
+            ) : (
+              <>
+                {(filter === 'all' || displayRegularChannels.length > 0) && (
+                  <div className="nav-section">
+                    <div className="nav-section-head">
                       <button
-                        key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                        onClick={() => handleSelectRoom(room.id)}
+                        type="button"
+                        className="nav-section-toggle"
+                        onClick={() => setChannelsOpen((open) => !open)}
+                        aria-expanded={channelsOpen}
+                        aria-controls="channels-list"
                       >
-                        <AvatarImage
-                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
-                          className="room-thumb"
-                          fallback={
-                            <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
-                              {getRoomIcon(room)}
-                            </span>
-                          }
-                          alt={roomDisplayName(room)}
-                        />
-                        <span className="room-name">
-                          {roomDisplayName(room)}
-                          {typingText && (
-                            <span
-                              className="room-type typing-active"
-                              style={{ display: 'block', fontSize: '0.72rem' }}
-                            >
-                              {typingText}
-                            </span>
-                          )}
-                        </span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                        <span className={`nav-chevron${channelsOpen ? ' open' : ''}`}>›</span>
+                        <span className="nav-section-title">Canais e grupos</span>
                       </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="nav-section">
-              <div className="nav-section-head">
-                <button
-                  type="button"
-                  className="nav-section-toggle"
-                  onClick={() => setConversationsOpen((open) => !open)}
-                  aria-expanded={conversationsOpen}
-                  aria-controls="conversations-list"
-                >
-                  <span className={`nav-chevron${conversationsOpen ? ' open' : ''}`}>›</span>
-                  <span className="nav-section-title">Conversas</span>
-                </button>
-                <button className="nav-add" onClick={onNewDm} title="Nova conversa">
-                  +
-                </button>
-              </div>
-              {conversationsOpen && (
-                <div className="nav-list" id="conversations-list">
-                  {regularConversations.length === 0 && <span className="nav-empty">Nenhuma conversa</span>}
-                  {regularConversations.map((room) => {
-                    const typingText = formatTypingText(typingByRoom[room.id], true)
-                    return (
-                      <button
-                        key={room.id}
-                        className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
-                        onClick={() => handleSelectRoom(room.id)}
-                      >
-                        <span className="room-icon direct">
-                          <span className="sidebar-avatar-wrap">
-                            <AvatarImage
-                              path={
-                                room.directPartner
-                                  ? `${userAvatarPath(room.directPartner.userId)}${
-                                      avatarVersions?.[room.directPartner.userId]
-                                        ? `?v=${encodeURIComponent(avatarVersions[room.directPartner.userId])}`
-                                        : ''
-                                    }`
-                                  : null
-                              }
-                              className="mini-avatar"
-                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
-                              alt={roomDisplayName(room)}
-                            />
-                            {room.directPartner?.presenceStatus && (
-                              <span
-                                className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`}
-                                title={presenceLabel(room.directPartner.presenceStatus)}
-                                aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`}
-                              />
-                            )}
+                      <button className="nav-add" onClick={onNewRoom} title="Criar grupo">
+                        +
+                      </button>
+                    </div>
+                    {channelsOpen && (
+                      <div className="nav-list" id="channels-list">
+                        {displayRegularChannels.length === 0 && (
+                          <span className="nav-empty">
+                            {filter === 'unread' ? 'Nenhum canal não lido' : filter === 'mentions' ? 'Nenhum canal com menções' : 'Nenhum grupo'}
                           </span>
-                        </span>
-                        <span className="room-name">
-                          {roomDisplayName(room)}
-                          {typingText && (
-                            <span
-                              className="room-type typing-active"
-                              style={{ display: 'block', fontSize: '0.72rem' }}
+                        )}
+                        {displayRegularChannels.map((room) => {
+                          const typingText = formatTypingText(typingByRoom[room.id], false)
+                          return (
+                            <button
+                              key={room.id}
+                              className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                              onClick={() => handleSelectRoom(room.id)}
+                              onContextMenu={(e) => handleContextMenu(room.id, e)}
+                              onTouchStart={(e) => handleTouchStart(room.id, e)}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
                             >
-                              {typingText}
-                            </span>
-                          )}
-                        </span>
-                        {!!room.unreadCount && <span className="badge">{room.unreadCount}</span>}
+                              <AvatarImage
+                                path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                                className="room-thumb"
+                                fallback={
+                                  <span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>
+                                    {getRoomIcon(room)}
+                                  </span>
+                                }
+                                alt={roomDisplayName(room)}
+                              />
+                              <span className="room-name">
+                                {roomDisplayName(room)}
+                                {typingText && (
+                                  <span
+                                    className="room-type typing-active"
+                                    style={{ display: 'block', fontSize: '0.72rem' }}
+                                  >
+                                    {typingText}
+                                  </span>
+                                )}
+                              </span>
+                              {renderRoomBadge(room)}
+                              <span
+                                className="room-item-more-btn"
+                                role="button"
+                                tabIndex={0}
+                                title="Mais opções"
+                                aria-label="Mais opções"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleMoreClick(room.id, e)
+                                }}
+                              >
+                                ···
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(filter === 'all' || displayConversations.length > 0) && (
+                  <div className="nav-section">
+                    <div className="nav-section-head">
+                      <button
+                        type="button"
+                        className="nav-section-toggle"
+                        onClick={() => setConversationsOpen((open) => !open)}
+                        aria-expanded={conversationsOpen}
+                        aria-controls="conversations-list"
+                      >
+                        <span className={`nav-chevron${conversationsOpen ? ' open' : ''}`}>›</span>
+                        <span className="nav-section-title">Conversas</span>
                       </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+                      <button className="nav-add" onClick={onNewDm} title="Nova conversa">
+                        +
+                      </button>
+                    </div>
+                    {conversationsOpen && (
+                      <div className="nav-list" id="conversations-list">
+                        {displayConversations.length === 0 && (
+                          <span className="nav-empty">
+                            {filter === 'unread' ? 'Nenhuma conversa não lida' : filter === 'mentions' ? 'Nenhuma conversa com menções' : 'Nenhuma conversa'}
+                          </span>
+                        )}
+                        {displayConversations.map((room) => {
+                          const typingText = formatTypingText(typingByRoom[room.id], true)
+                          return (
+                            <button
+                              key={room.id}
+                              className={`room-item ${room.id === activeRoomId ? 'active' : ''}`}
+                              onClick={() => handleSelectRoom(room.id)}
+                              onContextMenu={(e) => handleContextMenu(room.id, e)}
+                              onTouchStart={(e) => handleTouchStart(room.id, e)}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                            >
+                              <span className="room-icon direct">
+                                <span className="sidebar-avatar-wrap">
+                                  <AvatarImage
+                                    path={
+                                      room.directPartner
+                                        ? `${userAvatarPath(room.directPartner.userId)}${
+                                            avatarVersions?.[room.directPartner.userId]
+                                              ? `?v=${encodeURIComponent(avatarVersions[room.directPartner.userId])}`
+                                              : ''
+                                          }`
+                                        : null
+                                    }
+                                    className="mini-avatar"
+                                    fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                                    alt={roomDisplayName(room)}
+                                  />
+                                  {room.directPartner?.presenceStatus && (
+                                    <span
+                                      className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`}
+                                      title={presenceLabel(room.directPartner.presenceStatus)}
+                                      aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`}
+                                    />
+                                  )}
+                                </span>
+                              </span>
+                              <span className="room-name">
+                                {roomDisplayName(room)}
+                                {typingText && (
+                                  <span
+                                    className="room-type typing-active"
+                                    style={{ display: 'block', fontSize: '0.72rem' }}
+                                  >
+                                    {typingText}
+                                  </span>
+                                )}
+                              </span>
+                              {renderRoomBadge(room)}
+                              <span
+                                className="room-item-more-btn"
+                                role="button"
+                                tabIndex={0}
+                                title="Mais opções"
+                                aria-label="Mais opções"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleMoreClick(room.id, e)
+                                }}
+                              >
+                                ···
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
       </nav>
@@ -709,6 +1049,59 @@ export const Sidebar = memo(function Sidebar({
           </div>
         )}
       </div>
+
+      {roomContextMenu && contextRoom && (
+        <div
+          ref={contextMenuRef}
+          className="room-context-menu"
+          style={{
+            top: Math.min(roomContextMenu.y, window.innerHeight - 120),
+            left: Math.min(roomContextMenu.x, window.innerWidth - 200),
+          }}
+        >
+          {isRoomUnread(contextRoom) ? (
+            <button
+              type="button"
+              className="room-context-menu-item"
+              onClick={() => {
+                const id = contextRoom.id
+                setRoomContextMenu(null)
+                onMarkRoomRead?.(id)
+              }}
+            >
+              <span className="room-context-menu-icon">✓</span>
+              <span>Marcar como lida</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="room-context-menu-item"
+              onClick={() => {
+                const id = contextRoom.id
+                setRoomContextMenu(null)
+                onMarkRoomUnread?.(id)
+              }}
+            >
+              <span className="room-context-menu-icon">✉</span>
+              <span>Marcar como não lida</span>
+            </button>
+          )}
+          {onToggleRoomFavorite && (
+            <button
+              type="button"
+              className="room-context-menu-item"
+              onClick={() => {
+                const id = contextRoom.id
+                setRoomContextMenu(null)
+                onToggleRoomFavorite(id)
+              }}
+            >
+              <span className="room-context-menu-icon">{contextRoom.favorite ? '★' : '☆'}</span>
+              <span>{contextRoom.favorite ? 'Remover dos favoritos' : 'Favoritar conversa'}</span>
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   )
 })

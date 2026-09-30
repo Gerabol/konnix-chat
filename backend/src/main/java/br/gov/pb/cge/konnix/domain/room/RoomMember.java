@@ -44,6 +44,9 @@ public class RoomMember {
     @Column(nullable = false)
     private boolean favorite = false;
 
+    @Column(name = "marked_unread", nullable = false)
+    private boolean markedUnread = false;
+
     @Column(name = "legacy_source", length = 30)
     private String legacySource;
 
@@ -101,6 +104,10 @@ public class RoomMember {
     public boolean isFavorite() { return favorite; }
 
     public void setFavorite(boolean favorite) { this.favorite = favorite; }
+
+    public boolean isMarkedUnread() { return markedUnread; }
+
+    public void setMarkedUnread(boolean markedUnread) { this.markedUnread = markedUnread; }
 
     public String getLegacySource() {
         return legacySource;
