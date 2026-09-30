@@ -90,3 +90,19 @@ test('displaySize returns null until the image and stage are measurable', () => 
   assert.equal(displaySize(1200, 800, 0, 600, FIT_ZOOM_INDEX), null)
   assert.equal(displaySize(1200, 800, 800, 0, FIT_ZOOM_INDEX), null)
 })
+
+test('displaySize strictly preserves aspect ratio across all zoom steps', () => {
+  const naturalWidth = 1920
+  const naturalHeight = 1080
+  const stageWidth = 1000
+  const stageHeight = 700
+  const expectedRatio = naturalWidth / naturalHeight
+
+  for (let i = 0; i < ZOOM_STEPS.length; i++) {
+    const size = displaySize(naturalWidth, naturalHeight, stageWidth, stageHeight, i)
+    assert.ok(size, `Size should exist for zoom step index ${i}`)
+    const ratio = size.width / size.height
+    // Tolerance for 1px rounding
+    assert.ok(Math.abs(ratio - expectedRatio) < 0.02, `Aspect ratio deviated at step ${i}: got ${ratio}, expected ${expectedRatio}`)
+  }
+})
