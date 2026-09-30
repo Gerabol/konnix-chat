@@ -146,6 +146,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         try {
             JsonNode node = objectMapper.readTree(message.getPayload());
             String type = node.path("type").asText();
+            if ("ping".equals(type)) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage("{\"type\":\"pong\"}"));
+                }
+                return;
+            }
             if ("chat.typing".equals(type)) {
                 String roomIdStr = node.path("roomId").asText();
                 boolean isTyping = node.path("isTyping").asBoolean(true);

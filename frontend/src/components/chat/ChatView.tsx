@@ -418,11 +418,37 @@ export function ChatView({
     let ws: WebSocket | null = null
     let closedByUser = false
     let retry: ReturnType<typeof setTimeout> | null = null
+    let pingInterval: ReturnType<typeof setInterval> | null = null
+    let lastPongAt = Date.now()
+    let lastVisibilitySyncAt = 0
+
+    const sendPing = () => {
+      const activeWs = wsRef.current
+      if (!activeWs || activeWs.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastPongAt > 40_000) {
+        console.warn('[WebSocket] Heartbeat expirado (>40s). Reconectando...')
+        try { activeWs.close() } catch {}
+        return
+      }
+      try {
+        activeWs.send(JSON.stringify({ type: 'ping' }))
+      } catch {
+        try { activeWs.close() } catch {}
+      }
+    }
 
     const connect = () => {
+      if (closedByUser) return
+      if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+        return
+      }
+      lastPongAt = Date.now()
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
       ws.onopen = () => {
+        lastPongAt = Date.now()
+        if (pingInterval) clearInterval(pingInterval)
+        pingInterval = setInterval(sendPing, 25_000)
         const manual = readManualPresence()
         if (manual) {
           if (manual !== presenceStatusRef.current && !presenceUpdateInFlightRef.current) {
@@ -449,6 +475,10 @@ export function ChatView({
             type: string
             roomId: string
             data: Message
+          }
+          lastPongAt = Date.now()
+          if (evt.type === 'pong') {
+            return
           }
           if (evt.type === 'message.created') {
             const msg = evt.data
@@ -696,8 +726,13 @@ export function ChatView({
         }
       }
       ws.onclose = () => {
+        if (pingInterval) {
+          clearInterval(pingInterval)
+          pingInterval = null
+        }
         if (wsRef.current === ws) wsRef.current = null
         if (!closedByUser) {
+          if (retry) clearTimeout(retry)
           retry = setTimeout(connect, 1000)
         }
       }
@@ -708,9 +743,22 @@ export function ChatView({
 
     const onVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
+        const now = Date.now()
+        if (now - lastVisibilitySyncAt < 1500) {
+          return
+        }
+        lastVisibilitySyncAt = now
+
         const currentWs = wsRef.current
-        if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
+        if (!currentWs || currentWs.readyState === WebSocket.CLOSED || currentWs.readyState === WebSocket.CLOSING) {
           connect()
+        } else if (currentWs.readyState === WebSocket.OPEN) {
+          if (now - lastPongAt > 35_000) {
+            console.warn('[WebSocket] Conexão ociosa após retorno de inatividade. Forçando reconexão...')
+            try { currentWs.close() } catch {}
+          } else {
+            sendPing()
+          }
         }
         void loadRooms()
         const activeRoom = activeRoomIdRef.current
@@ -735,6 +783,7 @@ export function ChatView({
       closedByUser = true
       document.removeEventListener('visibilitychange', onVisibilityOrFocus)
       window.removeEventListener('focus', onVisibilityOrFocus)
+      if (pingInterval) clearInterval(pingInterval)
       if (retry) clearTimeout(retry)
       ws?.close()
     }
