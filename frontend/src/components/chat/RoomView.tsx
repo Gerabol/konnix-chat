@@ -39,6 +39,34 @@ import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 const SEARCH_DEBOUNCE_MS = 400
 const DRAFT_SAVE_DEBOUNCE_MS = 400
 const LOAD_PREVIOUS_SCROLL_THRESHOLD = 96
+const POPOVER_MARGIN = 12
+const POPOVER_WIDTH = 560
+/** Altura desejada pelos cards: avatar + dados + lista rolável de salas em comum. */
+const PROFILE_CARD_BUDGET = 560
+const ROOM_INFO_CARD_BUDGET = 420
+
+/**
+ * Ancora um card flutuante logo abaixo do elemento clicado, mantendo-o inteiro
+ * dentro da área visível: em telas estreitas centraliza e no desktop trava o
+ * `top` para que sobre espaço suficiente, limitando o `left` à largura da janela.
+ */
+function popoverAnchor(target: EventTarget | null, budget: number) {
+  const rect = (target as HTMLElement | null)?.getBoundingClientRect()
+  const anchor = rect ?? { bottom: 24 + POPOVER_MARGIN, left: POPOVER_MARGIN }
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
+  const width = Math.min(POPOVER_WIDTH, vw - POPOVER_MARGIN * 2)
+  const minTop = POPOVER_MARGIN + safeTop
+  if (vw <= 760) {
+    return { top: Math.max(minTop, Math.min(anchor.bottom + 8, 24 + safeTop)), left: Math.round((vw - width) / 2) }
+  }
+  const maxTop = Math.max(minTop, vh - Math.min(budget, vh - POPOVER_MARGIN * 2) - POPOVER_MARGIN)
+  return {
+    top: Math.min(maxTop, Math.max(minTop, anchor.bottom + 8)),
+    left: Math.min(vw - width - POPOVER_MARGIN, Math.max(POPOVER_MARGIN, anchor.left)),
+  }
+}
 
 export interface RoomViewProps {
   room: Room
@@ -843,23 +871,7 @@ export function RoomView({
   }
 
   const showProfile = useCallback(async (userId: string, event?: ReactMouseEvent) => {
-    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
-    if (event) {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-      const vw = window.innerWidth
-      const width = Math.min(560, vw - 24)
-      if (vw <= 760) {
-        setProfilePosition({
-          top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
-          left: Math.max(12, Math.round((vw - width) / 2)),
-        })
-      } else {
-        setProfilePosition({
-          top: Math.min(window.innerHeight - 360, Math.max(12 + safeTop, rect.bottom + 8)),
-          left: Math.min(vw - width - 12, Math.max(12, rect.left)),
-        })
-      }
-    }
+    if (event) setProfilePosition(popoverAnchor(event.currentTarget, PROFILE_CARD_BUDGET))
     setProfileLoading(true)
     setProfileCommonRoomsLoading(true)
     const currentRoomIsCommon =
@@ -884,21 +896,7 @@ export function RoomView({
   }, [room, roomMembers, notify])
 
   const showRoomInfo = (event: ReactMouseEvent) => {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const vw = window.innerWidth
-    const width = Math.min(560, vw - 24)
-    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
-    if (vw <= 760) {
-      setRoomInfoPosition({
-        top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
-        left: Math.max(12, Math.round((vw - width) / 2)),
-      })
-    } else {
-      setRoomInfoPosition({
-        top: Math.min(window.innerHeight - 420, Math.max(12 + safeTop, rect.bottom + 8)),
-        left: Math.min(vw - width - 12, Math.max(12, rect.left)),
-      })
-    }
+    setRoomInfoPosition(popoverAnchor(event.currentTarget, ROOM_INFO_CARD_BUDGET))
     setProfile(null)
     void api.members(room.id).then(setRoomMembers).catch(() => undefined)
     setRoomInfoOpen(true)

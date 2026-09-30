@@ -2807,7 +2807,6 @@ button:disabled {
   font-size: 0.72rem;
   font-weight: 700;
   flex: none;
-  margin-top: 0.2rem;
 }
 
 .message-body {
@@ -2843,6 +2842,13 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.message-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
 }
 
 .message-time {
@@ -2909,7 +2915,6 @@ button:disabled {
 
 .message-author-button:hover { text-decoration: underline; }
 .forwarded-label { color: #a66a00; font-size: 0.72rem; font-style: italic; font-weight: 600; }
-.forwarded-author { color: #a66a00; }
 
 .role-badge {
   display: inline-flex;
@@ -4798,7 +4803,10 @@ img.room-header-avatar {
   z-index: 55;
   display: flex;
   width: min(560px, calc(100vw - 24px));
-  max-height: calc(var(--app-height, 100dvh) - 24px);
+  /* O card é ancorado no elemento clicado (--card-top), portanto a altura máxima
+     é o que sobra abaixo dele -- nunca a viewport inteira, senão o rodapé do
+     card sai da tela quando o gatilho está no fim da conversa. */
+  max-height: calc(var(--app-height, 100dvh) - var(--card-top, 76px) - 12px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -4851,13 +4859,30 @@ img.room-header-avatar {
 .profile-common-rooms { grid-column: 1 / -1; min-width: 0; margin-top: 0.2rem; padding-top: 0.75rem; border-top: 1px solid var(--konnix-border); }
 .profile-common-rooms > strong { display: block; margin-bottom: 0.45rem; color: var(--konnix-ink-soft); font-size: 0.78rem; }
 .profile-common-rooms-empty { color: var(--konnix-ink-soft); font-size: 0.78rem; }
-.profile-common-rooms-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.profile-common-rooms-list { display: flex; flex-wrap: wrap; gap: 0.35rem; max-height: min(34dvh, 300px); overflow-y: auto; overscroll-behavior: contain; }
 .profile-common-room { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 0.3rem; padding: 0.3rem 0.45rem; border: 1px solid var(--konnix-border); border-radius: 7px; background: var(--konnix-bg); color: var(--konnix-ink); font: inherit; font-size: 0.75rem; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
 .profile-common-room:not(:disabled):hover { border-color: var(--konnix-primary); background: var(--konnix-bg); }
 .profile-common-room:disabled { cursor: default; }
 .profile-common-room b { color: var(--konnix-primary); font-size: 0.8rem; }
 .profile-loading { padding: 1rem 0; color: var(--konnix-ink-soft); font-size: 0.82rem; }
-.message-avatar-button { padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.message-avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* `.message` usa align-items: stretch, o que estenderia o botão pela altura
+     inteira da mensagem. Fixar a área clicável no círculo do avatar evita abrir
+     o perfil ao tocar no vão ao lado do texto. */
+  flex: none;
+  align-self: flex-start;
+  width: 32px;
+  height: 32px;
+  margin-top: 0.2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
 .message-avatar-button:hover { opacity: 0.82; }
 .message-avatar-button:focus, .message-avatar-button:focus-visible { outline: none; box-shadow: none; }
 .profile-contact-button { width: 52px; height: 52px; margin-top: 0.75rem; margin-left: auto; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2b78d0; color: #fff; box-shadow: 0 4px 12px rgba(43, 120, 208, 0.28); }
@@ -4865,8 +4890,8 @@ img.room-header-avatar {
 .profile-contact-button:hover { background: #1e62b0; }
 .room-info-content { grid-template-rows: auto auto; }
 .room-info-fallback { border-radius: 14px; }
-.room-info-owners { grid-column: 1 / -1; min-width: 0; margin-top: 0.2rem; padding-top: 0.75rem; border-top: 1px solid var(--konnix-border); }
-.room-info-owners h4 { margin: 0 0 0.45rem; color: var(--konnix-ink-soft); font-size: 0.78rem; }
+.room-info-owners { display: flex; flex-direction: column; grid-column: 1 / -1; min-width: 0; margin-top: 0.2rem; padding-top: 0.75rem; border-top: 1px solid var(--konnix-border); max-height: min(34dvh, 300px); overflow-y: auto; overscroll-behavior: contain; }
+.room-info-owners h4 { position: sticky; top: 0; flex: none; margin: 0 0 0.45rem; padding-bottom: 0.45rem; background: var(--konnix-surface); color: var(--konnix-ink-soft); font-size: 0.78rem; }
 .room-info-owner { display: flex; align-items: center; gap: 0.55rem; min-height: 34px; padding: 0.2rem 0; }
 .room-info-owner strong { overflow: hidden; color: var(--konnix-ink); font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
 .room-info-owner-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; display: inline-flex; align-items: center; justify-content: center; flex: none; background: var(--konnix-accent); color: #fff; font-size: 0.7rem; font-weight: 700; }
