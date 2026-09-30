@@ -14,6 +14,7 @@ export interface MessageRowProps {
   msg: Message
   isMine: boolean
   currentUsername: string
+  currentUserId: string
   myAvatarVersion: string
   avatarVersions: Record<string, string>
   canWrite: boolean
@@ -37,10 +38,16 @@ export interface MessageRowProps {
   onTogglePin?: (msg: Message) => void
 }
 
+/** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
+function reactionChipEmoji(target: EventTarget | null) {
+  return (target as HTMLElement | null)?.closest<HTMLElement>('.message-reaction')?.dataset.emoji ?? null
+}
+
 function MessageRowComponent({
   msg,
   isMine,
   currentUsername,
+  currentUserId,
   myAvatarVersion,
   avatarVersions,
   canWrite,
@@ -83,6 +90,8 @@ function MessageRowComponent({
   const rowRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
   const longPressStart = useRef<{ x: number; y: number } | null>(null)
+  const longPressTriggered = useRef(false)
+  const longPressChip = useRef<string | null>(null)
   // If the layout shifts between pointerdown and click (e.g. the virtual
   // keyboard closes under a tap), the browser can drop the click entirely,
   // forcing a second tap. pointerup is never dropped, so activate on it for
@@ -113,9 +122,18 @@ function MessageRowComponent({
       cancelLongPress()
       return
     }
+    longPressTriggered.current = false
+    longPressChip.current = reactionChipEmoji(event.target)
     longPressStart.current = { x: event.clientX, y: event.clientY }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
     longPressTimer.current = window.setTimeout(() => {
+      longPressTriggered.current = true
+      // Segurar sobre uma reação lista quem reagiu, em vez de alternar a minha.
+      const chip = longPressChip.current
+      if (chip) {
+        setReactionDetailsEmoji(chip)
+        return
+      }
       setActionDismissed(false)
       setLongPressed(true)
     }, 500)
@@ -123,6 +141,8 @@ function MessageRowComponent({
 
   const cancelLongPress = () => {
     longPressStart.current = null
+    longPressChip.current = null
+    longPressTriggered.current = false
     if (longPressTimer.current !== null) {
       window.clearTimeout(longPressTimer.current)
       longPressTimer.current = null
@@ -154,6 +174,19 @@ function MessageRowComponent({
     if (msg.userId) onShowProfile(msg.userId, event)
   }
 
+  // Agrupa a minha reação no mesmo emoji de quem já reagiu; um segundo toque
+  // no mesmo emoji remove a minha. O servidor alterna conforme o registro
+  // existente, então basta chamar o mesmo endpoint nos dois casos.
+  const toggleMyReaction = (emoji: string) => {
+    if (longPressTriggered.current || !canWrite) return
+    onReaction(msg, emoji)
+  }
+
+  const reactedByMe = (emoji: string) =>
+    (msg.reactions ?? []).some(
+      (reaction) => reaction.userId === currentUserId && reaction.emoji === emoji,
+    )
+
   if (msg.messageType === 'SYSTEM') {
     return (
       <div data-message-id={msg.id} className="system-line">
@@ -180,6 +213,12 @@ function MessageRowComponent({
       }}
       onContextMenu={(e) => {
         const target = e.target as HTMLElement | null
+        const chip = reactionChipEmoji(e.target)
+        if (chip) {
+          e.preventDefault()
+          setReactionDetailsEmoji(chip)
+          return
+        }
         if (!deleted && canWrite && !target?.closest('.message-content')) {
           e.preventDefault()
           setActionDismissed(false)
@@ -308,18 +347,28 @@ function MessageRowComponent({
                     }),
                     {},
                   ),
-                ).map(([emoji, reactions]) => (
-                  <button
-                    type="button"
-                    className="message-reaction"
-                    key={emoji}
-                    title={reactions.map((reaction) => reaction.username).join(', ')}
-                    onPointerUp={onActivatePointerUp(() => setReactionDetailsEmoji(emoji))}
-                    onClick={onActivateClick(() => setReactionDetailsEmoji(emoji))}
-                  >
-                    {emoji} {reactions.length}
-                  </button>
-                ))}
+                ).map(([emoji, reactions]) => {
+                  const mine = reactedByMe(emoji)
+                  return (
+                    <button
+                      type="button"
+                      key={emoji}
+                      data-emoji={emoji}
+                      className={`message-reaction${mine ? ' mine' : ''}`}
+                      aria-pressed={mine}
+                      aria-label={`${mine ? 'Remover minha reação' : 'Reagir também com'} ${emoji}, ${reactions.length}`}
+                      title={`${reactions
+                        .map((reaction) =>
+                          reaction.userId === currentUserId ? `${reaction.username} (você)` : reaction.username,
+                        )
+                        .join(', ')} — segure para ver todos`}
+                      onPointerUp={onActivatePointerUp(() => toggleMyReaction(emoji))}
+                      onClick={onActivateClick(() => toggleMyReaction(emoji))}
+                    >
+                      {emoji} {reactions.length}
+                    </button>
+                  )
+                })}
               </div>
             )}
             {reactionDetailsEmoji && (
