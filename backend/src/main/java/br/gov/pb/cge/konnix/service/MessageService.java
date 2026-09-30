@@ -61,6 +61,9 @@ public class MessageService {
 
     private static final Pattern MENTION_PATTERN = Pattern.compile("@([a-zA-Z0-9._-]+)");
 
+    /** Conversas diretas são 1:1, portanto menções não se aplicam. */
+    private static final String TYPE_DIRECT = "DIRECT";
+
     public static final int DEFAULT_LIMIT = 50;
     public static final int MAX_LIMIT = 200;
 
@@ -179,6 +182,9 @@ public class MessageService {
     }
 
     public void processMentions(Message message, Room room, User author) {
+        if (TYPE_DIRECT.equals(room.getType())) {
+            return;
+        }
         if (message.getContent() == null || message.getContent().isBlank()) {
             return;
         }

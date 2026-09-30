@@ -157,6 +157,37 @@ class MessageServiceMentionTest {
     }
 
     @Test
+    void processMentions_quandoConversaDireta_naoSalvaMencao() {
+        UUID roomId = UUID.randomUUID();
+        Room room = new Room();
+        room.setId(roomId);
+        room.setType("DIRECT");
+
+        User author = new User();
+        author.setId(UUID.randomUUID());
+        author.setUsername("carlos");
+
+        User partner = new User();
+        partner.setId(UUID.randomUUID());
+        partner.setUsername("maria");
+
+        RoomMember memberPartner = new RoomMember();
+        memberPartner.setUser(partner);
+        memberPartner.setActive(true);
+
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+        message.setUser(author);
+        message.setContent("Olá @maria, tudo bem?");
+
+        messageService.processMentions(message, room, author);
+
+        verify(messageMentionRepository, never()).saveAll(any());
+        verify(eventPublisher, never()).publishMentionsUpdated(any(), any(), anyLong());
+    }
+
+    @Test
     void markRoomRead_marcaMencoesComoLidasENotificaZero() {
         UUID roomId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
