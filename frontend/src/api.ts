@@ -288,21 +288,31 @@ async function request<T>(path: string, options: RequestInit = {}, bearerToken?:
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`
   }
-  const res = await fetch(`${apiBase()}${path}`, { ...options, headers })
-  const text = await res.text()
-  let body: unknown = null
-  if (text) {
-    try {
-      body = JSON.parse(text)
-    } catch {
-      body = null
+  const timeoutMs = options.body instanceof FormData ? 120_000 : 15_000
+  const signal = options.signal ?? (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(timeoutMs) : undefined)
+  try {
+    const res = await fetch(`${apiBase()}${path}`, { ...options, headers, signal })
+    const text = await res.text()
+    let body: unknown = null
+    if (text) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = null
+      }
     }
+    if (!res.ok) {
+      const err = (body as { error?: { code?: string; message?: string } })?.error
+      throw new ApiError(res.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? `Erro ${res.status}`)
+    }
+    return (body as { data: T }).data
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new ApiError(408, 'REQUEST_TIMEOUT', 'A resposta demorou mais que o esperado')
+    }
+    throw err
   }
-  if (!res.ok) {
-    const err = (body as { error?: { code?: string; message?: string } })?.error
-    throw new ApiError(res.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? `Erro ${res.status}`)
-  }
-  return (body as { data: T }).data
 }
 
 async function requestWithBearer<T>(rawToken: string, path: string, options: RequestInit = {}): Promise<T> {
@@ -321,18 +331,27 @@ async function fetchBlob(path: string): Promise<Blob> {
   const headers: Record<string, string> = {}
   const activeToken = getAuthToken()
   if (activeToken) headers.Authorization = `Bearer ${activeToken}`
-  const res = await fetch(`${apiBase()}${path}`, { headers })
-  if (!res.ok) {
-    let message = `Erro ${res.status}`
-    try {
-      const body = (await res.json()) as { error?: { message?: string } }
-      message = body.error?.message ?? message
-    } catch {
-      /* mantém mensagem padrão */
+  const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(60_000) : undefined
+  try {
+    const res = await fetch(`${apiBase()}${path}`, { headers, signal })
+    if (!res.ok) {
+      let message = `Erro ${res.status}`
+      try {
+        const body = (await res.json()) as { error?: { message?: string } }
+        message = body.error?.message ?? message
+      } catch {
+        /* mantém mensagem padrão */
+      }
+      throw new ApiError(res.status, 'FETCH_FAILED', message)
     }
-    throw new ApiError(res.status, 'FETCH_FAILED', message)
+    return res.blob()
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new ApiError(408, 'REQUEST_TIMEOUT', 'Download de anexo expirou o tempo limite')
+    }
+    throw err
   }
-  return res.blob()
 }
 
 export const api = {
@@ -769,12 +788,31 @@ export function formatTime(iso: string): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+export const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const
+
+export function formatWeekday(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : (WEEKDAYS[d.getDay()] ?? '')
+}
+
 export function formatDay(iso: string): string {
   const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
   const today = new Date()
   const sameDay = d.toDateString() === today.toDateString()
-  if (sameDay) return 'Hoje'
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  if (sameDay) return `hoje, ${dateStr}`
+  const weekday = WEEKDAYS[d.getDay()]
+  return `${weekday}, ${dateStr}`
+}
+
+export function formatFullTimestamp(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const weekday = WEEKDAYS[d.getDay()]
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return `${weekday}, ${dateStr} às ${timeStr}`
 }
 
 export function userAvatarPath(userId: string): string {

@@ -139,7 +139,17 @@ export function ImageLightbox({ src, alt, onClose }: { src: string; alt: string;
             alt={alt}
             className="lightbox-img"
             draggable={false}
-            style={size ? { width: `${size.width}px`, height: `${size.height}px` } : undefined}
+            style={
+              size
+                ? {
+                    width: `${size.width}px`,
+                    height: `${size.height}px`,
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                    flexShrink: 0,
+                  }
+                : undefined
+            }
             onLoad={(event) => {
               const { naturalWidth, naturalHeight } = event.currentTarget
               setNatural({ width: naturalWidth, height: naturalHeight })
