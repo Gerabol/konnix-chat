@@ -3,6 +3,7 @@ package br.gov.pb.cge.konnix.service;
 import br.gov.pb.cge.konnix.api.exception.ApiException;
 import br.gov.pb.cge.konnix.api.room.dto.RoomResponse;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.domain.room.Room;
 import br.gov.pb.cge.konnix.domain.room.RoomMember;
@@ -47,6 +48,8 @@ class RoomServiceFavoriteTest {
     private SystemSettingService systemSettingService;
     @Mock
     private ChatEventPublisher chatEventPublisher;
+    @Mock
+    private MessageMentionRepository messageMentionRepository;
 
     private RoomService roomService;
 
@@ -60,7 +63,8 @@ class RoomServiceFavoriteTest {
                 auditService,
                 messageService,
                 systemSettingService,
-                chatEventPublisher
+                chatEventPublisher,
+                messageMentionRepository
         );
     }
 

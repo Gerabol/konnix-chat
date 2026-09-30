@@ -62,6 +62,11 @@ public class RoomController {
         return ApiResponse.ok(roomService.toggleFavorite(id, principal(authentication)));
     }
 
+    @PostMapping("/{id}/unread")
+    public ApiResponse<RoomResponse> markAsUnread(@PathVariable UUID id, Authentication authentication) {
+        return ApiResponse.ok(roomService.markAsUnread(id, principal(authentication)));
+    }
+
     @PostMapping("/{id}/pin/{messageId}")
     public ApiResponse<RoomResponse> pinMessage(@PathVariable UUID id,
                                                 @PathVariable UUID messageId,

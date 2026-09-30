@@ -97,6 +97,20 @@ public class ChatEventPublisher {
         publishToUser(userId, "room.favorite.updated", roomId, data);
     }
 
+    public void publishUnreadUpdated(UUID userId, UUID roomId, boolean markedUnread) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("markedUnread", markedUnread);
+        publishToUser(userId, "room.unread.updated", roomId, data);
+    }
+
+    public void publishMentionsUpdated(UUID userId, UUID roomId, long unreadMentionsCount) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("unreadMentionsCount", unreadMentionsCount);
+        publishToUser(userId, "room.mentions.updated", roomId, data);
+    }
+
     public void publishReaction(UUID roomId, br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse reaction,
                                 boolean removed) {
         Map<String, Object> data = new LinkedHashMap<>();
