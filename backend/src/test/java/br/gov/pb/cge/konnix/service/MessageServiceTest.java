@@ -8,6 +8,7 @@ import br.gov.pb.cge.konnix.domain.attachment.Attachment;
 import br.gov.pb.cge.konnix.domain.attachment.AttachmentRepository;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
 import br.gov.pb.cge.konnix.domain.message.Message;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReadRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReactionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
@@ -65,6 +66,8 @@ class MessageServiceTest {
     @Mock
     private MessageReadRepository messageReadRepository;
     @Mock
+    private MessageMentionRepository messageMentionRepository;
+    @Mock
     private MessageReactionRepository reactionRepository;
     @Mock
     private PollRepository pollRepository;
@@ -98,6 +101,7 @@ class MessageServiceTest {
                 eventPublisher,
                 pushNotificationService,
                 messageReadRepository,
+                messageMentionRepository,
                 systemSettingService,
                 reactionRepository,
                 pollRepository,

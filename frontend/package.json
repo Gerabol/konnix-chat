@@ -8,7 +8,7 @@
     "desktop:vite": "vite --port 5175 --strictPort",
     "build": "npm run build:frontend",
     "build:frontend": "tsc -b && vite build --emptyOutDir",
-    "test": "node --test src/utils/pwa.test.ts src/utils/push.test.ts src/utils/imageZoom.test.ts src/utils/premiere.test.ts src/utils/clipboard.test.ts src/utils/notificationSound.test.ts src/utils/date.test.ts",
+    "test": "node --test src/utils/pwa.test.ts src/utils/push.test.ts src/utils/imageZoom.test.ts src/utils/premiere.test.ts src/utils/clipboard.test.ts src/utils/notificationSound.test.ts src/utils/date.test.ts src/utils/sidebarFilter.test.ts",
     "preview": "vite preview",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",

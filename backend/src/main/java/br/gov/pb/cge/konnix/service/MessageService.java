@@ -15,6 +15,8 @@ import br.gov.pb.cge.konnix.domain.message.MessageRead;
 import br.gov.pb.cge.konnix.domain.message.MessageReadRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReaction;
 import br.gov.pb.cge.konnix.domain.message.MessageReactionRepository;
+import br.gov.pb.cge.konnix.domain.message.MessageMention;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.poll.Poll;
 import br.gov.pb.cge.konnix.domain.poll.PollOption;
 import br.gov.pb.cge.konnix.domain.poll.PollOptionRepository;
@@ -44,14 +46,20 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class MessageService {
+
+    private static final Pattern MENTION_PATTERN = Pattern.compile("@([a-zA-Z0-9._-]+)");
 
     public static final int DEFAULT_LIMIT = 50;
     public static final int MAX_LIMIT = 200;
@@ -69,6 +77,7 @@ public class MessageService {
     private final ChatEventPublisher eventPublisher;
     private final PushNotificationService pushNotificationService;
     private final MessageReadRepository messageReadRepository;
+    private final MessageMentionRepository messageMentionRepository;
     private final SystemSettingService systemSettingService;
     private final MessageReactionRepository reactionRepository;
     private final PollRepository pollRepository;
@@ -86,6 +95,7 @@ public class MessageService {
                           ChatEventPublisher eventPublisher,
                           PushNotificationService pushNotificationService,
                           MessageReadRepository messageReadRepository,
+                          MessageMentionRepository messageMentionRepository,
                           SystemSettingService systemSettingService,
                           MessageReactionRepository reactionRepository,
                           PollRepository pollRepository,
@@ -102,6 +112,7 @@ public class MessageService {
         this.eventPublisher = eventPublisher;
         this.pushNotificationService = pushNotificationService;
         this.messageReadRepository = messageReadRepository;
+        this.messageMentionRepository = messageMentionRepository;
         this.systemSettingService = systemSettingService;
         this.reactionRepository = reactionRepository;
         this.pollRepository = pollRepository;
@@ -156,6 +167,7 @@ public class MessageService {
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         messageRepository.save(message);
+        processMentions(message, room, author);
         if (!forwardedFiles.isEmpty()) {
             copyForwardedFiles(message, forwardedFiles, author, ipAddress);
         }
@@ -164,6 +176,43 @@ public class MessageService {
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
         pushNotificationService.notifyNewMessage(roomId, response, displayName(room));
         return response;
+    }
+
+    public void processMentions(Message message, Room room, User author) {
+        if (message.getContent() == null || message.getContent().isBlank()) {
+            return;
+        }
+        Matcher matcher = MENTION_PATTERN.matcher(message.getContent());
+        Set<String> mentionedUsernames = new HashSet<>();
+        while (matcher.find()) {
+            mentionedUsernames.add(matcher.group(1).toLowerCase(Locale.ROOT));
+        }
+        if (mentionedUsernames.isEmpty()) {
+            return;
+        }
+
+        List<RoomMember> activeMembers = roomMemberRepository.findByRoomId(room.getId()).stream()
+                .filter(RoomMember::isActive)
+                .toList();
+
+        List<MessageMention> mentionsToSave = new ArrayList<>();
+        for (RoomMember member : activeMembers) {
+            User user = member.getUser();
+            if (user == null || user.getId().equals(author.getId())) {
+                continue;
+            }
+            if (mentionedUsernames.contains(user.getUsername().toLowerCase(Locale.ROOT))) {
+                mentionsToSave.add(new MessageMention(message, room, user));
+            }
+        }
+
+        if (!mentionsToSave.isEmpty()) {
+            messageMentionRepository.saveAll(mentionsToSave);
+            for (MessageMention mention : mentionsToSave) {
+                long unreadCount = messageMentionRepository.countUnreadByRoomId(room.getId(), mention.getUser().getId());
+                eventPublisher.publishMentionsUpdated(mention.getUser().getId(), room.getId(), unreadCount);
+            }
+        }
     }
 
     /** O texto padrão de um anexo é o próprio nome do arquivo. */
@@ -242,6 +291,19 @@ public class MessageService {
     public void markRoomRead(UUID roomId, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
         requireMember(room, actor);
+
+        roomMemberRepository.findByRoomIdAndUserId(roomId, actor.id())
+                .ifPresent(member -> {
+                    if (member.isMarkedUnread()) {
+                        member.setMarkedUnread(false);
+                        roomMemberRepository.save(member);
+                        eventPublisher.publishUnreadUpdated(actor.id(), roomId, false);
+                    }
+                });
+
+        messageMentionRepository.markRoomMentionsAsRead(roomId, actor.id(), Instant.now());
+        eventPublisher.publishMentionsUpdated(actor.id(), roomId, 0);
+
         if (!systemSettingService.readReceiptsEnabled()) {
             return;
         }

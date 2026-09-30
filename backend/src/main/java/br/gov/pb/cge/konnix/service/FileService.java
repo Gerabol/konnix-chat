@@ -143,6 +143,7 @@ public class FileService {
             room.setUpdatedAt(Instant.now());
             roomRepository.save(room);
             messageRepository.save(message);
+            messageService.processMentions(message, room, actorUser);
 
             Attachment attachment = new Attachment();
             attachment.setMessage(message);

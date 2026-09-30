@@ -96,6 +96,7 @@ export interface RoomViewProps {
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
   onOpenRoom: (roomId: string) => void
+  onMarkUnread?: (roomId: string) => void
   pendingUploads?: PendingUploadItem[]
   onRetryUpload?: (tempId: string) => void
   onCancelUpload?: (tempId: string) => void
@@ -129,6 +130,7 @@ export function RoomView({
   onPollUpdated,
   onRoomUpdated,
   onOpenRoom,
+  onMarkUnread,
   pendingUploads = [],
   onRetryUpload,
   onCancelUpload,
@@ -1488,6 +1490,18 @@ export function RoomView({
                     >
                       <IconClip size={16} />
                       <span>Arquivos da conversa</span>
+                    </button>
+                    <button
+                      className="room-header-dropdown-item"
+                      disabled={isPendingDm}
+                      onClick={() => {
+                        if (isPendingDm) return
+                        setRoomHeaderMenuOpen(false)
+                        onMarkUnread?.(room.id)
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>✉</span>
+                      <span>Marcar como não lida</span>
                     </button>
                   </div>
                 )}

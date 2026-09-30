@@ -42,6 +42,8 @@ export type Room = {
   favorite: boolean
   directPartner: { userId: string; username: string; name: string; email: string | null; accountStatus: AccountStatus; presenceStatus: PresenceStatus } | null
   pinnedMessage: Message | null
+  markedUnread?: boolean
+  unreadMentionsCount?: number
 }
 
 export type DirectoryUser = {
@@ -618,6 +620,9 @@ export const api = {
   },
   markRoomRead(roomId: string) {
     return request<void>(`/api/v1/rooms/${roomId}/read`, { method: 'POST' })
+  },
+  markRoomUnread(roomId: string) {
+    return request<Room>(`/api/v1/rooms/${roomId}/unread`, { method: 'POST' })
   },
   readReceiptSetting() {
     return request<{ enabled: boolean }>('/api/v1/settings/read-receipts')
