@@ -1,11 +1,21 @@
 import { useEffect, useRef } from 'react'
-import type { RefObject } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 import { roomAvatarPath, userAvatarPath } from '../../api'
 import type { PublicProfile, Room, RoomMember } from '../../api'
 import { presenceLabel } from '../../utils/presence'
 import { getRoomIcon, roomDisplayName } from '../../utils/room'
 import { AvatarImage, initials } from './AvatarImage'
 import { MessageCircleIcon } from '../icons'
+
+/** O card é posicionado por JS; `--card-top` expõe o `top` resolvido para que o
+ *  `max-height` do CSS limite a altura ao espaço real abaixo do gatilho. */
+function cardStyle(position: { top: number; left: number }): CSSProperties {
+  return {
+    top: position.top,
+    left: position.left,
+    '--card-top': `${position.top}px`,
+  } as CSSProperties
+}
 
 export function usePopoverDismiss(cardRef: RefObject<HTMLDivElement | null>, onClose: () => void) {
   useEffect(() => {
@@ -50,7 +60,7 @@ export function UserProfileCard({
     <div
       ref={cardRef}
       className="user-profile-card"
-      style={{ top: position.top, left: position.left }}
+      style={cardStyle(position)}
       role="dialog"
       aria-label="Contato do usuário"
     >
@@ -154,7 +164,7 @@ export function RoomInfoCard({
     <div
       ref={cardRef}
       className="user-profile-card room-info-card"
-      style={{ top: position.top, left: position.left }}
+      style={cardStyle(position)}
       role="dialog"
       aria-label={`Informações de ${name}`}
     >

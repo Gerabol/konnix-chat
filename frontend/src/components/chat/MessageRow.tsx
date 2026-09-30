@@ -66,6 +66,16 @@ function MessageRowComponent({
   const deleted = !!msg.deletedAt
   const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
   const hasAttachments = messageAttachments.length > 0
+  // Renderiza as marcações em um único elemento para poder posicioná-las antes do
+  // nome nas mensagens próprias e depois do nome nas mensagens dos demais.
+  const messageTags =
+    msg.forwardedFromUsername || isPinned || msg.editedAt ? (
+      <span className="message-tags">
+        {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
+        {isPinned && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
+        {msg.editedAt && <em className="message-edited">Editada</em>}
+      </span>
+    ) : null
   const [actionDismissed, setActionDismissed] = useState(false)
   const [mouseHovered, setMouseHovered] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
@@ -205,15 +215,15 @@ function MessageRowComponent({
         </button>
       )}
       <div className="message-body">
-        {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
           {isMine && <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>{formatTime(msg.createdAt)}</span>}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
           ) : (
-            <span className={`message-author-wrap ${msg.forwardedFromUsername ? 'forwarded-author' : ''}`}>
+            <span className="message-author-wrap">
               {isMine && (
                 <>
+                  {messageTags}
                   {msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}
                   {msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}
                 </>
@@ -230,13 +240,12 @@ function MessageRowComponent({
                 <>
                   {msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}
                   {msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}
+                  {messageTags}
                 </>
               )}
             </span>
           )}
-          {!isMine && <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>{formatTime(msg.createdAt)}</span>}
-          {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
-          {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
+          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
           {isMine && readReceiptsEnabled && !deleted && (
             <button
               type="button"
