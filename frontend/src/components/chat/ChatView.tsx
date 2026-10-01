@@ -420,7 +420,7 @@ export function ChatView({
     let retry: ReturnType<typeof setTimeout> | null = null
     let pingInterval: ReturnType<typeof setInterval> | null = null
     let lastPongAt = Date.now()
-    let lastVisibilitySyncAt = 0
+    let lastWakeupSyncAt = 0
 
     const sendPing = () => {
       const activeWs = wsRef.current
@@ -751,6 +751,7 @@ export function ChatView({
           pingInterval = null
         }
         if (wsRef.current === ws) wsRef.current = null
+        ws = null
         if (!closedByUser) {
           if (retry) clearTimeout(retry)
           retry = setTimeout(connect, 1000)
@@ -761,48 +762,94 @@ export function ChatView({
 
     connect()
 
-    const onVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        const now = Date.now()
-        if (now - lastVisibilitySyncAt < 1500) {
-          return
-        }
-        lastVisibilitySyncAt = now
+    const triggerWakeupSync = (reason: 'visibility' | 'focus' | 'online' | 'time-drift') => {
+      const now = Date.now()
+      if (now - lastWakeupSyncAt < 1000) {
+        return
+      }
+      lastWakeupSyncAt = now
 
-        const currentWs = wsRef.current
-        if (!currentWs || currentWs.readyState === WebSocket.CLOSED || currentWs.readyState === WebSocket.CLOSING) {
-          connect()
-        } else if (currentWs.readyState === WebSocket.OPEN) {
-          if (now - lastPongAt > 35_000) {
-            console.warn('[WebSocket] Conexão ociosa após retorno de inatividade. Forçando reconexão...')
-            try { currentWs.close() } catch {}
-          } else {
-            sendPing()
+      const currentWs = wsRef.current
+      const isDeadOrGhost =
+        !currentWs ||
+        currentWs.readyState === WebSocket.CLOSED ||
+        currentWs.readyState === WebSocket.CLOSING ||
+        reason === 'time-drift' ||
+        now - lastPongAt > 25_000
+
+      if (isDeadOrGhost) {
+        console.warn(`[WebSocket] Resetando conexão devido a wake-up (${reason})...`)
+        if (ws) {
+          try {
+            ws.onclose = null
+            ws.onerror = null
+            ws.close()
+          } catch {}
+          ws = null
+        }
+        wsRef.current = null
+        connect()
+      } else if (currentWs.readyState === WebSocket.OPEN) {
+        sendPing()
+      }
+
+      void loadRooms()
+      const activeRoom = activeRoomIdRef.current
+      if (activeRoom && !activeRoom.startsWith('pending:')) {
+        setRooms((prev) =>
+          prev.map((room) =>
+            room.id === activeRoom
+              ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 }
+              : room,
+          ),
+        )
+        void api.markRoomRead(activeRoom).catch(() => undefined)
+        void api.messages(activeRoom, 50).then((res) => {
+          if (activeRoomIdRef.current === activeRoom) {
+            setMessages(res.messages)
+            setHasMore(res.hasMore)
+            setNextBefore(res.nextBefore)
           }
-        }
-        void loadRooms()
-        const activeRoom = activeRoomIdRef.current
-        if (activeRoom && !activeRoom.startsWith('pending:')) {
-          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
-          void api.markRoomRead(activeRoom).catch(() => undefined)
-          void api.messages(activeRoom, 50).then((res) => {
-            if (activeRoomIdRef.current === activeRoom) {
-              setMessages(res.messages)
-              setHasMore(res.hasMore)
-              setNextBefore(res.nextBefore)
-            }
-          }).catch(() => undefined)
-        }
-        void syncPushSubscription().catch(() => undefined)
+        }).catch(() => undefined)
+      }
+      void syncPushSubscription().catch(() => undefined)
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerWakeupSync('visibility')
       }
     }
-    document.addEventListener('visibilitychange', onVisibilityOrFocus)
-    window.addEventListener('focus', onVisibilityOrFocus)
+
+    const onFocus = () => {
+      triggerWakeupSync('focus')
+    }
+
+    const onOnline = () => {
+      triggerWakeupSync('online')
+    }
+
+    let lastTick = Date.now()
+    const driftInterval = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - lastTick
+      lastTick = now
+      if (elapsed > 3500) {
+        console.warn(`[Lifecycle] Salto temporal detectado (${elapsed}ms). Acordando de suspensão...`)
+        triggerWakeupSync('time-drift')
+      }
+    }, 1000)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
 
     return () => {
       closedByUser = true
-      document.removeEventListener('visibilitychange', onVisibilityOrFocus)
-      window.removeEventListener('focus', onVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
+      clearInterval(driftInterval)
       if (pingInterval) clearInterval(pingInterval)
       if (retry) clearTimeout(retry)
       ws?.close()
@@ -812,10 +859,7 @@ export function ChatView({
   useEffect(() => {
     if (!session.token) return
     const interval = setInterval(() => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        void loadRooms()
-      }
+      void loadRooms()
     }, 60_000)
     return () => clearInterval(interval)
   }, [session.token, loadRooms])
@@ -1003,8 +1047,11 @@ export function ChatView({
     attachments: File[] = [],
   ): Promise<boolean> => {
     let roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || me.accountStatus === 'READ_ONLY')
+    if (!roomId || (!content.trim() && attachments.length === 0)) return false
+    if (me.accountStatus === 'READ_ONLY') {
+      showToast('Sua conta está em modo somente leitura.')
       return false
+    }
     if (attachments.length === 0 && composing) return false
     if (roomId.startsWith('pending:')) {
       const user = pendingDmRef.current
@@ -1071,7 +1118,11 @@ export function ChatView({
       setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
       return true
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Falha ao enviar mensagem')
+      if (!navigator.onLine) {
+        showToast('Você parece estar sem conexão com a internet. Verifique sua rede.')
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'Falha ao enviar mensagem')
+      }
       return false
     } finally {
       setComposing(false)

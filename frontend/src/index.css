@@ -556,6 +556,195 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+/* ---- Konnix Loading Screen & Splash ---- */
+.kx-loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--konnix-bg);
+  color: var(--konnix-ink);
+  user-select: none;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.kx-loading-screen.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.kx-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  animation: kx-fade-in 0.3s ease-out;
+}
+
+.kx-loading-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.kx-loading-logo-wrap {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: kx-pulse-glow 2.5s infinite ease-in-out;
+}
+
+.kx-loading-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  display: block;
+}
+
+.kx-loading-wordmark {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+.kx-loading-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--konnix-ink);
+}
+
+.kx-loading-subtitle {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--konnix-primary);
+  margin-top: 2px;
+}
+
+.kx-loading-bar-wrap {
+  width: 220px;
+  height: 4px;
+  background: color-mix(in srgb, var(--konnix-primary) 15%, var(--konnix-border));
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 6px;
+}
+
+.kx-loading-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--konnix-primary);
+  border-radius: 999px;
+  width: 45%;
+  animation: kx-bar-glide 1.8s infinite ease-in-out;
+}
+
+.kx-loading-message {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--konnix-ink-soft);
+  margin-top: 2px;
+}
+
+.kx-loading-submessage {
+  font-size: 0.8rem;
+  color: var(--konnix-ink-soft);
+  opacity: 0.8;
+}
+
+.kx-loading-slow-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--konnix-surface);
+  border: 1px solid var(--konnix-border);
+  border-radius: 12px;
+  color: var(--konnix-ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  margin-top: 6px;
+  animation: kx-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 320px;
+}
+
+.kx-loading-slow-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #eab308;
+}
+
+.kx-loading-reload-btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  background: var(--konnix-surface);
+  color: var(--konnix-primary);
+  border: 1px solid var(--konnix-border);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.kx-loading-reload-btn:hover {
+  background: color-mix(in srgb, var(--konnix-primary) 8%, var(--konnix-surface));
+  border-color: var(--konnix-primary);
+}
+
+@keyframes kx-fade-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes kx-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kx-pulse-glow {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 4px 12px rgba(91, 76, 240, 0.2)); }
+  50% { transform: scale(1.03); filter: drop-shadow(0 6px 18px rgba(91, 76, 240, 0.38)); }
+}
+
+@keyframes kx-bar-glide {
+  0% { left: -45%; width: 45%; }
+  50% { left: 30%; width: 55%; }
+  100% { left: 100%; width: 45%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-loading-logo-wrap,
+  .kx-loading-bar,
+  .kx-loading-card {
+    animation: none !important;
+  }
+  .kx-loading-bar {
+    width: 100%;
+    left: 0;
+    opacity: 0.7;
+  }
+}
+
+
 .server-setup-screen {
   min-height: 100vh;
   min-height: -webkit-fill-available;
