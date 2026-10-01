@@ -92,6 +92,9 @@ function MessageRowComponent({
   const longPressStart = useRef<{ x: number; y: number } | null>(null)
   const longPressTriggered = useRef(false)
   const longPressChip = useRef<string | null>(null)
+  // Último tipo de ponteiro usado na linha. O onContextMenu não expõe pointerType,
+  // então o gesto equivalente no celular precisa ser reconstruído a partir daqui.
+  const lastPointerType = useRef<string>('mouse')
   // If the layout shifts between pointerdown and click (e.g. the virtual
   // keyboard closes under a tap), the browser can drop the click entirely,
   // forcing a second tap. pointerup is never dropped, so activate on it for
@@ -115,10 +118,15 @@ function MessageRowComponent({
 
   const beginLongPress = (event: ReactPointerEvent) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
-    // Segurar sobre o texto precisa iniciar a seleção nativa do celular. Abrir a
-    // barra de ações aqui rouba o gesto e a seleção nunca aparece. Mesmo critério
-    // já usado no onContextMenu abaixo.
-    if ((event.target as HTMLElement | null)?.closest('.message-content')) {
+    lastPointerType.current = event.pointerType
+    // No celular o texto do balão não é selecionável (ver .message-content no
+    // index.css), então segurar sobre ele abre a barra de ações como em qualquer
+    // outro ponto da mensagem. No desktop mouse o atalho continua valendo para o
+    // botão direito e para a seleção por arraste. Mesmo critério no onContextMenu.
+    if (
+      event.pointerType !== 'touch' &&
+      (event.target as HTMLElement | null)?.closest('.message-content')
+    ) {
       cancelLongPress()
       return
     }
@@ -219,7 +227,11 @@ function MessageRowComponent({
           setReactionDetailsEmoji(chip)
           return
         }
-        if (!deleted && canWrite && !target?.closest('.message-content')) {
+        if (
+          !deleted &&
+          canWrite &&
+          (lastPointerType.current === 'touch' || !target?.closest('.message-content'))
+        ) {
           e.preventDefault()
           setActionDismissed(false)
           setLongPressed(true)
