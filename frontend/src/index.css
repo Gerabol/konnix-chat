@@ -3414,6 +3414,17 @@ button:disabled {
 .message-content pre { margin: 0.35rem 0; padding: 0.65rem 0.75rem; overflow-x: auto; border-radius: 8px; background: #202230; color: #f7f8fc; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.82rem; line-height: 1.5; white-space: pre; }
 .message-content pre code { background: transparent; color: inherit; font: inherit; }
 
+/* No celular o texto do balão não é selecionável: segurar sobre ele precisa abrir a
+   barra de ações da mensagem, igual ao resto da linha. Copiar segue disponível pelo
+   botão Copiar da barra. No desktop mouse a seleção nativa é preservada. */
+@media (hover: none), (pointer: coarse) {
+  .message-content {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 .message-editing { display: flex; flex-direction: column; gap: 0.45rem; }
 .message-edit-input { width: 100%; min-height: 70px; resize: vertical; padding: 0.55rem 0.65rem; border: 1px solid var(--konnix-primary); border-radius: 8px; background: var(--konnix-surface); color: var(--konnix-ink); font: inherit; line-height: 1.4; }
 .message-edit-actions { display: flex; justify-content: flex-end; gap: 0.35rem; }
