@@ -13,6 +13,337 @@
     <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Konnix Chat</title>
+
+    <!-- Hidratação Imediata do Tema (Zero FOUC / Sem Flash Branco) -->
+    <script>
+      (function() {
+        try {
+          var theme = '';
+          var match = document.cookie.match(/(?:^|;\s*)konnix_theme=([^;]+)/);
+          if (match && match[1]) {
+            theme = decodeURIComponent(match[1]).trim().toLowerCase().replace(/_/g, '-');
+          }
+          if (!theme) {
+            var cached = localStorage.getItem('konnix-theme-cache');
+            if (cached) theme = cached.trim().toLowerCase().replace(/_/g, '-');
+          }
+          if (theme && theme !== 'default') {
+            document.documentElement.setAttribute('data-theme', theme);
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- CSS Crítico do Splash / Loader Inicial -->
+    <style>
+      :root {
+        --konnix-bg: #f7f8fc;
+        --konnix-surface: #ffffff;
+        --konnix-ink: #202230;
+        --konnix-ink-soft: #5f6478;
+        --konnix-primary: #5b4cf0;
+        --konnix-accent: #22c7d6;
+        --konnix-border: #e3e6f0;
+      }
+      [data-theme="dark"] {
+        --konnix-bg: #121212;
+        --konnix-surface: #18181B;
+        --konnix-ink: #f4f4f5;
+        --konnix-ink-soft: #a1a1aa;
+        --konnix-primary: #7C5CFF;
+        --konnix-border: #27272a;
+      }
+      [data-theme="black-gray"] {
+        --konnix-bg: #0F1115;
+        --konnix-surface: #161A20;
+        --konnix-ink: #F0F3F8;
+        --konnix-ink-soft: #9BA3AF;
+        --konnix-primary: #4F7CFF;
+        --konnix-border: #242B35;
+      }
+      [data-theme="pink"], [data-theme="pink-strong"] {
+        --konnix-bg: #FFF8FB;
+        --konnix-surface: #ffffff;
+        --konnix-ink: #2b1f26;
+        --konnix-ink-soft: #7c6873;
+        --konnix-primary: #E84D8A;
+        --konnix-border: #F7D6E6;
+      }
+      [data-theme="pink-black"] {
+        --konnix-bg: #140F13;
+        --konnix-surface: #241923;
+        --konnix-ink: #F5EBF1;
+        --konnix-ink-soft: #C2A7B7;
+        --konnix-primary: #F05A9D;
+        --konnix-border: #3D2938;
+      }
+      [data-theme="green"], [data-theme="green-strong"] {
+        --konnix-bg: #F5FBF7;
+        --konnix-surface: #ffffff;
+        --konnix-ink: #1c2720;
+        --konnix-ink-soft: #607567;
+        --konnix-primary: #1FA463;
+        --konnix-border: #D7EDE0;
+      }
+      [data-theme="green-black"] {
+        --konnix-bg: #0F1411;
+        --konnix-surface: #19221D;
+        --konnix-ink: #EAF3EC;
+        --konnix-ink-soft: #9DB5A4;
+        --konnix-primary: #25BD70;
+        --konnix-border: #27362E;
+      }
+      [data-theme="red"], [data-theme="red-strong"] {
+        --konnix-bg: #FFF7F7;
+        --konnix-surface: #ffffff;
+        --konnix-ink: #2d1f1f;
+        --konnix-ink-soft: #7f6666;
+        --konnix-primary: #D94141;
+        --konnix-border: #FCDCDC;
+      }
+      [data-theme="red-black"] {
+        --konnix-bg: #150E0E;
+        --konnix-surface: #251818;
+        --konnix-ink: #F6EAEA;
+        --konnix-ink-soft: #C5A3A3;
+        --konnix-primary: #F05B5B;
+        --konnix-border: #3B2626;
+      }
+      [data-theme="default-strong"] {
+        --konnix-bg: #F7F8FC;
+        --konnix-surface: #ffffff;
+        --konnix-ink: #202230;
+        --konnix-ink-soft: #5f6478;
+        --konnix-primary: #5B4CF0;
+        --konnix-border: #e3e6f0;
+      }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: var(--konnix-bg);
+        color: var(--konnix-ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      #root {
+        width: 100%;
+        height: 100%;
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+
+      .kx-splash-container {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background-color: var(--konnix-bg);
+        color: var(--konnix-ink);
+        z-index: 99999;
+        box-sizing: border-box;
+        user-select: none;
+      }
+
+      .kx-splash-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        max-width: 360px;
+        width: 100%;
+        text-align: center;
+        animation: kx-splash-fade-in 0.3s ease-out;
+      }
+
+      .kx-splash-brand {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      .kx-splash-logo-wrap {
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: kx-splash-pulse-glow 2.5s infinite ease-in-out;
+      }
+
+      .kx-splash-logo {
+        width: 56px;
+        height: 56px;
+        object-fit: contain;
+        display: block;
+      }
+
+      .kx-logo-dark {
+        display: none;
+      }
+
+      .kx-logo-light {
+        display: block;
+      }
+
+      [data-theme="dark"] .kx-logo-dark,
+      [data-theme="black-gray"] .kx-logo-dark,
+      [data-theme="pink-black"] .kx-logo-dark,
+      [data-theme="green-black"] .kx-logo-dark,
+      [data-theme="red-black"] .kx-logo-dark,
+      [data-theme="default-strong"] .kx-logo-dark,
+      [data-theme="green-strong"] .kx-logo-dark,
+      [data-theme="pink-strong"] .kx-logo-dark,
+      [data-theme="red-strong"] .kx-logo-dark {
+        display: block;
+      }
+
+      [data-theme="dark"] .kx-logo-light,
+      [data-theme="black-gray"] .kx-logo-light,
+      [data-theme="pink-black"] .kx-logo-light,
+      [data-theme="green-black"] .kx-logo-light,
+      [data-theme="red-black"] .kx-logo-light,
+      [data-theme="default-strong"] .kx-logo-light,
+      [data-theme="green-strong"] .kx-logo-light,
+      [data-theme="pink-strong"] .kx-logo-light,
+      [data-theme="red-strong"] .kx-logo-light {
+        display: none;
+      }
+
+      .kx-splash-wordmark {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        line-height: 1;
+      }
+
+      .kx-splash-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--konnix-ink);
+      }
+
+      .kx-splash-subtitle {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--konnix-primary);
+        margin-top: 2px;
+      }
+
+      .kx-splash-bar-wrap {
+        width: 220px;
+        height: 4px;
+        background: color-mix(in srgb, var(--konnix-primary) 15%, var(--konnix-border));
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        margin-top: 6px;
+      }
+
+      .kx-splash-bar {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        background: var(--konnix-primary);
+        border-radius: 999px;
+        width: 45%;
+        animation: kx-splash-bar-glide 1.8s infinite ease-in-out;
+      }
+
+      .kx-splash-status {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--konnix-ink-soft);
+        margin-top: 2px;
+      }
+
+      .kx-splash-slow {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: var(--konnix-surface);
+        border: 1px solid var(--konnix-border);
+        border-radius: 12px;
+        color: var(--konnix-ink-soft);
+        font-size: 0.82rem;
+        line-height: 1.35;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+        margin-top: 6px;
+        animation: kx-splash-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        max-width: 320px;
+      }
+
+      .kx-splash-slow-icon {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        color: #eab308;
+      }
+
+      .kx-splash-reload-btn {
+        margin-top: 8px;
+        padding: 8px 16px;
+        background: var(--konnix-surface);
+        color: var(--konnix-primary);
+        border: 1px solid var(--konnix-border);
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .kx-splash-reload-btn:hover {
+        background: color-mix(in srgb, var(--konnix-primary) 8%, var(--konnix-surface));
+        border-color: var(--konnix-primary);
+      }
+
+      @keyframes kx-splash-fade-in {
+        from { opacity: 0; transform: scale(0.98); }
+        to { opacity: 1; transform: scale(1); }
+      }
+
+      @keyframes kx-splash-slide-up {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes kx-splash-pulse-glow {
+        0%, 100% { transform: scale(1); filter: drop-shadow(0 4px 12px rgba(91, 76, 240, 0.2)); }
+        50% { transform: scale(1.03); filter: drop-shadow(0 6px 18px rgba(91, 76, 240, 0.38)); }
+      }
+
+      @keyframes kx-splash-bar-glide {
+        0% { left: -45%; width: 45%; }
+        50% { left: 30%; width: 55%; }
+        100% { left: 100%; width: 45%; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .kx-splash-logo-wrap,
+        .kx-splash-bar,
+        .kx-splash-card {
+          animation: none !important;
+        }
+        .kx-splash-bar {
+          width: 100%;
+          left: 0;
+          opacity: 0.7;
+        }
+      }
+    </style>
+
     <script>
       window.__konnixInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', function(e) {
@@ -25,7 +356,61 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="kx-splash" class="kx-splash-container" role="status" aria-live="polite">
+        <div class="kx-splash-card">
+          <div class="kx-splash-brand">
+            <div class="kx-splash-logo-wrap" aria-hidden="true">
+              <img class="kx-splash-logo kx-logo-light" src="/icons/Konnix white.png" alt="Konnix" width="56" height="56" />
+              <img class="kx-splash-logo kx-logo-dark" src="/icons/Konnix dark.png" alt="Konnix" width="56" height="56" />
+            </div>
+            <div class="kx-splash-wordmark">
+              <strong class="kx-splash-title">Konnix</strong>
+              <span class="kx-splash-subtitle">Chat</span>
+            </div>
+          </div>
+
+          <div class="kx-splash-bar-wrap" aria-hidden="true">
+            <div class="kx-splash-bar"></div>
+          </div>
+
+          <div class="kx-splash-status" id="kx-splash-status">Iniciando o Konnix Chat...</div>
+
+          <div class="kx-splash-slow" id="kx-splash-slow">
+            <svg class="kx-splash-slow-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
+            <span id="kx-splash-slow-text">A conexão parece estar um pouco lenta. Aguarde só mais um momento...</span>
+          </div>
+
+          <button id="kx-splash-reload" class="kx-splash-reload-btn" style="display:none;" onclick="window.location.reload()">
+            Tentar recarregar
+          </button>
+        </div>
+      </div>
+      <script>
+        (function() {
+          var slowEl = document.getElementById('kx-splash-slow');
+          var slowTextEl = document.getElementById('kx-splash-slow-text');
+          var reloadBtn = document.getElementById('kx-splash-reload');
+          var statusEl = document.getElementById('kx-splash-status');
+
+          setTimeout(function() {
+            if (slowEl && document.getElementById('kx-splash')) {
+              slowEl.style.display = 'flex';
+              if (slowTextEl) slowTextEl.textContent = 'A conexão parece estar um pouco lenta. Carregando recursos necessários...';
+            }
+          }, 10000);
+
+          setTimeout(function() {
+            if (reloadBtn && document.getElementById('kx-splash')) {
+              reloadBtn.style.display = 'inline-flex';
+              if (statusEl) statusEl.textContent = 'O carregamento está demorando muito.';
+            }
+          }, 25000);
+        })();
+      </script>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

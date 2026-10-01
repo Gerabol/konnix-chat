@@ -13,6 +13,7 @@ import { LoginView } from './components/auth/LoginView'
 import { PremiereOverlay } from './components/auth/PremiereOverlay'
 import { RequiredPasswordChangeView } from './components/auth/RequiredPasswordChangeView'
 import { ChatView } from './components/chat/ChatView'
+import { AppLoadingScreen } from './components/common/AppLoadingScreen'
 import { useMobileViewport } from './hooks/useMobileViewport'
 
 // Re-exports for backwards compatibility
@@ -138,6 +139,14 @@ export default function App() {
     setSession(null)
   }, [])
 
+  useEffect(() => {
+    const onUnauthorized = () => {
+      handleLogout()
+    }
+    window.addEventListener('konnix:auth-unauthorized', onUnauthorized)
+    return () => window.removeEventListener('konnix:auth-unauthorized', onUnauthorized)
+  }, [handleLogout])
+
   const handlePresenceChange = useCallback(async (status: PresenceStatus) => {
     const currentTheme = (readThemeCookie() || cachedTheme() || session?.user?.theme || 'DEFAULT') as Theme
     const user = await api.updatePresence(status)
@@ -195,7 +204,12 @@ export default function App() {
   }
 
   if (authInitializing) {
-    return <div className="app-splash" role="status">Carregando sessão…</div>
+    return (
+      <AppLoadingScreen
+        message="Conectando à sua conta…"
+        slowMessage="Sua conexão parece estar um pouco lenta. Sincronizando com o servidor…"
+      />
+    )
   }
 
   if (!session || !session.user) {
@@ -256,7 +270,7 @@ export default function App() {
             onThemeUpdated={handleThemeUpdated}
           />
         </div>
-        <Suspense fallback={<div className="app-splash" role="status">Carregando painel de administração…</div>}>
+        <Suspense fallback={<AppLoadingScreen message="Carregando painel de administração…" slowNoticeTimeout={10000} />}>
           <AdminView
             me={session.user}
             onBack={() => {
