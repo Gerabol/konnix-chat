@@ -846,12 +846,12 @@ button:disabled {
   color: var(--konnix-ink);
   border-radius: 8px;
   text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-@media (min-width: 769px) {
-  .sidebar-brand-btn {
-    pointer-events: none;
-  }
+.sidebar-brand-btn:hover {
+  background: color-mix(in srgb, var(--konnix-ink) 8%, transparent);
 }
 
 .sidebar-search-toggle,
