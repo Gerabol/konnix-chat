@@ -368,6 +368,14 @@ export function ChatView({
     }
   }, [closeRoom])
 
+  const goHome = useCallback(() => {
+    if (isMobilePlatform()) {
+      closeSidebar()
+      return
+    }
+    closeRoom()
+  }, [closeSidebar, closeRoom])
+
   useEffect(() => {
     const handleBack = () => {
       if (activeRoomIdRef.current) {
@@ -1317,6 +1325,7 @@ export function ChatView({
           onMarkRoomRead={handleMarkRoomRead}
           onToggleRoomFavorite={handleToggleRoomFavorite}
           onClose={closeSidebar}
+          onGoHome={goHome}
         />
 
         <main className="main">

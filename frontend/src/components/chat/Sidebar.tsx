@@ -59,6 +59,7 @@ export interface SidebarProps {
   typingByRoom: Record<string, Record<string, TypingUser>>
   avatarVersions?: Record<string, string>
   onClose?: () => void
+  onGoHome?: () => void
   onMarkRoomUnread?: (roomId: string) => void
   onMarkRoomRead?: (roomId: string) => void
   onToggleRoomFavorite?: (roomId: string) => void
@@ -94,6 +95,7 @@ export const Sidebar = memo(function Sidebar({
   typingByRoom,
   avatarVersions,
   onClose,
+  onGoHome,
   onMarkRoomUnread,
   onMarkRoomRead,
   onToggleRoomFavorite,
@@ -379,8 +381,8 @@ export const Sidebar = memo(function Sidebar({
         <button
           type="button"
           className="sidebar-brand-btn"
-          onClick={onClose}
-          aria-label="Voltar para tela de descanso"
+          onClick={onGoHome ?? onClose}
+          aria-label="Ir para o Início"
         >
           <img key={sidebarLogoSrc} src={sidebarLogoSrc} alt="Konnix" className="sidebar-logo" />
           <div className="sidebar-wordmark">
