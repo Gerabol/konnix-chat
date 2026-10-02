@@ -36,6 +36,7 @@ export interface MessageRowProps {
   canPin?: boolean
   isPinned?: boolean
   onTogglePin?: (msg: Message) => void
+  validMentionUsernames?: Set<string>
 }
 
 /** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
@@ -69,6 +70,7 @@ function MessageRowComponent({
   canPin,
   isPinned,
   onTogglePin,
+  validMentionUsernames,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
   const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
@@ -347,7 +349,7 @@ function MessageRowComponent({
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
             {!msg.poll && msg.content && (
-              <div className="message-content">{renderMessageContent(msg.content, currentUsername)}</div>
+              <div className="message-content">{renderMessageContent(msg.content, currentUsername, validMentionUsernames)}</div>
             )}
             {msg.reactions && msg.reactions.length > 0 && (
               <div className="message-reactions">

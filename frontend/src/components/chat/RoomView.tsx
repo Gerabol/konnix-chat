@@ -371,14 +371,57 @@ export function RoomView({
     }
   }, [room.id, room.type])
 
+  const validMentionUsernames = useMemo(() => {
+    const set = new Set<string>()
+    if (me && me.accountStatus !== 'DISABLED' && me.username) {
+      set.add(me.username.toLowerCase())
+    }
+    if (room.type === 'DIRECT') {
+      if (room.directPartner && room.directPartner.accountStatus !== 'DISABLED' && room.directPartner.username) {
+        set.add(room.directPartner.username.toLowerCase())
+      }
+    } else {
+      for (const member of roomMembers) {
+        if (member.active && member.accountStatus !== 'DISABLED' && member.username) {
+          set.add(member.username.toLowerCase())
+        }
+      }
+    }
+    return set
+  }, [room, roomMembers, me])
+
   const mentionOptions = useMemo(() => {
-    if (!mention || room.type === 'DIRECT') return []
+    if (!mention) return []
     const query = mention.query.toLowerCase()
+    if (room.type === 'DIRECT') {
+      if (
+        room.directPartner &&
+        room.directPartner.accountStatus !== 'DISABLED' &&
+        room.directPartner.userId !== me.id
+      ) {
+        const partnerName = `${room.directPartner.username} ${room.directPartner.name}`.toLowerCase()
+        if (partnerName.includes(query)) {
+          return [
+            {
+              id: room.directPartner.userId,
+              userId: room.directPartner.userId,
+              username: room.directPartner.username,
+              name: room.directPartner.name,
+              role: 'MEMBER',
+              joinedAt: '',
+              active: true,
+              accountStatus: room.directPartner.accountStatus,
+            },
+          ]
+        }
+      }
+      return []
+    }
     return roomMembers
-      .filter((member) => member.active && member.userId !== me.id)
+      .filter((member) => member.active && member.accountStatus !== 'DISABLED' && member.userId !== me.id)
       .filter((member) => `${member.username} ${member.name}`.toLowerCase().includes(query))
       .slice(0, 8)
-  }, [mention, room.type, roomMembers, me.id])
+  }, [mention, room, roomMembers, me.id])
 
   useLayoutEffect(() => {
     scrollToBottomOnLoadRef.current = true
@@ -1618,6 +1661,7 @@ export function RoomView({
                   canPin={canManagePin}
                   isPinned={room.pinnedMessage?.id === m.id}
                   onTogglePin={handleTogglePin}
+                  validMentionUsernames={validMentionUsernames}
                 />
               ))}
             </div>

@@ -207,6 +207,13 @@ public class MessageService {
             if (user == null || user.getId().equals(author.getId())) {
                 continue;
             }
+            if (user.isDisabled()) {
+                continue;
+            }
+            String status = user.getAccountStatus();
+            if (status != null && !status.isBlank() && "DISABLED".equals(status)) {
+                continue;
+            }
             if (mentionedUsernames.contains(user.getUsername().toLowerCase(Locale.ROOT))) {
                 mentionsToSave.add(new MessageMention(message, room, user));
             }
@@ -285,6 +292,9 @@ public class MessageService {
     @Transactional(readOnly = true)
     public List<MessageResponse> search(UUID roomId, String query, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
+        if (room.isHidden() && !actor.hasRole("ADMIN")) {
+            throw ApiExceptions.notFound("room/" + roomId);
+        }
         requireMember(room, actor);
         String normalized = query == null ? "" : query.trim();
         if (normalized.isBlank()) return List.of();
@@ -495,6 +505,14 @@ public class MessageService {
         List<UUID> roomIds = messages.stream().map(m -> m.getRoom().getId()).distinct().toList();
         List<RoomMember> allMembers = roomMemberRepository.findByRoomIdIn(roomIds);
         Map<UUID, Long> memberCountByRoom = allMembers.stream()
+                .filter(rm -> {
+                    var u = rm.getUser();
+                    if (u == null) return false;
+                    if (u.isDisabled()) return false;
+                    String s = u.getAccountStatus();
+                    if (s != null && !s.isBlank() && "DISABLED".equals(s)) return false;
+                    return true;
+                })
                 .collect(Collectors.groupingBy(rm -> rm.getRoom().getId(), Collectors.counting()));
         Map<String, String> roleByRoomAndUser = allMembers.stream()
                 .collect(Collectors.toMap(
@@ -612,7 +630,16 @@ public class MessageService {
         if (poll == null) return null;
         List<PollOption> options = pollOptionRepository.findByPollIdInOrderByPositionAsc(List.of(poll.getId()));
         List<PollVote> votes = pollVoteRepository.findByPollIdIn(List.of(poll.getId()));
-        int totalMembers = roomMemberRepository.findByRoomId(message.getRoom().getId()).size();
+        int totalMembers = (int) roomMemberRepository.findByRoomId(message.getRoom().getId()).stream()
+                .filter(m -> {
+                    var u = m.getUser();
+                    if (u == null) return false;
+                    if (u.isDisabled()) return false;
+                    String s = u.getAccountStatus();
+                    if (s != null && !s.isBlank() && "DISABLED".equals(s)) return false;
+                    return true;
+                })
+                .count();
         int totalVoters = (int) votes.stream().map(vote -> vote.getUser().getId()).distinct().count();
         return new MessageResponse.PollData(poll.getId(), poll.getQuestion(), poll.isAllowMultiple(), totalMembers, totalVoters, options.stream()
                 .map(option -> new MessageResponse.PollOptionData(option.getId(), option.getLabel(),

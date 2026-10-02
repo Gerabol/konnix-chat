@@ -5,5 +5,6 @@ import jakarta.validation.constraints.Size;
 public record RoomUpdateRequest(
         @Size(max = 160) String name,
         @Size(max = 160) String displayName,
-        Boolean readOnly) {
+        Boolean readOnly,
+        Boolean hidden) {
 }

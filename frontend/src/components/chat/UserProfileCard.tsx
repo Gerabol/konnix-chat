@@ -156,7 +156,7 @@ export function RoomInfoCard({
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   usePopoverDismiss(cardRef, onClose)
-  const activeMembers = members.filter((member) => member.active)
+  const activeMembers = members.filter((member) => member.active && (!member.accountStatus || member.accountStatus !== 'DISABLED'))
   const owners = activeMembers.filter((member) => member.role.toUpperCase() === 'OWNER')
   const name = roomDisplayName(room)
 
