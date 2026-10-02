@@ -3907,8 +3907,9 @@ button:disabled {
 
 .attachment-audio {
   display: flex;
-  align-items: center;
-  gap: 0.65rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
   width: min(420px, 100%);
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--konnix-border);
@@ -3922,6 +3923,13 @@ button:disabled {
 
 .attachment-audio.playing {
   border-color: var(--konnix-primary);
+}
+
+.audio-player-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
 }
 
 .audio-player-avatar-wrap {
@@ -4072,8 +4080,15 @@ button:disabled {
   font-weight: 500;
 }
 
-.audio-player-download {
+.audio-player-actions {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.audio-player-action-btn,
+.audio-player-download {
   color: var(--konnix-primary-deep);
   font-size: 0.72rem;
   text-decoration: none;
@@ -4083,8 +4098,15 @@ button:disabled {
   cursor: pointer;
 }
 
+.audio-player-action-btn:hover,
 .audio-player-download:hover {
   text-decoration: underline;
+}
+
+.audio-player-action-dot {
+  color: var(--konnix-border-strong);
+  font-size: 0.72rem;
+  user-select: none;
 }
 
 .audio-player-speed-btn {
@@ -4118,6 +4140,151 @@ button:disabled {
 
 .audio-player-speed-btn:active {
   transform: scale(0.95);
+}
+
+/* Transcrição de áudio minimalista (client-side Whisper) */
+.audio-transcription-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.2rem 0.15rem;
+  border-top: 1px dashed var(--konnix-border);
+  font-size: 0.74rem;
+  color: var(--konnix-ink-soft);
+  animation: audioFadeIn 0.2s ease-in-out;
+}
+
+.audio-transcription-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--konnix-border);
+  border-top-color: var(--konnix-primary);
+  border-radius: 50%;
+  animation: audioSpin 0.75s linear infinite;
+  flex: none;
+}
+
+.audio-transcription-status-text {
+  font-weight: 500;
+}
+
+.audio-transcription-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--konnix-border);
+  animation: audioFadeIn 0.25s ease-in-out;
+}
+
+.audio-transcription-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--konnix-ink-soft);
+}
+
+.audio-transcription-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+  color: var(--konnix-ink-soft);
+}
+
+.audio-transcription-icon {
+  color: var(--konnix-primary);
+  opacity: 0.85;
+}
+
+.audio-transcription-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.audio-transcription-action-btn {
+  color: var(--konnix-primary-deep);
+  font-size: 0.72rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.audio-transcription-action-btn:hover {
+  text-decoration: underline;
+}
+
+.audio-transcription-content {
+  background: var(--konnix-bg-subtle);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--konnix-border);
+}
+
+.audio-transcription-text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--konnix-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.audio-transcription-text-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  font-style: italic;
+  color: var(--konnix-ink-soft);
+}
+
+.audio-transcription-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.2rem 0.15rem;
+  border-top: 1px dashed var(--konnix-border);
+  font-size: 0.72rem;
+  color: var(--konnix-danger, #ef4444);
+}
+
+.audio-transcription-retry-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--konnix-primary-deep);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.audio-transcription-retry-btn:hover {
+  text-decoration: underline;
+}
+
+@keyframes audioSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes audioFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---- Composer ---- */

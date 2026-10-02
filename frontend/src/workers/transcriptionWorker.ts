@@ -1,0 +1,74 @@
+import { pipeline, env, AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers'
+
+// Configura Transformers.js para ambiente web seguro
+env.allowLocalModels = false
+
+let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null
+
+async function getTranscriber(
+  onProgress?: (progressData: { status: string; progress?: number; file?: string }) => void,
+): Promise<AutomaticSpeechRecognitionPipeline> {
+  if (!transcriberPromise) {
+    transcriberPromise = (async () => {
+      // whisper-tiny multilíngue suporta português e tem download ultraleve
+      const pipe = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny', {
+        progress_callback: (data: unknown) => {
+          if (onProgress && typeof data === 'object' && data !== null) {
+            const p = data as { status: string; progress?: number; file?: string }
+            onProgress(p)
+          }
+        },
+      })
+      return pipe as AutomaticSpeechRecognitionPipeline
+    })()
+  }
+  return transcriberPromise
+}
+
+self.addEventListener('message', async (event: MessageEvent) => {
+  const { id, type, audio, language = 'portuguese' } = event.data || {}
+
+  if (type === 'transcribe') {
+    try {
+      // Notifica início do carregamento/modelo
+      self.postMessage({ id, type: 'status', status: 'loading-model' })
+
+      const transcriber = await getTranscriber((prog) => {
+        if (prog.status === 'progress' && typeof prog.progress === 'number') {
+          self.postMessage({
+            id,
+            type: 'download-progress',
+            file: prog.file,
+            progress: Math.round(prog.progress),
+          })
+        }
+      })
+
+      // Notifica início da inferência do Whisper
+      self.postMessage({ id, type: 'status', status: 'transcribing' })
+
+      const result = await transcriber(audio, {
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        language,
+        task: 'transcribe',
+      })
+
+      const rawText = Array.isArray(result) ? result.map((r: { text?: string }) => r.text || '').join(' ') : (result?.text || '')
+      const cleanedText = (rawText as string).trim()
+
+      self.postMessage({
+        id,
+        type: 'complete',
+        text: cleanedText,
+      })
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      self.postMessage({
+        id,
+        type: 'error',
+        error: errorMsg,
+      })
+    }
+  }
+})
