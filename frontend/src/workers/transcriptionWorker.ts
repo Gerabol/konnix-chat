@@ -11,8 +11,8 @@ async function getTranscriber(
 ): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!transcriberPromise) {
     transcriberPromise = (async () => {
-      // whisper-base multilíngue: vocabulário superior, melhor precisão em português e salvo em cache local
-      const pipe = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
+      // whisper-small multilíngue: modelo de referência de alta acurácia para português
+      const pipe = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-small', {
         dtype: {
           encoder_model: 'fp32',
           decoder_model_merged: 'q4',
@@ -57,6 +57,9 @@ self.addEventListener('message', async (event: MessageEvent) => {
         stride_length_s: 5,
         language,
         task: 'transcribe',
+        initial_prompt: 'Transcrição de conversa de chat corporativo em português brasileiro, áudio claro com pontuação correta.',
+        temperature: 0,
+        repetition_penalty: 1.2,
       })
 
       const rawText = Array.isArray(result) ? result.map((r: { text?: string }) => r.text || '').join(' ') : (result?.text || '')

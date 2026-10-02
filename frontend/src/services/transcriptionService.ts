@@ -26,12 +26,12 @@ class TranscriptionService {
 
         if (type === 'status') {
           if (status === 'loading-model') {
-            task.onStatusUpdate?.('Carregando modelo...')
+            task.onStatusUpdate?.('Carregando IA...')
           } else if (status === 'transcribing') {
-            task.onStatusUpdate?.('Transcrevendo áudio...')
+            task.onStatusUpdate?.('Transcrevendo áudio com Whisper Small...')
           }
         } else if (type === 'download-progress') {
-          task.onStatusUpdate?.(`Baixando IA (${progress}%)...`)
+          task.onStatusUpdate?.(`Baixando Whisper Small (${progress}%)...`)
         } else if (type === 'complete') {
           task.resolve(text || '')
           this.tasks.delete(id)
