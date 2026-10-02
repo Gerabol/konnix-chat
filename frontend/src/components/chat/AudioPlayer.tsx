@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { formatBytes } from '../../api'
 import { cyclePlaybackRate, formatAudioTime } from '../../utils/audioPlayer'
 import type { PlaybackRate } from '../../utils/audioPlayer'
 import { AvatarImage, initials } from './AvatarImage'
@@ -8,7 +7,6 @@ export interface AudioPlayerProps {
   src: string
   authorName: string
   authorAvatarPath: string | null
-  fileSize?: number
   fileName?: string
 }
 
@@ -16,7 +14,6 @@ export function AudioPlayer({
   src,
   authorName,
   authorAvatarPath,
-  fileSize,
   fileName = 'audio.mp3',
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -195,9 +192,6 @@ export function AudioPlayer({
           <span className="audio-player-time">
             {formatAudioTime(effectiveTime)} / {formatAudioTime(duration)}
           </span>
-          {typeof fileSize === 'number' && fileSize > 0 && (
-            <span className="audio-player-size">{formatBytes(fileSize)}</span>
-          )}
           <a
             href={src}
             download={fileName}

@@ -144,7 +144,6 @@ export function AttachmentView({
         src={state.url}
         authorName={msg.username || 'sistema'}
         authorAvatarPath={avatarPath}
-        fileSize={att.size}
         fileName={att.originalName}
       />
     )

@@ -3963,7 +3963,9 @@ button:disabled {
   color: var(--konnix-primary-contrast);
   font-size: 0.72rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   border: 2px solid var(--konnix-bg);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4093,10 +4095,6 @@ button:disabled {
   font-weight: 500;
 }
 
-.audio-player-size {
-  opacity: 0.85;
-}
-
 .audio-player-download {
   margin-left: auto;
   color: var(--konnix-primary-deep);
@@ -4117,17 +4115,21 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
   height: 26px;
-  padding: 0 0.4rem;
+  padding: 0;
   border-radius: 13px;
   border: 1px solid var(--konnix-border);
   background: var(--konnix-bg-subtle);
   color: var(--konnix-primary-deep);
   font-size: 0.74rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s, transform 0.15s;
   margin-left: 0.15rem;
 }
 
