@@ -60,22 +60,39 @@ export function renderMarkdown(text: string): ReactNode[] {
   return out
 }
 
-export function renderMessageContent(text: string, currentUsername: string): ReactNode[] {
+export function renderMessageContent(
+  text: string,
+  currentUsername: string,
+  validMentionUsernames?: Set<string>,
+): ReactNode[] {
   return text.split(/(```[\s\S]*?```)/g).flatMap((part, blockIndex) => {
     if (part.startsWith('```') && part.endsWith('```')) {
       return [<Fragment key={`block-${blockIndex}`}>{renderMarkdown(part)}</Fragment>]
     }
-    return part.split(/(@[a-zA-Z0-9._-]+|https:\/\/[^\s<]+)/g).map((piece, pieceIndex) =>
-      /^https:\/\/[^\s<]+$/.test(piece)
-        ? <a key={`${blockIndex}-${pieceIndex}`} className="message-link" href={piece} target="_blank" rel="noopener noreferrer">{piece}</a>
-        : /^@[a-zA-Z0-9._-]+$/.test(piece)
-        ? <span
-            className={`message-mention ${piece.slice(1).toLowerCase() === currentUsername.toLowerCase() ? 'message-mention-self' : ''}`}
-            key={`${blockIndex}-${pieceIndex}`}
-          >
+    return part.split(/(@[a-zA-Z0-9._-]+|https:\/\/[^\s<]+)/g).map((piece, pieceIndex) => {
+      if (/^https:\/\/[^\s<]+$/.test(piece)) {
+        return (
+          <a key={`${blockIndex}-${pieceIndex}`} className="message-link" href={piece} target="_blank" rel="noopener noreferrer">
             {piece}
-          </span>
-        : <Fragment key={`${blockIndex}-${pieceIndex}`}>{renderMarkdown(piece)}</Fragment>,
-    )
+          </a>
+        )
+      }
+      if (/^@[a-zA-Z0-9._-]+$/.test(piece)) {
+        const username = piece.slice(1).toLowerCase()
+        const isValidMention = !validMentionUsernames || validMentionUsernames.has(username)
+        if (isValidMention) {
+          const isSelf = username === currentUsername.toLowerCase()
+          return (
+            <span
+              className={`message-mention ${isSelf ? 'message-mention-self' : ''}`}
+              key={`${blockIndex}-${pieceIndex}`}
+            >
+              {piece}
+            </span>
+          )
+        }
+      }
+      return <Fragment key={`${blockIndex}-${pieceIndex}`}>{renderMarkdown(piece)}</Fragment>
+    })
   })
 }

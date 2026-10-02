@@ -7502,6 +7502,7 @@ img.room-header-avatar {
 .admin-status.active { background: rgba(48, 164, 108, 0.13); color: #228b5c; }
 .admin-status.read-only { background: rgba(245, 166, 35, 0.16); color: #a66a00; }
 .admin-status.inactive { background: rgba(229, 72, 77, 0.13); color: var(--konnix-danger); }
+.admin-status.hidden { background: rgba(234, 88, 12, 0.18); color: #ea580c; }
 .admin-account-status-selector { position: relative; display: inline-block; }
 .admin-account-status-selector .presence-pill { max-width: 140px; }
 .admin-account-status-selector .presence-menu {

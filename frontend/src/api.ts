@@ -35,6 +35,7 @@ export type Room = {
   type: 'CHANNEL' | 'PRIVATE_GROUP' | 'PUBLIC_GROUP' | 'DIRECT'
   createdBy: string | null
   readOnly: boolean
+  hidden: boolean
   createdAt: string
   updatedAt: string
   lastActivityAt: string | null
@@ -64,6 +65,7 @@ export type RoomMember = {
   role: string
   joinedAt: string
   active: boolean
+  accountStatus?: string
 }
 
 export type Attachment = {
@@ -496,7 +498,7 @@ export const api = {
   adminRooms() {
     return request<Room[]>('/api/v1/admin/rooms')
   },
-  adminUpdateRoom(roomId: string, input: { name?: string; displayName?: string; readOnly?: boolean }) {
+  adminUpdateRoom(roomId: string, input: { name?: string; displayName?: string; readOnly?: boolean; hidden?: boolean }) {
     return request<Room>(`/api/v1/admin/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(input) })
   },
   toggleRoomFavorite(roomId: string) {
