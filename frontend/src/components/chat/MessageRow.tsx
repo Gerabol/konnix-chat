@@ -4,6 +4,7 @@ import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
+import { isDefaultAttachmentContent } from '../../utils/audioPlayer'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
 import { AttachmentView } from './AttachmentView'
 import { AvatarImage, initials } from './AvatarImage'
@@ -349,7 +350,7 @@ function MessageRowComponent({
               />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
-            {!msg.poll && msg.content && (
+            {!msg.poll && msg.content && !isDefaultAttachmentContent(msg.content, messageAttachments) && (
               <div className="message-content">{renderMessageContent(msg.content, currentUsername)}</div>
             )}
             {msg.reactions && msg.reactions.length > 0 && (

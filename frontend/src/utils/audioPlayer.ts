@@ -23,3 +23,29 @@ export function cyclePlaybackRate(currentRate: number): PlaybackRate {
   if (currentRate === 1.5) return 2
   return 1
 }
+
+/**
+ * Verifica se o conteúdo textual de uma mensagem é apenas o nome de arquivo
+ * padrão gerado pelo sistema (ex: "gravacao-1727543550000.mp3" ou o nome do anexo).
+ * Permite omitir esse texto técnico redundante nas bolhas de chat.
+ */
+export function isDefaultAttachmentContent(
+  content: string | null | undefined,
+  attachments?: { originalName: string }[] | null,
+): boolean {
+  if (!content) return false
+  const trimmed = content.trim()
+  if (!trimmed) return false
+
+  // Padrão automático de áudio gravado "gravacao-<timestamp>.mp3"
+  if (/^gravacao-\d+\.mp3$/i.test(trimmed)) {
+    return true
+  }
+
+  // Se o conteúdo for idêntico ao nome de algum dos anexos
+  if (attachments && attachments.length > 0) {
+    return attachments.some((att) => att.originalName?.trim() === trimmed)
+  }
+
+  return false
+}

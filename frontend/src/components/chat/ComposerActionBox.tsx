@@ -28,8 +28,17 @@ export function ComposerPendingAttachments({
           </div>
         ) : (
           <div className="composer-pending-attachment composer-pending-file" key={`${file.name}-${file.lastModified}-${index}`}>
-            <span className="composer-pending-icon" aria-hidden="true">📎</span>
-            <span className="composer-pending-details" title={file.name}><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
+            <span className="composer-pending-icon" aria-hidden="true">
+              {file.type.startsWith('audio/') || /^gravacao-\d+\.mp3$/i.test(file.name) ? '🎤' : '📎'}
+            </span>
+            <span className="composer-pending-details" title={file.name}>
+              <strong>
+                {file.type.startsWith('audio/') || /^gravacao-\d+\.mp3$/i.test(file.name)
+                  ? 'Mensagem de voz'
+                  : file.name}
+              </strong>
+              <small>{formatBytes(file.size)}</small>
+            </span>
             <button className="composer-pending-remove" type="button" onClick={() => onRemove(index)} aria-label={`Remover ${file.name}`}>×</button>
           </div>
         )

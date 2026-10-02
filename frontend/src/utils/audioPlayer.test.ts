@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { cyclePlaybackRate, formatAudioTime, PLAYBACK_RATES } from './audioPlayer.ts'
+import { cyclePlaybackRate, formatAudioTime, isDefaultAttachmentContent, PLAYBACK_RATES } from './audioPlayer.ts'
 
 describe('audioPlayer utils', () => {
   describe('formatAudioTime', () => {
@@ -55,6 +55,35 @@ describe('audioPlayer utils', () => {
 
     it('mantém a lista de velocidades suportadas como [1, 1.5, 2]', () => {
       assert.deepEqual(PLAYBACK_RATES, [1, 1.5, 2])
+    })
+  })
+
+  describe('isDefaultAttachmentContent', () => {
+    it('detecta nome de gravacao gerado pelo sistema (gravacao-<timestamp>.mp3)', () => {
+      assert.equal(isDefaultAttachmentContent('gravacao-1727878800000.mp3'), true)
+      assert.equal(isDefaultAttachmentContent('  gravacao-123456.mp3  '), true)
+    })
+
+    it('detecta quando o content e identico ao originalName do anexo', () => {
+      assert.equal(
+        isDefaultAttachmentContent('audio_reuniao.mp3', [{ originalName: 'audio_reuniao.mp3' }]),
+        true,
+      )
+    })
+
+    it('retorna false para legendas reais digitadas pelo usuario', () => {
+      assert.equal(isDefaultAttachmentContent('Segue o audio da reuniao'), false)
+      assert.equal(
+        isDefaultAttachmentContent('Ouça este trecho', [{ originalName: 'audio.mp3' }]),
+        false,
+      )
+    })
+
+    it('retorna false para valores nulos, vazios ou indefinidos', () => {
+      assert.equal(isDefaultAttachmentContent(null), false)
+      assert.equal(isDefaultAttachmentContent(''), false)
+      assert.equal(isDefaultAttachmentContent('   '), false)
+      assert.equal(isDefaultAttachmentContent(undefined), false)
     })
   })
 })
