@@ -44,6 +44,18 @@ export function IconMic({ size = 15 }: { size?: number }) {
   )
 }
 
+export function IconAudioWave({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v18" />
+      <path d="M8 7v10" />
+      <path d="M16 7v10" />
+      <path d="M4 11v2" />
+      <path d="M20 11v2" />
+    </svg>
+  )
+}
+
 export function IconStop({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

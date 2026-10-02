@@ -17,6 +17,7 @@ import {
   IconSearch,
   IconSend,
   IconStop,
+  IconAudioWave,
   IconTrash,
   NoEntryIcon,
   PersonIcon,
@@ -1700,9 +1701,11 @@ export function RoomView({
                     </span>
                   </div>
                   <div className={`attachment attachment-upload-box ${upload.status === 'error' ? 'attachment-error' : ''}`}>
-                    <span className={`attachment-icon ${isAudioFile ? 'audio' : 'generic'}`}>{icon}</span>
+                    <span className={`attachment-icon ${isAudioFile ? 'audio' : 'generic'}`}>
+                      {isAudioFile ? <IconAudioWave size={18} /> : icon}
+                    </span>
                     <span className="attachment-body">
-                      <strong>{upload.file.name}</strong>
+                      <strong>{isAudioFile ? 'Mensagem de voz' : upload.file.name}</strong>
                       {upload.status !== 'error' ? (
                         <>
                           <small>
