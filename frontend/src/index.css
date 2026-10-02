@@ -3733,6 +3733,11 @@ button:disabled {
   background: rgba(34, 199, 214, 0.14);
 }
 
+.attachment-icon.audio {
+  background: var(--konnix-primary-light);
+  color: var(--konnix-primary);
+}
+
 .attachment-body {
   display: flex;
   flex-direction: column;
@@ -4224,7 +4229,19 @@ body.keyboard-open .composer {
 
 .composer-pending-icon {
   flex: 0 0 auto;
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--konnix-bg-subtle);
+  color: var(--konnix-ink-soft);
+}
+
+.composer-pending-icon.audio {
+  background: var(--konnix-primary-light);
+  color: var(--konnix-primary);
 }
 
 .composer-pending-details {

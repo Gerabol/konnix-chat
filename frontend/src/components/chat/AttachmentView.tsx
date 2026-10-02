@@ -3,6 +3,7 @@ import { api, ApiError, formatBytes, userAvatarPath } from '../../api'
 import type { Attachment, Message } from '../../api'
 import { ImageLightbox } from '../modals/ImageLightbox'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
+import { IconAudioWave } from '../icons'
 import { AudioPlayer } from './AudioPlayer'
 
 export function attachmentExtension(att: Attachment): string {
@@ -80,10 +81,12 @@ export function AttachmentView({
 
   if (state.status === 'loading') {
     return (
-      <div className="attachment">
-        <span className={`attachment-icon ${attachmentIconClass(att)}`}>{attachmentIcon(att, isImage, isAudio)}</span>
+      <div className={`attachment ${isAudio ? 'attachment-audio-loading' : ''}`}>
+        <span className={`attachment-icon ${attachmentIconClass(att)}`}>
+          {isAudio ? <IconAudioWave size={18} /> : attachmentIcon(att, isImage, isAudio)}
+        </span>
         <span className="attachment-body">
-          <strong>{att.originalName}</strong>
+          <strong>{isAudio ? 'Mensagem de voz' : att.originalName}</strong>
           <small>Carregando…</small>
         </span>
       </div>
@@ -95,7 +98,7 @@ export function AttachmentView({
       <div className="attachment attachment-error">
         <span className={`attachment-icon ${attachmentIconClass(att)}`}>⚠</span>
         <span className="attachment-body">
-          <strong>{att.originalName}</strong>
+          <strong>{isAudio ? 'Mensagem de voz' : att.originalName}</strong>
           <small className="attachment-errmsg">{state.error}</small>
           <button className="attachment-retry" onClick={load}>
             Tentar novamente

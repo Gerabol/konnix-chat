@@ -16,6 +16,7 @@ export function AudioPlayer({
   authorAvatarPath,
   fileName = 'audio.mp3',
 }: AudioPlayerProps) {
+  const playerIdRef = useRef<string>(Math.random().toString(36).slice(2, 9))
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -24,7 +25,40 @@ export function AudioPlayer({
   const [isSeeking, setIsSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState(0)
 
-  // Sincroniza a taxa de reprodução se mudar
+  // Reseta os estados quando o src do áudio muda
+  useEffect(() => {
+    setCurrentTime(0)
+    setIsPlaying(false)
+    setDuration(0)
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+  }, [src])
+
+  // Pausa o áudio ao desmontar o componente para evitar áudios órfãos
+  useEffect(() => {
+    const audio = audioRef.current
+    return () => {
+      if (audio && !audio.paused) {
+        audio.pause()
+      }
+    }
+  }, [])
+
+  // Garante reprodução exclusiva (ao tocar este áudio, pausa outros áudios ativos)
+  useEffect(() => {
+    const onAnyAudioPlay = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string }>
+      if (customEvent.detail?.id !== playerIdRef.current && audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause()
+      }
+    }
+    window.addEventListener('konnix:audio-play', onAnyAudioPlay)
+    return () => window.removeEventListener('konnix:audio-play', onAnyAudioPlay)
+  }, [])
+
+  // Sincroniza a taxa de reprodução
   const handleSpeedCycle = useCallback(() => {
     const nextRate = cyclePlaybackRate(playbackRate)
     setPlaybackRate(nextRate)
@@ -38,13 +72,14 @@ export function AudioPlayer({
     if (!audio) return
 
     if (audio.paused) {
+      audio.playbackRate = playbackRate
       audio.play().catch(() => {
         setIsPlaying(false)
       })
     } else {
       audio.pause()
     }
-  }, [])
+  }, [playbackRate])
 
   const handleSeekStart = () => {
     setIsSeeking(true)
@@ -74,6 +109,7 @@ export function AudioPlayer({
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setDuration(audio.duration)
       }
+      audio.playbackRate = playbackRate
     }
 
     const handleTimeUpdate = () => {
@@ -82,7 +118,14 @@ export function AudioPlayer({
       }
     }
 
-    const handlePlay = () => setIsPlaying(true)
+    const handlePlay = () => {
+      setIsPlaying(true)
+      audio.playbackRate = playbackRate
+      window.dispatchEvent(
+        new CustomEvent('konnix:audio-play', { detail: { id: playerIdRef.current } }),
+      )
+    }
+
     const handlePause = () => setIsPlaying(false)
     const handleEnded = () => {
       setIsPlaying(false)
@@ -104,11 +147,12 @@ export function AudioPlayer({
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('ended', handleEnded)
     }
-  }, [isSeeking])
+  }, [isSeeking, playbackRate])
 
   // Porcentagem calculada para preencher a trilha visual do scrubber
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0
   const effectiveTime = isSeeking ? seekValue : currentTime
-  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (effectiveTime / duration) * 100)) : 0
+  const progressPercent = safeDuration > 0 ? Math.min(100, Math.max(0, (effectiveTime / safeDuration) * 100)) : 0
 
   return (
     <div className={`attachment-audio ${isPlaying ? 'playing' : ''}`}>
@@ -158,7 +202,7 @@ export function AudioPlayer({
             type="range"
             className="audio-player-scrubber"
             min="0"
-            max={duration > 0 ? duration : 100}
+            max={safeDuration > 0 ? safeDuration : 100}
             step="0.05"
             value={effectiveTime}
             style={{ '--audio-progress': `${progressPercent}%` } as React.CSSProperties}
@@ -170,9 +214,9 @@ export function AudioPlayer({
             onKeyUp={handleSeekCommit}
             aria-label="Barra de progresso do áudio"
             aria-valuemin={0}
-            aria-valuemax={duration}
+            aria-valuemax={safeDuration}
             aria-valuenow={effectiveTime}
-            aria-valuetext={`${formatAudioTime(effectiveTime)} de ${formatAudioTime(duration)}`}
+            aria-valuetext={`${formatAudioTime(effectiveTime)} de ${formatAudioTime(safeDuration)}`}
           />
         </div>
 
