@@ -10,9 +10,14 @@ export async function decodeAudioTo16kHzMono(audioUrl: string): Promise<Float32A
   }
   const arrayBuffer = await response.arrayBuffer()
 
-  const globalScope = typeof window !== 'undefined' ? window : (globalThis as unknown as Window)
-  const AudioContextClass =
-    globalScope.AudioContext || (globalScope as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+  type AudioWindow = {
+    AudioContext?: typeof AudioContext
+    webkitAudioContext?: typeof AudioContext
+    OfflineAudioContext?: typeof OfflineAudioContext
+    webkitOfflineAudioContext?: typeof OfflineAudioContext
+  }
+  const globalScope = (typeof window !== 'undefined' ? window : globalThis) as unknown as AudioWindow
+  const AudioContextClass = globalScope.AudioContext || globalScope.webkitAudioContext
   if (!AudioContextClass) {
     throw new Error('Navegador não suporta AudioContext para decodificação.')
   }
@@ -34,9 +39,7 @@ export async function decodeAudioTo16kHzMono(audioUrl: string): Promise<Float32A
   const targetLength = Math.max(1, Math.round(duration * targetSampleRate))
 
   // Se o navegador suporta OfflineAudioContext, usamos para reamostragem perfeita e rápida
-  const OfflineAudioContextClass =
-    globalScope.OfflineAudioContext ||
-    (globalScope as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext
+  const OfflineAudioContextClass = globalScope.OfflineAudioContext || globalScope.webkitOfflineAudioContext
 
   if (OfflineAudioContextClass) {
     const offlineCtx = new OfflineAudioContextClass(1, targetLength, targetSampleRate)

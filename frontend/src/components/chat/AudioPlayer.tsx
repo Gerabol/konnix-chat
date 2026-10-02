@@ -83,12 +83,13 @@ export function AudioPlayer({
     return () => window.removeEventListener('konnix:audio-play', onAnyAudioPlay)
   }, [])
 
-  // Sincroniza a taxa de reprodução
+  // Sincroniza a taxa de reprodução com preservação de tom vocal
   const handleSpeedCycle = useCallback(() => {
     const nextRate = cyclePlaybackRate(playbackRate)
     setPlaybackRate(nextRate)
     if (audioRef.current) {
       audioRef.current.playbackRate = nextRate
+      audioRef.current.preservesPitch = true
     }
   }, [playbackRate])
 
@@ -98,6 +99,7 @@ export function AudioPlayer({
 
     if (audio.paused) {
       audio.playbackRate = playbackRate
+      audio.preservesPitch = true
       audio.play().catch(() => {
         setIsPlaying(false)
       })
@@ -158,22 +160,42 @@ export function AudioPlayer({
     const audio = audioRef.current
     if (!audio) return
 
-    const handleLoadedMetadata = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        setDuration(audio.duration)
+    const syncDuration = () => {
+      const d = audio.duration
+      if (Number.isFinite(d) && d > 0) {
+        setDuration(d)
+      } else if (d === Infinity) {
+        // Áudios legados em WebM gravados via MediaRecorder têm duration === Infinity no Chrome
+        // Força a leitura do final do stream para recuperar a duração real
+        const origTime = audio.currentTime
+        audio.currentTime = 1e101
+        const onSeekDone = () => {
+          audio.removeEventListener('timeupdate', onSeekDone)
+          audio.currentTime = origTime
+          if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            setDuration(audio.duration)
+          }
+        }
+        audio.addEventListener('timeupdate', onSeekDone)
       }
       audio.playbackRate = playbackRate
+      audio.preservesPitch = true
     }
 
     const handleTimeUpdate = () => {
       if (!isSeeking) {
         setCurrentTime(audio.currentTime)
       }
+      // Se a duração ainda não tiver sido estabelecida, atualiza com a duração disponível
+      if (Number.isFinite(audio.duration) && audio.duration > 0 && duration <= 0) {
+        setDuration(audio.duration)
+      }
     }
 
     const handlePlay = () => {
       setIsPlaying(true)
       audio.playbackRate = playbackRate
+      audio.preservesPitch = true
       window.dispatchEvent(
         new CustomEvent('konnix:audio-play', { detail: { id: playerIdRef.current } }),
       )
@@ -183,24 +205,31 @@ export function AudioPlayer({
     const handleEnded = () => {
       setIsPlaying(false)
       setCurrentTime(0)
+      if (duration <= 0 && audio.currentTime > 0) {
+        setDuration(audio.currentTime)
+      }
     }
 
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata)
-    audio.addEventListener('durationchange', handleLoadedMetadata)
+    audio.addEventListener('loadedmetadata', syncDuration)
+    audio.addEventListener('durationchange', syncDuration)
+    audio.addEventListener('canplay', syncDuration)
+    audio.addEventListener('canplaythrough', syncDuration)
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('play', handlePlay)
     audio.addEventListener('pause', handlePause)
     audio.addEventListener('ended', handleEnded)
 
     return () => {
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
-      audio.removeEventListener('durationchange', handleLoadedMetadata)
+      audio.removeEventListener('loadedmetadata', syncDuration)
+      audio.removeEventListener('durationchange', syncDuration)
+      audio.removeEventListener('canplay', syncDuration)
+      audio.removeEventListener('canplaythrough', syncDuration)
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('ended', handleEnded)
     }
-  }, [isSeeking, playbackRate])
+  }, [isSeeking, playbackRate, duration])
 
   // Porcentagem calculada para preencher a trilha visual do scrubber
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0
