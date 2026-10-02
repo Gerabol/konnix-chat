@@ -121,7 +121,7 @@ export function AudioPlayer({
         aria-hidden="true"
       />
 
-      {/* Avatar do autor com sobreposição de velocidade quando tocando */}
+      {/* Avatar do autor */}
       <div className="audio-player-avatar-wrap">
         <AvatarImage
           path={authorAvatarPath}
@@ -129,18 +129,6 @@ export function AudioPlayer({
           fallback={<span className="audio-player-avatar fallback">{initials(authorName || 'sistema')}</span>}
           alt={authorName}
         />
-        {/* Badge sobreposto exibido quando o áudio está em reprodução ou pausado após início */}
-        {(isPlaying || currentTime > 0) && (
-          <button
-            type="button"
-            className="audio-speed-overlay"
-            onClick={handleSpeedCycle}
-            title={`Velocidade ${playbackRate}x (clique para alterar)`}
-            aria-label={`Velocidade ${playbackRate}x. Clique para alternar para ${cyclePlaybackRate(playbackRate)}x`}
-          >
-            {playbackRate}x
-          </button>
-        )}
       </div>
 
       {/* Botão Play / Pause circular */}

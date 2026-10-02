@@ -3952,34 +3952,6 @@ button:disabled {
   border: 1px solid var(--konnix-border);
 }
 
-.audio-speed-overlay {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--konnix-primary);
-  color: var(--konnix-primary-contrast);
-  font-size: 0.72rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  border: 2px solid var(--konnix-bg);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
-  z-index: 2;
-  transition: transform 0.15s, filter 0.15s;
-}
-
-.audio-speed-overlay:hover {
-  transform: scale(1.1);
-  filter: brightness(1.1);
-}
 
 .audio-player-play-btn {
   flex: none;
