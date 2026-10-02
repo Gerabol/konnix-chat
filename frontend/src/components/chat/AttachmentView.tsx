@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, formatBytes } from '../../api'
+import { api, ApiError, formatBytes, userAvatarPath } from '../../api'
 import type { Attachment, Message } from '../../api'
 import { ImageLightbox } from '../modals/ImageLightbox'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
+import { AudioPlayer } from './AudioPlayer'
 
 export function attachmentExtension(att: Attachment): string {
   return att.originalName.split('.').pop()?.toLowerCase() ?? ''
@@ -29,7 +30,13 @@ export function attachmentIcon(att: Attachment, isImage: boolean, isAudio: boole
   return '📎'
 }
 
-export function AttachmentView({ msg }: { msg: Message }) {
+export function AttachmentView({
+  msg,
+  authorAvatarPath,
+}: {
+  msg: Message
+  authorAvatarPath?: string | null
+}) {
   const att = msg.attachment
   const isImage = !!att && att.mimeType.startsWith('image/')
   const isAudio = !!att && att.mimeType.startsWith('audio/')
@@ -125,18 +132,21 @@ export function AttachmentView({ msg }: { msg: Message }) {
   }
 
   if (isAudio) {
+    const avatarPath =
+      authorAvatarPath !== undefined
+        ? authorAvatarPath
+        : msg.userId
+        ? userAvatarPath(msg.userId)
+        : null
+
     return (
-      <div className="attachment-audio">
-        <span className="attachment-icon audio">🎵</span>
-        <div className="attachment-audio-body">
-          <strong>{att.originalName}</strong>
-          <audio controls preload="metadata" src={state.url} />
-          <div className="attachment-audio-meta">
-            <small>{formatBytes(att.size)}</small>
-            <a href={state.url} download={att.originalName} className="btn-link">Baixar áudio</a>
-          </div>
-        </div>
-      </div>
+      <AudioPlayer
+        src={state.url}
+        authorName={msg.username || 'sistema'}
+        authorAvatarPath={avatarPath}
+        fileSize={att.size}
+        fileName={att.originalName}
+      />
     )
   }
 

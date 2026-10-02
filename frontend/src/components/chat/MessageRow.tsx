@@ -83,6 +83,15 @@ function MessageRowComponent({
         {msg.editedAt && <em className="message-edited">Editada</em>}
       </span>
     ) : null
+  const authorAvatarPath = msg.userId
+    ? `${userAvatarPath(msg.userId)}${
+        isMine
+          ? `?v=${encodeURIComponent(myAvatarVersion)}`
+          : avatarVersions[msg.userId]
+          ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}`
+          : ''
+      }`
+    : null
   const [actionDismissed, setActionDismissed] = useState(false)
   const [mouseHovered, setMouseHovered] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
@@ -248,17 +257,7 @@ function MessageRowComponent({
           aria-label={`Abrir contato de ${msg.username || 'usuário'}`}
         >
           <AvatarImage
-            path={
-              msg.userId
-                ? `${userAvatarPath(msg.userId)}${
-                    isMine
-                      ? `?v=${encodeURIComponent(myAvatarVersion)}`
-                      : avatarVersions[msg.userId]
-                      ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}`
-                      : ''
-                  }`
-                : null
-            }
+            path={authorAvatarPath}
             className="msg-avatar"
             fallback={<span className="msg-avatar">{initials(msg.username || 'sistema')}</span>}
             alt={msg.username || 'sistema'}
@@ -343,7 +342,11 @@ function MessageRowComponent({
               </button>
             )}
             {messageAttachments.map((attachment) => (
-              <AttachmentView key={attachment.id} msg={{ ...msg, attachment }} />
+              <AttachmentView
+                key={attachment.id}
+                msg={{ ...msg, attachment }}
+                authorAvatarPath={authorAvatarPath}
+              />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
             {!msg.poll && msg.content && (
