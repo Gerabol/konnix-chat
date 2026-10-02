@@ -1,7 +1,8 @@
 import { pipeline, env, AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers'
 
-// Configura Transformers.js para ambiente web seguro
+// Configura Transformers.js para ambiente web seguro e ativa cache local no navegador
 env.allowLocalModels = false
+env.useBrowserCache = true
 
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null
 
@@ -10,8 +11,12 @@ async function getTranscriber(
 ): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!transcriberPromise) {
     transcriberPromise = (async () => {
-      // whisper-tiny multilíngue suporta português e tem download ultraleve
-      const pipe = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny', {
+      // whisper-base multilíngue: vocabulário superior, melhor precisão em português e salvo em cache local
+      const pipe = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
+        dtype: {
+          encoder_model: 'fp32',
+          decoder_model_merged: 'q4',
+        },
         progress_callback: (data: unknown) => {
           if (onProgress && typeof data === 'object' && data !== null) {
             const p = data as { status: string; progress?: number; file?: string }

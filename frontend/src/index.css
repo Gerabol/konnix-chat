@@ -21,6 +21,7 @@
   --konnix-primary: #5b4cf0;
   --konnix-primary-hover: #4b3cd8;
   --konnix-primary-deep: #3526ab;
+  --konnix-primary-contrast: #ffffff;
   --konnix-button: #5b4cf0;
   --konnix-accent: #22c7d6;
   --konnix-bg: #f7f8fc;
@@ -3973,7 +3974,7 @@ button:disabled {
   border-radius: 50%;
   border: none;
   background: var(--konnix-primary);
-  color: var(--konnix-primary-contrast);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3998,6 +3999,8 @@ button:disabled {
 
 .audio-player-icon {
   display: block;
+  color: #ffffff;
+  fill: #ffffff;
 }
 
 .audio-player-body {
