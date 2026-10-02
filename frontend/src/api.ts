@@ -304,8 +304,14 @@ async function request<T>(path: string, options: RequestInit = {}, bearerToken?:
       }
     }
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+      }
       const err = (body as { error?: { code?: string; message?: string } })?.error
       throw new ApiError(res.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? `Erro ${res.status}`)
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('konnix:network-activity'))
     }
     return (body as { data: T }).data
   } catch (err) {
@@ -337,6 +343,9 @@ async function fetchBlob(path: string): Promise<Blob> {
   try {
     const res = await fetch(`${apiBase()}${path}`, { headers, signal })
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+      }
       let message = `Erro ${res.status}`
       try {
         const body = (await res.json()) as { error?: { message?: string } }
@@ -345,6 +354,9 @@ async function fetchBlob(path: string): Promise<Blob> {
         /* mantém mensagem padrão */
       }
       throw new ApiError(res.status, 'FETCH_FAILED', message)
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('konnix:network-activity'))
     }
     return res.blob()
   } catch (err) {

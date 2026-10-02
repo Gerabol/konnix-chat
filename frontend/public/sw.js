@@ -2,12 +2,14 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v18';
+const VERSION = 'konnix-shell-v20';
 
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/icons/Konnix white.png',
+  '/icons/Konnix dark.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/maskable-512.png',
@@ -50,13 +52,34 @@ self.addEventListener('fetch', (event) => {
   }
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(VERSION).then((cache) => cache.put('/index.html', copy));
-          return response;
-        })
-        .catch(() => caches.match('/index.html'))
+      (async () => {
+        const timeoutPromise = new Promise((resolve) => {
+          setTimeout(resolve, 2500, null);
+        });
+
+        const networkPromise = fetch(request)
+          .then((response) => {
+            if (response && response.ok) {
+              const copy = response.clone();
+              caches.open(VERSION).then((cache) => cache.put('/index.html', copy));
+            }
+            return response;
+          })
+          .catch(() => null);
+
+        const winner = await Promise.race([networkPromise, timeoutPromise]);
+        if (winner) {
+          return winner;
+        }
+
+        const cached = await caches.match('/index.html');
+        if (cached) {
+          return cached;
+        }
+
+        const networkFallback = await networkPromise;
+        return networkFallback || Response.error();
+      })()
     );
     return;
   }
