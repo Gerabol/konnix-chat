@@ -14,6 +14,7 @@ import java.time.Instant;
 @Service
 public class SystemSettingService {
     public static final String READ_RECEIPTS_KEY = "read_receipts.enabled";
+    public static final String AUDIO_TRANSCRIPTION_KEY = "audio_transcription.enabled";
     public static final String APP_NAME_KEY = "app.name";
     public static final String MAX_UPLOAD_KEY = "app.max_upload_bytes";
 
@@ -37,6 +38,24 @@ public class SystemSettingService {
         SystemSetting setting = repository.findById(READ_RECEIPTS_KEY).orElseGet(() -> {
             SystemSetting created = new SystemSetting();
             created.setKey(READ_RECEIPTS_KEY);
+            return created;
+        });
+        setting.setBooleanValue(enabled);
+        setting.setUpdatedAt(Instant.now());
+        repository.save(setting);
+        return enabled;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean audioTranscriptionEnabled() {
+        return repository.findById(AUDIO_TRANSCRIPTION_KEY).map(SystemSetting::isBooleanValue).orElse(false);
+    }
+
+    @Transactional
+    public boolean setAudioTranscriptionEnabled(boolean enabled) {
+        SystemSetting setting = repository.findById(AUDIO_TRANSCRIPTION_KEY).orElseGet(() -> {
+            SystemSetting created = new SystemSetting();
+            created.setKey(AUDIO_TRANSCRIPTION_KEY);
             return created;
         });
         setting.setBooleanValue(enabled);

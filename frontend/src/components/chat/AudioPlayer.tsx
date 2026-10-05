@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { api } from '../../api'
 import { transcriptionService } from '../../services/transcriptionService'
 import { cyclePlaybackRate, formatAudioTime } from '../../utils/audioPlayer'
 import type { PlaybackRate } from '../../utils/audioPlayer'
@@ -28,6 +29,13 @@ export function AudioPlayer({
   const [playbackRate, setPlaybackRate] = useState<PlaybackRate>(1)
   const [isSeeking, setIsSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState(0)
+
+  // Controle da funcionalidade via configuração global do administrador
+  const [isTranscriptionEnabled, setIsTranscriptionEnabled] = useState(() => api.getAudioTranscriptionEnabled())
+
+  useEffect(() => {
+    return api.subscribeAudioTranscription(setIsTranscriptionEnabled)
+  }, [])
 
   // Estados da transcrição no cliente
   const [transcription, setTranscription] = useState<string | null>(() => {
@@ -309,7 +317,7 @@ export function AudioPlayer({
               {formatAudioTime(effectiveTime)} / {formatAudioTime(duration)}
             </span>
             <div className="audio-player-actions">
-              {transcribeState === 'idle' && (
+              {isTranscriptionEnabled && transcribeState === 'idle' && (
                 <>
                   <button
                     type="button"
@@ -347,7 +355,7 @@ export function AudioPlayer({
       </div>
 
       {/* Estado de carregamento da transcrição */}
-      {transcribeState === 'loading' && (
+      {isTranscriptionEnabled && transcribeState === 'loading' && (
         <div className="audio-transcription-status" role="status" aria-live="polite">
           <span className="audio-transcription-spinner" aria-hidden="true" />
           <span className="audio-transcription-status-text">{statusMessage || 'Transcrevendo áudio...'}</span>
@@ -355,7 +363,7 @@ export function AudioPlayer({
       )}
 
       {/* Estado de erro com opção de tentar novamente */}
-      {transcribeState === 'error' && (
+      {isTranscriptionEnabled && transcribeState === 'error' && (
         <div className="audio-transcription-error">
           <span className="audio-transcription-error-text">Não foi possível transcrever o áudio.</span>
           <button
@@ -369,7 +377,7 @@ export function AudioPlayer({
       )}
 
       {/* Caixa com o texto da transcrição */}
-      {transcribeState === 'done' && (
+      {isTranscriptionEnabled && transcribeState === 'done' && (
         <div className="audio-transcription-box">
           <div className="audio-transcription-header">
             <div className="audio-transcription-title-wrap">

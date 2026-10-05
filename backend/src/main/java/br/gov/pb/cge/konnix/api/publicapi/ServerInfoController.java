@@ -32,7 +32,8 @@ public class ServerInfoController {
                 "product", "Konnix Chat",
                 "version", "1.0.0",
                 "serverName", serverName,
-                "maxUploadBytes", settings.maxUploadBytes()
+                "maxUploadBytes", settings.maxUploadBytes(),
+                "audioTranscriptionEnabled", settingService.audioTranscriptionEnabled()
         ));
     }
 }

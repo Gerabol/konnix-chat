@@ -396,6 +396,7 @@ export function ChatView({
       .then((setting) => setReadReceiptsEnabled(setting.enabled))
       .catch(() => undefined)
     api.serverInfo().catch(() => undefined)
+    api.audioTranscriptionSetting().catch(() => undefined)
   }, [])
 
   const loadMore = useCallback(async () => {

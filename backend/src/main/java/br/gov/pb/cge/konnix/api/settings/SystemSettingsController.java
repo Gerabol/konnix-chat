@@ -32,4 +32,16 @@ public class SystemSettingsController {
             @Valid @RequestBody ReadReceiptSettingRequest request) {
         return ApiResponse.ok(Map.of("enabled", settingService.setReadReceiptsEnabled(request.enabled())));
     }
+
+    @GetMapping("/audio-transcription")
+    public ApiResponse<Map<String, Boolean>> audioTranscription() {
+        return ApiResponse.ok(Map.of("enabled", settingService.audioTranscriptionEnabled()));
+    }
+
+    @PutMapping("/audio-transcription")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Boolean>> updateAudioTranscription(
+            @Valid @RequestBody AudioTranscriptionSettingRequest request) {
+        return ApiResponse.ok(Map.of("enabled", settingService.setAudioTranscriptionEnabled(request.enabled())));
+    }
 }

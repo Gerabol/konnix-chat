@@ -194,11 +194,13 @@ export type MessageTimeSeriesResponse = {
 }
 
 export type AppSettings = { name: string; maxUploadBytes: number }
-export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number }
+export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number; audioTranscriptionEnabled?: boolean }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 62914560
 let cachedMaxUploadBytes: number = DEFAULT_MAX_UPLOAD_BYTES
+let cachedAudioTranscriptionEnabled = false
+const audioTranscriptionSubscribers = new Set<(enabled: boolean) => void>()
 
 export function formatUploadSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -553,10 +555,27 @@ export const api = {
       cachedMaxUploadBytes = bytes
     }
   },
+  getAudioTranscriptionEnabled() {
+    return cachedAudioTranscriptionEnabled
+  },
+  setAudioTranscriptionEnabled(enabled: boolean) {
+    cachedAudioTranscriptionEnabled = enabled
+    audioTranscriptionSubscribers.forEach((cb) => cb(enabled))
+  },
+  subscribeAudioTranscription(callback: (enabled: boolean) => void) {
+    audioTranscriptionSubscribers.add(callback)
+    callback(cachedAudioTranscriptionEnabled)
+    return () => {
+      audioTranscriptionSubscribers.delete(callback)
+    }
+  },
   async serverInfo() {
     const info = await request<ServerInfo>('/api/public/server-info')
     if (typeof info.maxUploadBytes === 'number' && info.maxUploadBytes > 0) {
       cachedMaxUploadBytes = info.maxUploadBytes
+    }
+    if (typeof info.audioTranscriptionEnabled === 'boolean') {
+      api.setAudioTranscriptionEnabled(info.audioTranscriptionEnabled)
     }
     return info
   },
@@ -645,6 +664,21 @@ export const api = {
     return request<{ enabled: boolean }>('/api/v1/settings/read-receipts', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
+    })
+  },
+  audioTranscriptionSetting() {
+    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription').then((res) => {
+      api.setAudioTranscriptionEnabled(res.enabled)
+      return res
+    })
+  },
+  setAudioTranscriptionSetting(enabled: boolean) {
+    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }).then((res) => {
+      api.setAudioTranscriptionEnabled(res.enabled)
+      return res
     })
   },
   sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
