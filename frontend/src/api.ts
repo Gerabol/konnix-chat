@@ -1,3 +1,5 @@
+import { shouldDispatchUnauthorized } from './utils/authEvents.ts'
+
 export type AccountStatus = 'ACTIVE' | 'READ_ONLY' | 'DISABLED'
 
 export type BatchUserCreateResult = {
@@ -194,11 +196,13 @@ export type MessageTimeSeriesResponse = {
 }
 
 export type AppSettings = { name: string; maxUploadBytes: number }
-export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number }
+export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number; audioTranscriptionEnabled?: boolean }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 62914560
 let cachedMaxUploadBytes: number = DEFAULT_MAX_UPLOAD_BYTES
+let cachedAudioTranscriptionEnabled = false
+const audioTranscriptionSubscribers = new Set<(enabled: boolean) => void>()
 
 export function formatUploadSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -307,7 +311,9 @@ async function request<T>(path: string, options: RequestInit = {}, bearerToken?:
     }
     if (!res.ok) {
       if (res.status === 401 && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+        if (shouldDispatchUnauthorized(path)) {
+          window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+        }
       }
       const err = (body as { error?: { code?: string; message?: string } })?.error
       throw new ApiError(res.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? `Erro ${res.status}`)
@@ -377,8 +383,8 @@ export const api = {
       body: JSON.stringify({ username, password }),
     })
   },
-  logout() {
-    return request<void>('/api/v1/auth/logout', { method: 'POST' })
+  logout(token?: string) {
+    return request<void>('/api/v1/auth/logout', { method: 'POST' }, token)
   },
   me() {
     return request<User>('/api/v1/auth/me')
@@ -553,10 +559,27 @@ export const api = {
       cachedMaxUploadBytes = bytes
     }
   },
+  getAudioTranscriptionEnabled() {
+    return cachedAudioTranscriptionEnabled
+  },
+  setAudioTranscriptionEnabled(enabled: boolean) {
+    cachedAudioTranscriptionEnabled = enabled
+    audioTranscriptionSubscribers.forEach((cb) => cb(enabled))
+  },
+  subscribeAudioTranscription(callback: (enabled: boolean) => void) {
+    audioTranscriptionSubscribers.add(callback)
+    callback(cachedAudioTranscriptionEnabled)
+    return () => {
+      audioTranscriptionSubscribers.delete(callback)
+    }
+  },
   async serverInfo() {
     const info = await request<ServerInfo>('/api/public/server-info')
     if (typeof info.maxUploadBytes === 'number' && info.maxUploadBytes > 0) {
       cachedMaxUploadBytes = info.maxUploadBytes
+    }
+    if (typeof info.audioTranscriptionEnabled === 'boolean') {
+      api.setAudioTranscriptionEnabled(info.audioTranscriptionEnabled)
     }
     return info
   },
@@ -647,14 +670,26 @@ export const api = {
       body: JSON.stringify({ enabled }),
     })
   },
-  transcriptionSetting() {
-    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription')
+  audioTranscriptionSetting() {
+    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription').then((res) => {
+      api.setAudioTranscriptionEnabled(res.enabled)
+      return res
+    })
   },
-  setTranscriptionSetting(enabled: boolean) {
+  setAudioTranscriptionSetting(enabled: boolean) {
     return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
+    }).then((res) => {
+      api.setAudioTranscriptionEnabled(res.enabled)
+      return res
     })
+  },
+  transcriptionSetting() {
+    return this.audioTranscriptionSetting()
+  },
+  setTranscriptionSetting(enabled: boolean) {
+    return this.setAudioTranscriptionSetting(enabled)
   },
   sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
     return request<Message>(`/api/v1/rooms/${roomId}/messages`, {
@@ -792,11 +827,11 @@ export const api = {
       body: JSON.stringify(subscription),
     })
   },
-  pushUnsubscribe(endpoint: string) {
+  pushUnsubscribe(endpoint: string, token?: string) {
     return request<void>('/api/v1/push/unsubscribe', {
       method: 'DELETE',
       body: JSON.stringify({ endpoint }),
-    })
+    }, token)
   },
 }
 

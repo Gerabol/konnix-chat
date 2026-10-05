@@ -370,6 +370,21 @@ class AuthSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void logoutSemTokenRetornaOk() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    void logoutIdempotenteComTokenInvalidoRetornaOk() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Bearer token-invalido-inexistente"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
     private String login(String username, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

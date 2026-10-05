@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { api, getAuthToken, setActiveServer, setAuthToken } from './api'
+import { ApiError, api, getAuthToken, setActiveServer, setAuthToken } from './api'
 import type { PresenceStatus, Theme, User } from './api'
 import ServerSetup from './desktop/servers/ServerSetup'
 import { activateDesktopServer } from './desktop/servers/serverManager'
@@ -52,6 +52,7 @@ export default function App() {
     return token ? ({ token, user: null as unknown as User } as Session) : null
   })
   const meRequestRef = useRef<string | null>(null)
+  const isLoggingOutRef = useRef(false)
 
   useEffect(() => {
     let dispose: (() => void) | undefined
@@ -88,9 +89,12 @@ export default function App() {
         applyTheme(currentTheme)
         setSession({ token, user: preservedUser })
       })
-      .catch(() => {
-        setAuthToken(null)
-        setSession(null)
+      .catch((err: unknown) => {
+        meRequestRef.current = null
+        if (err instanceof ApiError && err.status === 401) {
+          setAuthToken(null)
+          setSession(null)
+        }
       })
       .finally(() => {
         setAuthInitializing(false)
@@ -114,29 +118,42 @@ export default function App() {
   }, [activeDesktopId, desktopServers])
 
   const handleLogout = useCallback(() => {
-    void api.logout().catch(() => undefined)
+    if (isLoggingOutRef.current) return
+    isLoggingOutRef.current = true
+
+    const currentToken = getAuthToken()
+
+    setAuthToken(null)
+    clearCachedTheme()
+    applyTheme('DEFAULT')
+    setSession(null)
+
+    if (currentToken) {
+      void api.logout(currentToken).catch(() => undefined)
+    }
+
     void (async () => {
       try {
         if ('serviceWorker' in navigator) {
           const reg = await navigator.serviceWorker.ready
           const sub = await reg.pushManager.getSubscription()
           if (sub) {
-            try {
-              await api.pushUnsubscribe(sub.endpoint)
-            } catch {
-              /* best-effort */
+            if (currentToken) {
+              try {
+                await api.pushUnsubscribe(sub.endpoint, currentToken)
+              } catch {
+                /* best-effort */
+              }
             }
             await sub.unsubscribe().catch(() => undefined)
           }
         }
       } catch {
         /* best-effort */
+      } finally {
+        isLoggingOutRef.current = false
       }
     })()
-    setAuthToken(null)
-    clearCachedTheme()
-    applyTheme('DEFAULT')
-    setSession(null)
   }, [])
 
   useEffect(() => {

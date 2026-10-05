@@ -401,6 +401,7 @@ export function ChatView({
       .then((setting) => setTranscriptionEnabled(setting.enabled))
       .catch(() => undefined)
     api.serverInfo().catch(() => undefined)
+    api.audioTranscriptionSetting().catch(() => undefined)
   }, [])
 
   const loadMore = useCallback(async () => {
