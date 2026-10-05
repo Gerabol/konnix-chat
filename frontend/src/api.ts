@@ -1,3 +1,5 @@
+import { shouldDispatchUnauthorized } from './utils/authEvents.ts'
+
 export type AccountStatus = 'ACTIVE' | 'READ_ONLY' | 'DISABLED'
 
 export type BatchUserCreateResult = {
@@ -309,7 +311,9 @@ async function request<T>(path: string, options: RequestInit = {}, bearerToken?:
     }
     if (!res.ok) {
       if (res.status === 401 && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+        if (shouldDispatchUnauthorized(path)) {
+          window.dispatchEvent(new CustomEvent('konnix:auth-unauthorized'))
+        }
       }
       const err = (body as { error?: { code?: string; message?: string } })?.error
       throw new ApiError(res.status, err?.code ?? 'REQUEST_FAILED', err?.message ?? `Erro ${res.status}`)
@@ -379,8 +383,8 @@ export const api = {
       body: JSON.stringify({ username, password }),
     })
   },
-  logout() {
-    return request<void>('/api/v1/auth/logout', { method: 'POST' })
+  logout(token?: string) {
+    return request<void>('/api/v1/auth/logout', { method: 'POST' }, token)
   },
   me() {
     return request<User>('/api/v1/auth/me')
@@ -817,11 +821,11 @@ export const api = {
       body: JSON.stringify(subscription),
     })
   },
-  pushUnsubscribe(endpoint: string) {
+  pushUnsubscribe(endpoint: string, token?: string) {
     return request<void>('/api/v1/push/unsubscribe', {
       method: 'DELETE',
       body: JSON.stringify({ endpoint }),
-    })
+    }, token)
   },
 }
 

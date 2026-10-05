@@ -36,7 +36,9 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(BEARER_PREFIX) && SecurityContextHolder.getContext().getAuthentication() == null) {
             String rawToken = header.substring(BEARER_PREFIX.length());
-            tokenService.validate(rawToken).ifPresent(user -> {
+            var userOpt = tokenService.validate(rawToken);
+            if (userOpt.isPresent()) {
+                var user = userOpt.get();
                 List<GrantedAuthority> authorities = user.getRoles().stream()
                         .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
                         .map(GrantedAuthority.class::cast)
@@ -47,20 +49,17 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(principal, rawToken, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                if (user.isPasswordChangeRequired() && !allowedDuringRequiredChange(request.getRequestURI())) {
-                    try {
-                        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                        response.setContentType("application/json");
-                        objectMapper.writeValue(response.getWriter(), ApiErrorResponse.of(
-                                "PASSWORD_CHANGE_REQUIRED", "Defina uma nova senha antes de acessar"));
-                    } catch (IOException ignored) {
-                        /* resposta de bloqueio já iniciada */
-                    }
-                }
-            });
-        }
 
-        if (response.isCommitted()) return;
+                String servletPath = request.getServletPath();
+                if (user.isPasswordChangeRequired() && !allowedDuringRequiredChange(servletPath)) {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json");
+                    objectMapper.writeValue(response.getWriter(), ApiErrorResponse.of(
+                            "PASSWORD_CHANGE_REQUIRED", "Defina uma nova senha antes de acessar"));
+                    return;
+                }
+            }
+        }
 
         filterChain.doFilter(request, response);
     }
