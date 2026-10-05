@@ -49,6 +49,7 @@ export function ChatView({
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string; anchor: 'content' | 'modal' } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -394,6 +395,10 @@ export function ChatView({
     api
       .readReceiptSetting()
       .then((setting) => setReadReceiptsEnabled(setting.enabled))
+      .catch(() => undefined)
+    api
+      .transcriptionSetting()
+      .then((setting) => setTranscriptionEnabled(setting.enabled))
       .catch(() => undefined)
     api.serverInfo().catch(() => undefined)
   }, [])
@@ -1415,6 +1420,7 @@ export function ChatView({
               onStartDm={startDirectConversation}
               notify={showToast}
               readReceiptsEnabled={readReceiptsEnabled}
+                  transcriptionEnabled={transcriptionEnabled}
               onSearchResult={addSearchResult}
               onPollUpdated={addSearchResult}
               onRoomUpdated={(updated) =>

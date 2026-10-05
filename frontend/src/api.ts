@@ -647,6 +647,15 @@ export const api = {
       body: JSON.stringify({ enabled }),
     })
   },
+  transcriptionSetting() {
+    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription')
+  },
+  setTranscriptionSetting(enabled: boolean) {
+    return request<{ enabled: boolean }>('/api/v1/settings/audio-transcription', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    })
+  },
   sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
     return request<Message>(`/api/v1/rooms/${roomId}/messages`, {
       method: 'POST',

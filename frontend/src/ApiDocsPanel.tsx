@@ -53,7 +53,7 @@ function exampleResponse(endpoint: ApiEndpoint): unknown {
   if (endpoint.path.includes('/members') && endpoint.method === 'GET') return []
   if (endpoint.path.includes('/audit')) return { items: [], page: 0, size: 25, totalItems: 0, totalPages: 0 }
   if (endpoint.path.includes('/monitoring/metrics')) return { totalFiles: 12, totalFileBytes: 5242880, totalMessages: 18492, totalUsers: 42, activeUsers: 18, readOnlyUsers: 2, disabledUsers: 1, totalGroups: 8, totalChannels: 5, dailyLogins: 21, activeSessions: 12, totalAuditEvents: 380, databaseSizeBytes: 104857600, activity: [] }
-  if (endpoint.path.includes('/settings/read-receipts')) return { enabled: true }
+  if (endpoint.path.includes('/settings/read-receipts') || endpoint.path.includes('/settings/audio-transcription')) return { enabled: true }
   if (endpoint.path.includes('/push/public-key')) return { publicKey: 'BExampleVapidPublicKey' }
   if (endpoint.path.includes('/push/')) return null
   if (endpoint.path.includes('/polls/') || endpoint.path.includes('/polls')) return { id: 'msg_01h2konnix', messageType: 'POLL', content: null, poll: { id: 'poll_01h2konnix', question: 'Qual horario funciona melhor?', options: [] } }
@@ -143,7 +143,9 @@ const modules: ApiModule[] = [
       { method: 'POST', path: '/api/v1/push/subscribe', title: 'Inscreve push', description: 'Registra uma assinatura de notificações.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('endpoint', 'String', true, 'Endpoint do PushSubscription.'), field('p256dh', 'String', true, 'Chave pública.'), field('auth', 'String', true, 'Segredo da assinatura.')], response: 'null', statuses: commonErrors },
       { method: 'DELETE', path: '/api/v1/push/unsubscribe', title: 'Remove inscrição push', description: 'Remove uma assinatura de notificações.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('endpoint', 'String', true, 'Endpoint a remover.')], response: 'null', statuses: commonErrors },
       { method: 'GET', path: '/api/v1/settings/read-receipts', title: 'Consulta confirmação de leitura', description: 'Consulta a configuração de confirmação de leitura.', auth: 'Obrigatória', permission: 'Usuário autenticado', response: '{ enabled: Boolean }', statuses: commonErrors },
-      { method: 'PUT', path: '/api/v1/settings/read-receipts', title: 'Atualiza confirmação de leitura', description: 'Ativa ou desativa confirmações de leitura.', auth: 'Obrigatória', permission: 'Usuário autenticado', body: [field('enabled', 'Boolean', true, 'Configuração desejada.')], response: '{ enabled: Boolean }', statuses: commonErrors },
+      { method: 'PUT', path: '/api/v1/settings/read-receipts', title: 'Atualiza confirmação de leitura', description: 'Ativa ou desativa confirmações de leitura.', auth: 'Obrigatória', permission: 'ADMIN', body: [field('enabled', 'Boolean', true, 'Configuração desejada.')], response: '{ enabled: Boolean }', statuses: commonErrors },
+      { method: 'GET', path: '/api/v1/settings/audio-transcription', title: 'Consulta transcrição de áudio', description: 'Consulta se a transcrição de áudio está disponível para os players.', auth: 'Obrigatória', permission: 'Usuário autenticado', response: '{ enabled: Boolean }', statuses: commonErrors },
+      { method: 'PUT', path: '/api/v1/settings/audio-transcription', title: 'Atualiza transcrição de áudio', description: 'Ativa ou desativa o botão de transcrição nos players de áudio. A transcrição roda no navegador via Whisper.', auth: 'Obrigatória', permission: 'ADMIN', body: [field('enabled', 'Boolean', true, 'Configuração desejada.')], response: '{ enabled: Boolean }', statuses: commonErrors },
     ],
   },
   {
