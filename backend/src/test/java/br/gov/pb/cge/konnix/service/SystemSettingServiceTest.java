@@ -36,12 +36,12 @@ class SystemSettingServiceTest {
     }
 
     @Test
-    void audioTranscriptionEnabled_defaultToTrueWhenNotFound() {
+    void audioTranscriptionEnabled_defaultToFalseWhenNotFound() {
         when(repository.findById(SystemSettingService.AUDIO_TRANSCRIPTION_KEY)).thenReturn(Optional.empty());
 
         boolean result = service.audioTranscriptionEnabled();
 
-        assertThat(result).isTrue();
+        assertThat(result).isFalse();
     }
 
     @Test

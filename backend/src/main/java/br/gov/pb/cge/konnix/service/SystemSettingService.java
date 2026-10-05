@@ -48,7 +48,7 @@ public class SystemSettingService {
 
     @Transactional(readOnly = true)
     public boolean audioTranscriptionEnabled() {
-        return repository.findById(AUDIO_TRANSCRIPTION_KEY).map(SystemSetting::isBooleanValue).orElse(true);
+        return repository.findById(AUDIO_TRANSCRIPTION_KEY).map(SystemSetting::isBooleanValue).orElse(false);
     }
 
     @Transactional
