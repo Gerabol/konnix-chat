@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { isWhiteSidebarLogoTheme, readThemeCookie, cachedTheme } from '../../utils/theme'
+import { isDarkTheme, readThemeCookie, cachedTheme } from '../../utils/theme'
 import type { Theme } from '../../api'
 
 export interface AppLoadingScreenProps {
@@ -23,7 +23,7 @@ export function AppLoadingScreen({
   const [showReload, setShowReload] = useState(false)
 
   const currentTheme = (readThemeCookie() || cachedTheme() || 'DEFAULT') as Theme
-  const isDark = isWhiteSidebarLogoTheme(currentTheme)
+  const isDark = isDarkTheme(currentTheme)
   const logoSrc = isDark ? '/icons/Konnix dark.png' : '/icons/Konnix white.png'
 
   useEffect(() => {
