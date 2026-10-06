@@ -120,7 +120,9 @@ class TokenAuthenticationFilterTest {
         user.setUsername("testuser");
         user.setName("Test User");
         user.setPasswordChangeRequired(required);
-        user.setRoles(Set.of(new Role("USER")));
+        Role role = new Role();
+        role.setName("USER");
+        user.setRoles(Set.of(role));
         return user;
     }
 }

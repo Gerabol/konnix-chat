@@ -29,6 +29,12 @@ public class Role {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    public Role() {}
+
+    public Role(String name) {
+        this.name = name;
+    }
+
     public UUID getId() {
         return id;
     }
