@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LoginAttemptService {
 
     static final int MAX_ATTEMPTS = 5;
-    static final long WINDOW_SECONDS = 900;
+    static final long WINDOW_SECONDS = 300;
     static final int PURGE_THRESHOLD = 10_000;
 
     private static final class Attempts {
