@@ -21,7 +21,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -56,11 +55,7 @@ public class AdminMonitoringService {
 
     @Transactional(readOnly = true)
     public AuditOptionsResponse auditOptions() {
-        var users = userRepository.findAll().stream()
-                .sorted(Comparator.comparing(user -> user.getName() == null ? user.getUsername() : user.getName(),
-                        String.CASE_INSENSITIVE_ORDER))
-                .map(user -> new AuditOptionsResponse.UserOption(user.getId(), user.getUsername(), user.getName()))
-                .toList();
+        var users = userRepository.findAuditUserOptions();
         var actions = auditLogRepository.findDistinctActionByOrderByActionAsc().stream()
                 .filter(Objects::nonNull)
                 .toList();

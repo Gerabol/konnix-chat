@@ -50,6 +50,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     Page<User> search(@Param("query") String query, Pageable pageable);
 
+    @Query("""
+            select new br.gov.pb.cge.konnix.api.admin.dto.AuditOptionsResponse$UserOption(u.id, u.username, u.name)
+            from User u
+            order by lower(coalesce(u.name, u.username)) asc
+            """)
+    List<br.gov.pb.cge.konnix.api.admin.dto.AuditOptionsResponse.UserOption> findAuditUserOptions();
+
     long countByActiveTrueAndRoles_Name(String roleName);
 
     long countByAccountStatus(String accountStatus);

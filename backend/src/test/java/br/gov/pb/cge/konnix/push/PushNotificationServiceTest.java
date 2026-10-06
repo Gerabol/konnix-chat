@@ -92,6 +92,21 @@ class PushNotificationServiceTest {
     }
 
     @Test
+    void calculaUnreadCountUmaVezPorUsuarioComVariosDispositivos() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        PushSubscription phone = subscription(otherId, "https://push.example.com/celular");
+        PushSubscription desktop = subscription(otherId, "https://push.example.com/desktop");
+        when(repository.findByRoomId(any())).thenReturn(List.of(phone, desktop));
+        when(messageRepository.countTotalUnreadByUserId(otherId)).thenReturn(4L);
+
+        service.notifyNewMessage(UUID.randomUUID(), message(UUID.randomUUID(), "carlos", "olá"), "Geral");
+
+        verify(messageRepository, times(1)).countTotalUnreadByUserId(otherId);
+        verify(sender).send(eq(phone), org.mockito.ArgumentMatchers.contains("\"unreadCount\":4"));
+        verify(sender).send(eq(desktop), org.mockito.ArgumentMatchers.contains("\"unreadCount\":4"));
+    }
+
+    @Test
     void subscriptionInvalida410Removida() throws Exception {
         UUID otherId = UUID.randomUUID();
         PushSubscription sub = subscription(otherId, "https://push.example.com/gone");
