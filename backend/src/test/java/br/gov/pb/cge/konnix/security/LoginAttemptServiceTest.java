@@ -31,23 +31,12 @@ class LoginAttemptServiceTest {
     }
 
     @Test
-    void bloqueiaIpQueFalhaComVariosUsuariosDiferentes() {
-        for (int i = 0; i < LoginAttemptService.MAX_ATTEMPTS_PER_IP; i++) {
-            service.registerFailure("usuario" + i);
-            service.registerIpFailure("10.0.0.9");
+    void bloqueioDeUmUsuarioNaoAfetaOutros() {
+        for (int i = 0; i < LoginAttemptService.MAX_ATTEMPTS; i++) {
+            service.registerFailure("ana");
         }
 
-        assertThat(service.isIpBlocked("10.0.0.9")).isTrue();
-        assertThat(service.isIpBlocked("10.0.0.10")).isFalse();
-        assertThat(service.isBlocked("usuario0")).isFalse();
-    }
-
-    @Test
-    void ipNaoBloqueiaAbaixoDoLimite() {
-        for (int i = 0; i < LoginAttemptService.MAX_ATTEMPTS_PER_IP - 1; i++) {
-            service.registerIpFailure("10.0.0.9");
-        }
-
-        assertThat(service.isIpBlocked("10.0.0.9")).isFalse();
+        assertThat(service.isBlocked("ana")).isTrue();
+        assertThat(service.isBlocked("bruno")).isFalse();
     }
 }
