@@ -11,6 +11,7 @@ export interface AudioPlayerProps {
   authorName: string
   authorAvatarPath: string | null
   fileName?: string
+  transcriptionEnabled?: boolean
 }
 
 type TranscribeState = 'idle' | 'loading' | 'done' | 'error'
@@ -20,6 +21,7 @@ export function AudioPlayer({
   authorName,
   authorAvatarPath,
   fileName = 'audio.mp3',
+  transcriptionEnabled = true,
 }: AudioPlayerProps) {
   const playerIdRef = useRef<string>(Math.random().toString(36).slice(2, 9))
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -317,7 +319,7 @@ export function AudioPlayer({
               {formatAudioTime(effectiveTime)} / {formatAudioTime(duration)}
             </span>
             <div className="audio-player-actions">
-              {isTranscriptionEnabled && transcribeState === 'idle' && (
+              {(transcriptionEnabled ?? isTranscriptionEnabled) && isTranscriptionEnabled && transcribeState === 'idle' && (
                 <>
                   <button
                     type="button"

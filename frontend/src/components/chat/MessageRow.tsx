@@ -31,6 +31,7 @@ export interface MessageRowProps {
   highlighted: boolean
   onJumpToQuoted: (messageId: string) => void
   readReceiptsEnabled: boolean
+  transcriptionEnabled: boolean
   onShowReads: (msgId: string) => void
   onVotePoll: (msg: Message, optionId: string) => void
   canPin?: boolean
@@ -65,6 +66,7 @@ function MessageRowComponent({
   highlighted,
   onJumpToQuoted,
   readReceiptsEnabled,
+  transcriptionEnabled,
   onShowReads,
   onVotePoll,
   canPin,
@@ -348,6 +350,7 @@ function MessageRowComponent({
                 key={attachment.id}
                 msg={{ ...msg, attachment }}
                 authorAvatarPath={authorAvatarPath}
+                transcriptionEnabled={transcriptionEnabled}
               />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
