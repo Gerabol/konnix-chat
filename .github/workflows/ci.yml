@@ -79,6 +79,11 @@ jobs:
         run: |
           npm ci --legacy-peer-deps
 
+      - name: Executar Testes Unitários do Frontend
+        working-directory: ./frontend
+        run: |
+          npm test
+
       - name: Verificar Tipagem e Build de Produção
         working-directory: ./frontend
         run: |

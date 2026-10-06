@@ -50,8 +50,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                         new UsernamePasswordAuthenticationToken(principal, rawToken, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                String servletPath = request.getServletPath();
-                if (user.isPasswordChangeRequired() && !allowedDuringRequiredChange(servletPath)) {
+                if (user.isPasswordChangeRequired() && !isAllowedDuringRequiredChange(request)) {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     response.setContentType("application/json");
                     objectMapper.writeValue(response.getWriter(), ApiErrorResponse.of(
@@ -64,9 +63,17 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean allowedDuringRequiredChange(String path) {
-        return path.equals("/api/v1/auth/me")
-                || path.equals("/api/v1/auth/logout")
-                || path.equals("/api/v1/auth/change-required-password");
+    private boolean isAllowedDuringRequiredChange(HttpServletRequest request) {
+        return isAllowedPath(request.getRequestURI()) || isAllowedPath(request.getServletPath());
+    }
+
+    private boolean isAllowedPath(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        String cleanPath = path.split("\\?")[0];
+        return cleanPath.endsWith("/api/v1/auth/me")
+                || cleanPath.endsWith("/api/v1/auth/logout")
+                || cleanPath.endsWith("/api/v1/auth/change-required-password");
     }
 }

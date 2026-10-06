@@ -1417,7 +1417,7 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
 function SettingsPanel({ notify }: { notify: (text: string) => void }) {
   const [settings, setSettings] = useState<AppSettings>({ name: 'Konnix Chat', maxUploadBytes: 62914560 })
   const [readEnabled, setReadEnabled] = useState(true)
-  const [transcriptionEnabled, setTranscriptionEnabled] = useState(false)
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(true)
   useEffect(() => { api.adminSettings().then(setSettings).catch(() => undefined) }, [])
   useEffect(() => { api.readReceiptSetting().then((setting) => setReadEnabled(setting.enabled)).catch(() => undefined) }, [])
   useEffect(() => { api.audioTranscriptionSetting().then((setting) => setTranscriptionEnabled(setting.enabled)).catch(() => undefined) }, [])

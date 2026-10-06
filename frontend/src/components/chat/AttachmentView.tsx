@@ -34,9 +34,11 @@ export function attachmentIcon(att: Attachment, isImage: boolean, isAudio: boole
 export function AttachmentView({
   msg,
   authorAvatarPath,
+  transcriptionEnabled = true,
 }: {
   msg: Message
   authorAvatarPath?: string | null
+  transcriptionEnabled?: boolean
 }) {
   const att = msg.attachment
   const isImage = !!att && att.mimeType.startsWith('image/')
@@ -148,6 +150,7 @@ export function AttachmentView({
         authorName={msg.username || 'sistema'}
         authorAvatarPath={avatarPath}
         fileName={att.originalName}
+        transcriptionEnabled={transcriptionEnabled}
       />
     )
   }

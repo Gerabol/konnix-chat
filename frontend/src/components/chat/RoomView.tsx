@@ -5,6 +5,12 @@ import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
+import {
+  classifyGrowth,
+  isNearBottom,
+  NEAR_BOTTOM_THRESHOLD_PX,
+} from '../../utils/messageScroll'
+import type { GrowthSource } from '../../utils/messageScroll'
 import type { DmPartner, PendingUploadItem, TypingUser } from '../../types'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
@@ -93,6 +99,7 @@ export interface RoomViewProps {
   onStartDm: (userId: string, partner?: Omit<DmPartner, 'userId'>) => void
   notify: (text: string, anchor?: 'content' | 'modal') => void
   readReceiptsEnabled: boolean
+  transcriptionEnabled: boolean
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
@@ -127,6 +134,7 @@ export function RoomView({
   onStartDm,
   notify,
   readReceiptsEnabled,
+  transcriptionEnabled,
   onSearchResult,
   onPollUpdated,
   onRoomUpdated,
@@ -500,20 +508,33 @@ export function RoomView({
       const boundMedia = new Set<HTMLElement>()
 
       const wasAtBottomBeforeGrowth = () => {
-        return container.scrollTop + container.clientHeight >= lastScrollHeight - 150
+        return container.scrollTop + container.clientHeight >= lastScrollHeight - NEAR_BOTTOM_THRESHOLD_PX
       }
 
-      const adjustIfNeeded = () => {
+      /**
+       * Mantém o usuário preso ao fim da conversa quando a lista cresce.
+       *
+       * `source` decide se o crescimento merece esse acompanhamento: conteúdo
+       * novo no fim (`tail`) e crescimento sem origem identificável
+       * (`desconhecido`) acompanham; expansão dentro de uma mensagem já existente
+       * (`message`, como abrir a transcrição de um áudio) não, para não arrancar o
+       * usuário do ponto que ele está lendo.
+       */
+      const adjustIfNeeded = (source: GrowthSource) => {
         if (!active || !container) return
         const newScrollHeight = container.scrollHeight
-        if (newScrollHeight > lastScrollHeight && wasAtBottomBeforeGrowth()) {
+        if (
+          newScrollHeight > lastScrollHeight &&
+          source !== 'message' &&
+          wasAtBottomBeforeGrowth()
+        ) {
           container.scrollTop = newScrollHeight
           wasNearBottomRef.current = true
         }
         lastScrollHeight = newScrollHeight
       }
 
-      const onMediaLoad = () => adjustIfNeeded()
+      const onMediaLoad = () => adjustIfNeeded('desconhecido')
 
       const bindMedia = (elements: HTMLElement[]) => {
         elements.forEach((el) => {
@@ -535,16 +556,18 @@ export function RoomView({
 
       const mutationObserver =
         typeof MutationObserver !== 'undefined'
-          ? new MutationObserver(() => {
+          ? new MutationObserver((records) => {
               if (!active) return
               scanAndBindMedia()
-              adjustIfNeeded()
+              adjustIfNeeded(classifyGrowth(records))
             })
           : null
       mutationObserver?.observe(container, { childList: true, subtree: true })
 
       const resizeObserver =
-        typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => adjustIfNeeded()) : null
+        typeof ResizeObserver !== 'undefined'
+          ? new ResizeObserver(() => adjustIfNeeded('desconhecido'))
+          : null
       resizeObserver?.observe(container)
       const content = container.querySelector('.message-list-content')
       if (content) resizeObserver?.observe(content)
@@ -1608,7 +1631,11 @@ export function RoomView({
             wasNearBottomRef.current = true
             return
           }
-          const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
+          const nearBottom = isNearBottom({
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+            clientHeight: container.clientHeight,
+          })
           wasNearBottomRef.current = nearBottom
           if (container.scrollTop <= LOAD_PREVIOUS_SCROLL_THRESHOLD) {
             void loadPrevious()
@@ -1657,6 +1684,7 @@ export function RoomView({
                   highlighted={highlightedMessageId === m.id}
                   onJumpToQuoted={jumpToMessage}
                   readReceiptsEnabled={readReceiptsEnabled}
+                  transcriptionEnabled={transcriptionEnabled}
                   onShowReads={handleShowReads}
                   onVotePoll={handleVotePoll}
                   canPin={canManagePin}

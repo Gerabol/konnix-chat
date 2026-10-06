@@ -685,6 +685,12 @@ export const api = {
       return res
     })
   },
+  transcriptionSetting() {
+    return this.audioTranscriptionSetting()
+  },
+  setTranscriptionSetting(enabled: boolean) {
+    return this.setAudioTranscriptionSetting(enabled)
+  },
   sendMessage(roomId: string, content: string, parentMessageId?: string, forwardedMessageId?: string) {
     return request<Message>(`/api/v1/rooms/${roomId}/messages`, {
       method: 'POST',

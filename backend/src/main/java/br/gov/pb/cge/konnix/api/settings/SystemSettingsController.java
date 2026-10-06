@@ -29,7 +29,7 @@ public class SystemSettingsController {
     @PutMapping("/read-receipts")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Boolean>> updateReadReceipts(
-            @Valid @RequestBody ReadReceiptSettingRequest request) {
+            @Valid @RequestBody SettingToggleRequest request) {
         return ApiResponse.ok(Map.of("enabled", settingService.setReadReceiptsEnabled(request.enabled())));
     }
 
@@ -41,7 +41,7 @@ public class SystemSettingsController {
     @PutMapping("/audio-transcription")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Boolean>> updateAudioTranscription(
-            @Valid @RequestBody AudioTranscriptionSettingRequest request) {
+            @Valid @RequestBody SettingToggleRequest request) {
         return ApiResponse.ok(Map.of("enabled", settingService.setAudioTranscriptionEnabled(request.enabled())));
     }
 }
