@@ -66,7 +66,7 @@ public class AuthService {
     public LoginResponse login(LoginRequest request, String ipAddress) {
         String raw = request.username().trim();
         String username = raw.startsWith("@") ? raw.substring(1).trim() : raw;
-        if (loginAttemptService.isBlocked(username)) {
+        if (loginAttemptService.isBlocked(username) || loginAttemptService.isIpBlocked(ipAddress)) {
             throw ApiExceptions.tooManyAttempts();
         }
 
@@ -75,7 +75,7 @@ public class AuthService {
                 .orElse(null);
 
         if (user == null) {
-            loginAttemptService.registerFailure(username);
+            registerLoginFailure(username, ipAddress);
             auditService.record("LOGIN_FAILURE", null, "auth", username, ipAddress);
             throw ApiExceptions.invalidCredentials();
         }
@@ -88,7 +88,7 @@ public class AuthService {
             throw ApiExceptions.passwordMigrationRequired();
         }
         if (user.getPasswordHash() == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            loginAttemptService.registerFailure(username);
+            registerLoginFailure(username, ipAddress);
             auditService.record("LOGIN_FAILURE", user, "auth", user.getUsername(), ipAddress);
             throw ApiExceptions.invalidCredentials();
         }
@@ -100,6 +100,11 @@ public class AuthService {
         TokenService.IssuedToken issued = tokenService.issue(user);
         auditService.record("LOGIN_SUCCESS", user, "auth", user.getUsername(), ipAddress);
         return new LoginResponse(issued.rawToken(), UserResponse.from(user));
+    }
+
+    private void registerLoginFailure(String username, String ipAddress) {
+        loginAttemptService.registerFailure(username);
+        loginAttemptService.registerIpFailure(ipAddress);
     }
 
     @Transactional
