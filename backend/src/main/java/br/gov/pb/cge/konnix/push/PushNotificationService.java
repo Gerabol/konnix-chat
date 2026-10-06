@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -63,6 +64,7 @@ public class PushNotificationService {
 
                 int sent = 0;
                 int skipped = 0;
+                Map<UUID, Long> unreadByUser = new HashMap<>();
 
                 for (PushSubscription subscription : subscriptions) {
                     if (senderId.equals(subscription.getUser().getId())) {
@@ -75,15 +77,8 @@ public class PushNotificationService {
                         continue;
                     }
 
-                    long unreadCount = 1L;
-                    if (messageRepository != null) {
-                        try {
-                            long total = messageRepository.countTotalUnreadByUserId(subscription.getUser().getId());
-                            unreadCount = total > 0 ? total : 1L;
-                        } catch (Exception e) {
-                            log.debug("Não foi possível calcular unreadCount para o usuário {}", subscription.getUser().getId(), e);
-                        }
-                    }
+                    UUID recipientId = subscription.getUser().getId();
+                    long unreadCount = unreadByUser.computeIfAbsent(recipientId, this::unreadCountFor);
 
                     String payload = buildPayload(message.id(), roomId, roomDisplayName, author, unreadCount);
                     String maskedEndpoint = maskEndpoint(subscription.getEndpoint());
@@ -107,6 +102,19 @@ public class PushNotificationService {
                 log.warn("Falha ao processar notificações push da sala {}", roomId, e);
             }
         });
+    }
+
+    private long unreadCountFor(UUID userId) {
+        if (messageRepository == null) {
+            return 1L;
+        }
+        try {
+            long total = messageRepository.countTotalUnreadByUserId(userId);
+            return total > 0 ? total : 1L;
+        } catch (Exception e) {
+            log.debug("Não foi possível calcular unreadCount para o usuário {}", userId, e);
+            return 1L;
+        }
     }
 
     private static String maskEndpoint(String endpoint) {

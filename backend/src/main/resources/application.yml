@@ -33,6 +33,15 @@ spring:
       max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:-1}
       max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:-1}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 konnix:
   uploads:
     dir: ${KONNIX_UPLOADS_DIR:./uploads}
