@@ -1022,7 +1022,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0.55rem 0.85rem;
+  padding: 0.55rem 0.85rem 0.2rem;
   padding-top: calc(0.55rem + var(--safe-top));
 }
 
@@ -1129,7 +1129,7 @@ button:disabled {
 }
 
 .sidebar-persistent-search {
-  padding: 0.35rem 0.8rem 0.45rem;
+  padding: 0.2rem 0.8rem 0.45rem;
   border-bottom: 1px solid var(--konnix-border);
   background: transparent;
   display: flex;
