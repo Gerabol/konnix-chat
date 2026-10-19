@@ -92,6 +92,14 @@ function MessageRowComponent({
         {msg.editedAt && <em className="message-edited">Editada</em>}
       </span>
     ) : null
+  // O indicador de favorito é renderizado dentro da hora e posicionado fora do
+  // fluxo pelo CSS: assim ele nunca alarga a caixa da mensagem e fica à direita
+  // da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
+  const favoriteIndicator = isFavorite ? (
+    <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
+      <IconHeart size={12} filled />
+    </span>
+  ) : null
   const authorAvatarPath = msg.userId
     ? `${userAvatarPath(msg.userId)}${
         isMine
@@ -275,7 +283,12 @@ function MessageRowComponent({
       )}
       <div className="message-body">
         <div className="message-meta">
-          {isMine && <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>{formatTime(msg.createdAt)}</span>}
+          {isMine && (
+            <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>
+              {formatTime(msg.createdAt)}
+              {favoriteIndicator}
+            </span>
+          )}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
           ) : (
@@ -304,10 +317,10 @@ function MessageRowComponent({
               )}
             </span>
           )}
-          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
-          {isFavorite && (
-            <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
-              <IconHeart size={12} filled />
+          {!isMine && (
+            <span className="message-time">
+              {formatTime(msg.createdAt)}
+              {favoriteIndicator}
             </span>
           )}
           {isMine && readReceiptsEnabled && !deleted && (
