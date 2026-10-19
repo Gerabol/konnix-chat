@@ -2376,6 +2376,8 @@ export function RoomView({
         <ForwardMessageModal
           message={forwardMessage}
           rooms={rooms}
+          avatarVersions={avatarVersions}
+          currentUserId={me.id}
           onClose={() => setForwardMessage(null)}
           notify={modalNotify}
         />
