@@ -4,6 +4,7 @@ import type { User } from '../../api'
 import {
   IconAlertTriangle,
   IconDownload,
+  IconHeart,
   IconInfo,
   IconLogout,
   IconShield,
@@ -22,6 +23,7 @@ export function UserSettingsMenuContent({
   onLogout,
   onClose,
   onInstallApp,
+  onOpenFavorites,
   standalone,
   appInstalled,
 }: {
@@ -33,6 +35,7 @@ export function UserSettingsMenuContent({
   onLogout: () => void
   onClose: () => void
   onInstallApp?: () => void
+  onOpenFavorites?: () => void
   standalone?: boolean
   appInstalled?: boolean
 }) {
@@ -41,6 +44,19 @@ export function UserSettingsMenuContent({
       <div className="menu-label">Configurações</div>
       <NotificationButton />
       <AutostartButton />
+      {onOpenFavorites && (
+        <button
+          type="button"
+          className="user-menu-item user-menu-action"
+          onClick={() => {
+            onClose()
+            onOpenFavorites()
+          }}
+        >
+          <IconHeart size={16} />
+          <span>Mensagens favoritas</span>
+        </button>
+      )}
       <button
         type="button"
         className="user-menu-item user-menu-action"

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { api, ApiError, formatDay, formatFullTimestamp, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
-import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
+import type { FavoriteMessage, Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
@@ -18,6 +18,7 @@ import {
   IconArrowLeft,
   IconClip,
   IconCode,
+  IconHeart,
   IconPencil,
   IconPlus,
   IconSearch,
@@ -39,6 +40,7 @@ import { AvatarImage, initials } from './AvatarImage'
 import { ComposerActionBox, ComposerEditingAttachments, ComposerPendingAttachments } from './ComposerActionBox'
 import { EmojiButton } from './EmojiButton'
 import { MessageRow } from './MessageRow'
+import { RoomFavoritesPanel } from './RoomFavoritesPanel'
 import { RoomFilesPanel } from './RoomFilesPanel'
 import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndicator'
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
@@ -108,6 +110,9 @@ export interface RoomViewProps {
   pendingUploads?: PendingUploadItem[]
   onRetryUpload?: (tempId: string) => void
   onCancelUpload?: (tempId: string) => void
+  initialTargetMessageId?: string | null
+  onClearTargetMessageId?: () => void
+  favoriteUpdate?: { roomId: string; messageId: string; favorite: boolean; timestamp: number } | null
 }
 
 export function RoomView({
@@ -143,6 +148,9 @@ export function RoomView({
   pendingUploads = [],
   onRetryUpload,
   onCancelUpload,
+  initialTargetMessageId,
+  onClearTargetMessageId,
+  favoriteUpdate,
 }: RoomViewProps) {
   const isPendingDm = room.id.startsWith('pending:')
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
@@ -242,6 +250,12 @@ export function RoomView({
   const [filesError, setFilesError] = useState<string | null>(null)
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+  const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set())
+  const [favorites, setFavorites] = useState<FavoriteMessage[]>([])
+  const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [favoritesError, setFavoritesError] = useState<string | null>(null)
+  const [favoritesQuery, setFavoritesQuery] = useState('')
   const messageListRef = useRef<HTMLDivElement>(null)
   const pendingOlderScrollRef = useRef<{ oldScrollHeight: number; oldScrollTop: number } | null>(null)
   const scrollToBottomOnLoadRef = useRef(true)
@@ -680,6 +694,55 @@ export function RoomView({
     }
   }, [me.id, room.id])
 
+  useEffect(() => {
+    if (isPendingDm) {
+      setFavoriteMessageIds(new Set())
+      return
+    }
+    let active = true
+    api
+      .getRoomFavoriteMessageIds(room.id)
+      .then((ids) => {
+        if (active) setFavoriteMessageIds(new Set(ids))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [room.id, isPendingDm])
+
+  const loadFavorites = useCallback(async () => {
+    if (isPendingDm) return
+    setFavoritesLoading(true)
+    setFavoritesError(null)
+    try {
+      const data = await api.getFavoriteMessages(room.id)
+      setFavorites(data)
+    } catch (err) {
+      setFavoritesError(err instanceof ApiError ? err.message : 'Falha ao carregar favoritas')
+    } finally {
+      setFavoritesLoading(false)
+    }
+  }, [room.id, isPendingDm])
+
+  useEffect(() => {
+    if (!favoriteUpdate || favoriteUpdate.roomId !== room.id) return
+    setFavoriteMessageIds((prev) => {
+      const next = new Set(prev)
+      if (favoriteUpdate.favorite) {
+        next.add(favoriteUpdate.messageId)
+      } else {
+        next.delete(favoriteUpdate.messageId)
+      }
+      return next
+    })
+    if (!favoriteUpdate.favorite) {
+      setFavorites((prev) => prev.filter((f) => f.message.id !== favoriteUpdate.messageId))
+    } else if (favoritesOpen) {
+      void loadFavorites()
+    }
+  }, [favoriteUpdate, room.id, favoritesOpen, loadFavorites])
+
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)
     setFilesError(null)
@@ -696,10 +759,84 @@ export function RoomView({
   const toggleFiles = () => {
     setFilesOpen((open) => {
       const next = !open
-      if (next) void loadRoomFiles()
+      if (next) {
+        setFavoritesOpen(false)
+        void loadRoomFiles()
+      }
       return next
     })
   }
+
+  const toggleFavorites = () => {
+    setFavoritesOpen((open) => {
+      const next = !open
+      if (next) {
+        setFilesOpen(false)
+        setSearchOpen(false)
+        void loadFavorites()
+      }
+      return next
+    })
+  }
+
+  const handleToggleFavorite = useCallback(
+    async (msg: Message) => {
+      const isFav = favoriteMessageIds.has(msg.id)
+      setFavoriteMessageIds((prev) => {
+        const next = new Set(prev)
+        if (isFav) {
+          next.delete(msg.id)
+        } else {
+          next.add(msg.id)
+        }
+        return next
+      })
+      try {
+        if (isFav) {
+          await api.removeMessageFavorite(msg.id)
+          setFavorites((prev) => prev.filter((f) => f.message.id !== msg.id))
+          notify('Mensagem removida dos favoritos')
+        } else {
+          await api.toggleMessageFavorite(msg.id)
+          notify('Mensagem adicionada aos favoritos')
+          if (favoritesOpen) {
+            void loadFavorites()
+          }
+        }
+      } catch (err) {
+        setFavoriteMessageIds((prev) => {
+          const next = new Set(prev)
+          if (isFav) {
+            next.add(msg.id)
+          } else {
+            next.delete(msg.id)
+          }
+          return next
+        })
+        notify(err instanceof ApiError ? err.message : 'Erro ao atualizar favorito')
+      }
+    },
+    [favoriteMessageIds, notify, favoritesOpen, loadFavorites],
+  )
+
+  const handleRemoveFavoriteFromPanel = useCallback(
+    async (messageId: string) => {
+      setFavoriteMessageIds((prev) => {
+        const next = new Set(prev)
+        next.delete(messageId)
+        return next
+      })
+      setFavorites((prev) => prev.filter((f) => f.message.id !== messageId))
+      try {
+        await api.removeMessageFavorite(messageId)
+        notify('Mensagem removida dos favoritos')
+      } catch (err) {
+        notify(err instanceof ApiError ? err.message : 'Erro ao remover favorito')
+        void loadFavorites()
+      }
+    },
+    [notify, loadFavorites],
+  )
 
   useEffect(() => {
     if (searchOpen) requestAnimationFrame(() => searchInputRef.current?.focus())
@@ -715,6 +852,12 @@ export function RoomView({
     setHighlightedMessageId(messageId)
     window.setTimeout(() => setHighlightedMessageId(null), 2200)
   }, [notify])
+
+  useEffect(() => {
+    if (!initialTargetMessageId || !conversationReady) return
+    jumpToMessage(initialTargetMessageId)
+    onClearTargetMessageId?.()
+  }, [initialTargetMessageId, conversationReady, jumpToMessage, onClearTargetMessageId])
 
   const executeSearch = useCallback(
     async (rawQuery: string) => {
@@ -1214,7 +1357,7 @@ export function RoomView({
 
   return (
     <div
-      className={`room-view ${filesOpen ? 'files-open' : ''} ${isDragActive ? 'room-drag-active' : ''}`}
+      className={`room-view ${filesOpen ? 'files-open' : ''} ${favoritesOpen ? 'favorites-open' : ''} ${isDragActive ? 'room-drag-active' : ''}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1442,6 +1585,17 @@ export function RoomView({
                 >
                   <IconClip size={18} />
                 </button>
+                <button
+                  type="button"
+                  className={`icon-btn room-favorites-trigger ${favoritesOpen ? 'active' : ''}`}
+                  disabled={isPendingDm}
+                  onClick={isPendingDm ? undefined : toggleFavorites}
+                  title="Mensagens favoritas"
+                  aria-label="Mensagens favoritas"
+                  aria-pressed={favoritesOpen}
+                >
+                  <IconHeart size={18} filled={favoritesOpen} />
+                </button>
               </div>
 
               <button
@@ -1557,6 +1711,18 @@ export function RoomView({
                     >
                       <IconClip size={16} />
                       <span>Arquivos da conversa</span>
+                    </button>
+                    <button
+                      className="room-header-dropdown-item"
+                      disabled={isPendingDm}
+                      onClick={() => {
+                        if (isPendingDm) return
+                        setRoomHeaderMenuOpen(false)
+                        toggleFavorites()
+                      }}
+                    >
+                      <IconHeart size={16} />
+                      <span>Mensagens favoritas</span>
                     </button>
                     <button
                       className="room-header-dropdown-item"
@@ -1691,6 +1857,8 @@ export function RoomView({
                   isPinned={room.pinnedMessage?.id === m.id}
                   onTogglePin={handleTogglePin}
                   validMentionUsernames={validMentionUsernames}
+                  isFavorite={favoriteMessageIds.has(m.id)}
+                  onToggleFavorite={handleToggleFavorite}
                 />
               ))}
             </div>
@@ -2128,6 +2296,20 @@ export function RoomView({
           onTypeChange={setFilesType}
           onClose={() => setFilesOpen(false)}
           onRetry={() => void loadRoomFiles()}
+        />
+      )}
+
+      {favoritesOpen && (
+        <RoomFavoritesPanel
+          favorites={favorites}
+          loading={favoritesLoading}
+          error={favoritesError}
+          query={favoritesQuery}
+          onQueryChange={setFavoritesQuery}
+          onClose={() => setFavoritesOpen(false)}
+          onRetry={() => void loadFavorites()}
+          onJumpToMessage={jumpToMessage}
+          onRemoveFavorite={handleRemoveFavoriteFromPanel}
         />
       )}
 

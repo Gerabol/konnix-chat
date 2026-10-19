@@ -48,6 +48,7 @@ export interface SidebarProps {
   onEditProfile: () => void
   onAbout: () => void
   onReportIssue: () => void
+  onOpenFavorites?: () => void
   myAvatarVersion: string
   onInstallApp: () => void
   standalone?: boolean
@@ -84,6 +85,7 @@ export const Sidebar = memo(function Sidebar({
   onEditProfile,
   onAbout,
   onReportIssue,
+  onOpenFavorites,
   myAvatarVersion,
   onInstallApp,
   standalone,
@@ -417,6 +419,7 @@ export const Sidebar = memo(function Sidebar({
                 onLogout={onLogout}
                 onClose={() => setHeaderMenuOpen(false)}
                 onInstallApp={onInstallApp}
+                onOpenFavorites={onOpenFavorites}
                 standalone={standalone}
                 appInstalled={appInstalled}
               />
@@ -1032,6 +1035,7 @@ export const Sidebar = memo(function Sidebar({
               onLogout={onLogout}
               onClose={() => setFooterMenuOpen(false)}
               onInstallApp={onInstallApp}
+              onOpenFavorites={onOpenFavorites}
               standalone={standalone}
               appInstalled={appInstalled}
             />

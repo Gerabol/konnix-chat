@@ -97,6 +97,14 @@ public class ChatEventPublisher {
         publishToUser(userId, "room.favorite.updated", roomId, data);
     }
 
+    public void publishMessageFavoriteUpdated(UUID userId, UUID roomId, UUID messageId, boolean favorite) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("messageId", messageId);
+        data.put("favorite", favorite);
+        publishToUser(userId, "message.favorite.updated", roomId, data);
+    }
+
     public void publishUnreadUpdated(UUID userId, UUID roomId, boolean markedUnread) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("roomId", roomId);

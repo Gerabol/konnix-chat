@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
-import { IconCopy, IconPin } from '../icons'
+import { IconCopy, IconHeart, IconPin } from '../icons'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 export function MessageActionBar({
@@ -16,6 +16,8 @@ export function MessageActionBar({
   canPin,
   isPinned,
   onTogglePin,
+  isFavorite,
+  onToggleFavorite,
 }: {
   pinned: boolean
   onPin: (pinned: boolean) => void
@@ -28,6 +30,8 @@ export function MessageActionBar({
   canPin?: boolean
   isPinned?: boolean
   onTogglePin?: () => void
+  isFavorite?: boolean
+  onToggleFavorite?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -131,6 +135,20 @@ export function MessageActionBar({
           }}
         >
           <IconPin />
+        </button>
+      )}
+      {onToggleFavorite && (
+        <button
+          type="button"
+          className={`message-action-favorite ${isFavorite ? 'active' : ''}`}
+          title={isFavorite ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}
+          aria-label={isFavorite ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}
+          onClick={() => {
+            onPin(false)
+            onToggleFavorite()
+          }}
+        >
+          <IconHeart size={16} filled={isFavorite} />
         </button>
       )}
       {onRespond && (
