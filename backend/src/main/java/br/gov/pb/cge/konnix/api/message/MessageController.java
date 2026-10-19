@@ -21,7 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import br.gov.pb.cge.konnix.api.message.dto.FavoriteMessageResponse;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import java.util.List;
 
@@ -85,6 +87,33 @@ public class MessageController {
                                                Authentication authentication,
                                                HttpServletRequest http) {
         return ApiResponse.ok(messageService.delete(id, principal(authentication), clientIp(http)));
+    }
+
+    @PostMapping("/api/v1/messages/{id}/favorite")
+    public ApiResponse<Map<String, Boolean>> toggleFavorite(@PathVariable UUID id,
+                                                            Authentication authentication) {
+        boolean favorite = messageService.toggleFavorite(id, principal(authentication));
+        return ApiResponse.ok(Map.of("favorite", favorite));
+    }
+
+    @DeleteMapping("/api/v1/messages/{id}/favorite")
+    public ApiResponse<Map<String, Boolean>> removeFavorite(@PathVariable UUID id,
+                                                            Authentication authentication) {
+        messageService.removeFavorite(id, principal(authentication));
+        return ApiResponse.ok(Map.of("favorite", false));
+    }
+
+    @GetMapping("/api/v1/rooms/{roomId}/messages/favorite-ids")
+    public ApiResponse<List<UUID>> favoriteIds(@PathVariable UUID roomId,
+                                               Authentication authentication) {
+        return ApiResponse.ok(messageService.getFavoriteMessageIds(roomId, principal(authentication)));
+    }
+
+    @GetMapping("/api/v1/messages/favorites")
+    public ApiResponse<List<FavoriteMessageResponse>> favorites(
+            @RequestParam(required = false) UUID roomId,
+            Authentication authentication) {
+        return ApiResponse.ok(messageService.getFavorites(roomId, principal(authentication)));
     }
 
     private AuthenticatedUser principal(Authentication authentication) {

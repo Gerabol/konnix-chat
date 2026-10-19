@@ -20,6 +20,7 @@ import { NewRoomModal } from '../modals/NewRoomModal'
 import { ProfileEditModal } from '../modals/ProfileEditModal'
 import { ReportIssueModal } from '../modals/ReportIssueModal'
 import { ThemeModal } from '../modals/ThemeModal'
+import { UserFavoritesModal } from '../modals/UserFavoritesModal'
 import { EmptyState } from './EmptyState'
 import { RoomView } from './RoomView'
 import { Sidebar } from './Sidebar'
@@ -63,6 +64,14 @@ export function ChatView({
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
+  const [favoritesModalOpen, setFavoritesModalOpen] = useState(false)
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
+  const [favoriteUpdate, setFavoriteUpdate] = useState<{
+    roomId: string
+    messageId: string
+    favorite: boolean
+    timestamp: number
+  } | null>(null)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
@@ -754,6 +763,16 @@ export function ChatView({
                 ),
               )
             }
+          } else if (evt.type === 'message.favorite.updated') {
+            const payload = evt.data as unknown as { roomId: string; messageId: string; favorite: boolean }
+            if (payload?.roomId && payload?.messageId) {
+              setFavoriteUpdate({
+                roomId: payload.roomId,
+                messageId: payload.messageId,
+                favorite: payload.favorite,
+                timestamp: Date.now(),
+              })
+            }
           }
         } catch {
           /* ignora payloads inválidos */
@@ -1368,6 +1387,7 @@ export function ChatView({
           onEditProfile={openProfileEdit}
           onAbout={openAbout}
           onReportIssue={openReportIssue}
+          onOpenFavorites={() => setFavoritesModalOpen(true)}
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
@@ -1432,6 +1452,9 @@ export function ChatView({
               pendingUploads={pendingUploads.filter((u) => u.roomId === activeRoom.id)}
               onRetryUpload={retryUpload}
               onCancelUpload={cancelUpload}
+              initialTargetMessageId={targetMessageId}
+              onClearTargetMessageId={() => setTargetMessageId(null)}
+              favoriteUpdate={favoriteUpdate}
             />
           )}
         </main>
@@ -1487,6 +1510,19 @@ export function ChatView({
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {favoritesModalOpen && (
+        <UserFavoritesModal
+          onClose={() => setFavoritesModalOpen(false)}
+          onSelectRoom={(roomId, messageId) => {
+            setFavoritesModalOpen(false)
+            setTargetMessageId(messageId)
+            if (activeRoomId !== roomId) {
+              void openRoom(roomId)
+            }
+          }}
+          notify={modalNotify}
+        />
+      )}
       {downloadModalOpen && (
         <DownloadAppModal
           onClose={() => setDownloadModalOpen(false)}

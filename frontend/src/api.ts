@@ -132,6 +132,15 @@ export type MessageHistory = {
   nextBefore: string | null
 }
 
+export type FavoriteMessage = {
+  favoriteId: string
+  favoritedAt: string
+  roomId: string
+  roomName: string
+  roomType: string
+  message: Message
+}
+
 export type AdminPage<T> = {
   items: T[]
   page: number
@@ -651,6 +660,19 @@ export const api = {
   },
   searchMessages(roomId: string, query: string) {
     return request<Message[]>(`/api/v1/rooms/${roomId}/messages/search?q=${encodeURIComponent(query)}`)
+  },
+  toggleMessageFavorite(messageId: string) {
+    return request<{ favorite: boolean }>(`/api/v1/messages/${messageId}/favorite`, { method: 'POST' })
+  },
+  removeMessageFavorite(messageId: string) {
+    return request<{ favorite: boolean }>(`/api/v1/messages/${messageId}/favorite`, { method: 'DELETE' })
+  },
+  getRoomFavoriteMessageIds(roomId: string) {
+    return request<string[]>(`/api/v1/rooms/${roomId}/messages/favorite-ids`)
+  },
+  getFavoriteMessages(roomId?: string) {
+    const q = roomId ? `?roomId=${encodeURIComponent(roomId)}` : ''
+    return request<FavoriteMessage[]>(`/api/v1/messages/favorites${q}`)
   },
   roomFiles(roomId: string) {
     return request<RoomFile[]>(`/api/v1/rooms/${roomId}/files`)

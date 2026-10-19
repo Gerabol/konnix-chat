@@ -7,6 +7,7 @@ import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
 import { AttachmentView } from './AttachmentView'
 import { AvatarImage, initials } from './AvatarImage'
+import { IconHeart } from '../icons'
 import { MessageActionBar } from './MessageActionBar'
 import { PollCard } from './PollCard'
 
@@ -37,6 +38,8 @@ export interface MessageRowProps {
   canPin?: boolean
   isPinned?: boolean
   onTogglePin?: (msg: Message) => void
+  isFavorite?: boolean
+  onToggleFavorite?: (msg: Message) => void
   validMentionUsernames?: Set<string>
 }
 
@@ -72,6 +75,8 @@ function MessageRowComponent({
   canPin,
   isPinned,
   onTogglePin,
+  isFavorite = false,
+  onToggleFavorite,
   validMentionUsernames,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
@@ -300,6 +305,11 @@ function MessageRowComponent({
             </span>
           )}
           {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {isFavorite && (
+            <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
+              <IconHeart size={12} filled />
+            </span>
+          )}
           {isMine && readReceiptsEnabled && !deleted && (
             <button
               type="button"
@@ -331,6 +341,8 @@ function MessageRowComponent({
             canPin={canPin}
             isPinned={isPinned}
             onTogglePin={onTogglePin ? () => onTogglePin(msg) : undefined}
+            isFavorite={isFavorite}
+            onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
           />
         )}
         {!deleted && (

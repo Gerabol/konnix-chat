@@ -3364,7 +3364,10 @@ button:disabled {
 
 .files-open > .room-header,
 .files-open > .message-list,
-.files-open > .composer { margin-right: min(360px, 40vw); }
+.files-open > .composer,
+.favorites-open > .room-header,
+.favorites-open > .message-list,
+.favorites-open > .composer { margin-right: min(360px, 40vw); }
 .room-files-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.8rem 1rem; padding-top: calc(0.8rem + var(--safe-top, 0px)); border-bottom: 1px solid var(--konnix-border); }
 .room-files-head h3 { display: inline-flex; align-items: center; gap: 0.45rem; margin: 0; color: var(--konnix-ink); font-size: 0.95rem; }
 .room-files-filters { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--konnix-border); }
@@ -3382,6 +3385,251 @@ button:disabled {
 .room-file-action:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .favorite-room-trigger.active { color: #f2b01e; }
 .favorite-room-trigger:hover { color: #d49400; }
+
+.room-favorites-trigger.active {
+  color: var(--konnix-ink);
+}
+
+.room-favorite-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--konnix-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.room-favorite-item:hover,
+.room-favorite-item:focus-visible {
+  background-color: var(--konnix-bg);
+  outline: none;
+}
+
+.room-favorite-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.room-favorite-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.room-favorite-author {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--konnix-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-favorite-date {
+  font-size: 0.7rem;
+  color: var(--konnix-ink-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.room-favorite-snippet {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--konnix-ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  word-break: break-word;
+}
+
+.room-favorite-remove-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--konnix-ink-soft);
+  cursor: pointer;
+}
+
+.room-favorite-remove-btn:hover {
+  background: var(--konnix-bg);
+  color: var(--konnix-ink);
+}
+
+.message-favorite-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--konnix-ink-soft);
+  opacity: 0.85;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.user-favorites-modal {
+  width: min(580px, 94vw);
+  max-width: 580px;
+}
+
+.user-favorites-filters {
+  padding: 0 0 0.85rem;
+}
+
+.user-favorites-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.user-favorites-search-wrap svg {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--konnix-ink-soft);
+  pointer-events: none;
+}
+
+.user-favorites-input {
+  width: 100%;
+  padding-left: 2.25rem;
+}
+
+.user-favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.user-favorites-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--konnix-ink-soft);
+  font-size: 0.875rem;
+}
+
+.user-favorites-empty svg {
+  opacity: 0.4;
+  margin-bottom: 0.25rem;
+}
+
+.user-favorites-empty small {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.user-favorite-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--konnix-border);
+  border-radius: 8px;
+  background: var(--konnix-surface);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.user-favorite-card:hover,
+.user-favorite-card:focus-visible {
+  background: var(--konnix-bg);
+  border-color: var(--konnix-primary);
+  outline: none;
+}
+
+.user-favorite-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-favorite-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.user-favorite-room-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--konnix-bg);
+  color: var(--konnix-primary);
+  border: 1px solid var(--konnix-border);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-favorite-card-author {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--konnix-ink);
+}
+
+.user-favorite-card-date {
+  font-size: 0.7rem;
+  color: var(--konnix-ink-soft);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.user-favorite-card-text {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--konnix-ink);
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.user-favorite-remove-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--konnix-ink-soft);
+  cursor: pointer;
+  margin-top: -2px;
+}
+
+.user-favorite-remove-btn:hover {
+  background: var(--konnix-bg);
+  color: var(--konnix-ink);
+}
 
 .loading-row {
   text-align: center;
@@ -6509,7 +6757,10 @@ img.room-header-avatar {
   }
   .files-open > .room-header,
   .files-open > .message-list,
-  .files-open > .composer { margin-right: 0; }
+  .files-open > .composer,
+  .favorites-open > .room-header,
+  .favorites-open > .message-list,
+  .favorites-open > .composer { margin-right: 0; }
 }
 
 @media (max-width: 900px) {

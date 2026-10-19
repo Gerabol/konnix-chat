@@ -27,6 +27,9 @@ import br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse;
 import br.gov.pb.cge.konnix.domain.room.Room;
 import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
+import br.gov.pb.cge.konnix.api.message.dto.FavoriteMessageResponse;
+import br.gov.pb.cge.konnix.domain.message.UserMessageFavorite;
+import br.gov.pb.cge.konnix.domain.message.UserMessageFavoriteRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
@@ -34,6 +37,7 @@ import br.gov.pb.cge.konnix.security.AuthenticatedUser;
 import br.gov.pb.cge.konnix.storage.FileStorageService;
 import br.gov.pb.cge.konnix.push.PushNotificationService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -50,6 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -88,6 +93,46 @@ public class MessageService {
     private final PollVoteRepository pollVoteRepository;
     private final RoomAccessService roomAccessService;
     private final FileStorageService storageService;
+    private final UserMessageFavoriteRepository favoriteRepository;
+
+    @Autowired
+    public MessageService(MessageRepository messageRepository,
+                          RoomRepository roomRepository,
+                          RoomMemberRepository roomMemberRepository,
+                          UserRepository userRepository,
+                          AttachmentRepository attachmentRepository,
+                          AuditService auditService,
+                          ChatEventPublisher eventPublisher,
+                          PushNotificationService pushNotificationService,
+                          MessageReadRepository messageReadRepository,
+                          MessageMentionRepository messageMentionRepository,
+                          SystemSettingService systemSettingService,
+                          MessageReactionRepository reactionRepository,
+                          PollRepository pollRepository,
+                          PollOptionRepository pollOptionRepository,
+                          PollVoteRepository pollVoteRepository,
+                          RoomAccessService roomAccessService,
+                          FileStorageService storageService,
+                          UserMessageFavoriteRepository favoriteRepository) {
+        this.messageRepository = messageRepository;
+        this.roomRepository = roomRepository;
+        this.roomMemberRepository = roomMemberRepository;
+        this.userRepository = userRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
+        this.pushNotificationService = pushNotificationService;
+        this.messageReadRepository = messageReadRepository;
+        this.messageMentionRepository = messageMentionRepository;
+        this.systemSettingService = systemSettingService;
+        this.reactionRepository = reactionRepository;
+        this.pollRepository = pollRepository;
+        this.pollOptionRepository = pollOptionRepository;
+        this.pollVoteRepository = pollVoteRepository;
+        this.roomAccessService = roomAccessService;
+        this.storageService = storageService;
+        this.favoriteRepository = favoriteRepository;
+    }
 
     public MessageService(MessageRepository messageRepository,
                           RoomRepository roomRepository,
@@ -106,23 +151,11 @@ public class MessageService {
                           PollVoteRepository pollVoteRepository,
                           RoomAccessService roomAccessService,
                           FileStorageService storageService) {
-        this.messageRepository = messageRepository;
-        this.roomRepository = roomRepository;
-        this.roomMemberRepository = roomMemberRepository;
-        this.userRepository = userRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.auditService = auditService;
-        this.eventPublisher = eventPublisher;
-        this.pushNotificationService = pushNotificationService;
-        this.messageReadRepository = messageReadRepository;
-        this.messageMentionRepository = messageMentionRepository;
-        this.systemSettingService = systemSettingService;
-        this.reactionRepository = reactionRepository;
-        this.pollRepository = pollRepository;
-        this.pollOptionRepository = pollOptionRepository;
-        this.pollVoteRepository = pollVoteRepository;
-        this.roomAccessService = roomAccessService;
-        this.storageService = storageService;
+        this(messageRepository, roomRepository, roomMemberRepository, userRepository,
+                attachmentRepository, auditService, eventPublisher, pushNotificationService,
+                messageReadRepository, messageMentionRepository, systemSettingService,
+                reactionRepository, pollRepository, pollOptionRepository, pollVoteRepository,
+                roomAccessService, storageService, null);
     }
 
     @Transactional
@@ -650,5 +683,100 @@ public class MessageService {
                                 .map(vote -> new MessageResponse.PollVoterData(vote.getUser().getId(), vote.getUser().getUsername(), vote.getUser().getName(), vote.getCreatedAt()))
                                 .toList()))
                 .toList());
+    }
+
+    @Transactional
+    public boolean toggleFavorite(UUID messageId, AuthenticatedUser actor) {
+        requireWritable(actor);
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> ApiExceptions.notFound("message/" + messageId));
+        Room room = message.getRoom();
+        requireMember(room, actor);
+
+        var existing = favoriteRepository.findByUserIdAndMessageId(actor.id(), messageId);
+        boolean isFavoriteNow;
+        if (existing.isPresent()) {
+            favoriteRepository.delete(existing.get());
+            isFavoriteNow = false;
+        } else {
+            User user = actorUser(actor.id());
+            favoriteRepository.save(new UserMessageFavorite(user, message));
+            isFavoriteNow = true;
+        }
+
+        eventPublisher.publishMessageFavoriteUpdated(actor.id(), room.getId(), messageId, isFavoriteNow);
+        return isFavoriteNow;
+    }
+
+    @Transactional
+    public boolean removeFavorite(UUID messageId, AuthenticatedUser actor) {
+        requireWritable(actor);
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> ApiExceptions.notFound("message/" + messageId));
+        Room room = message.getRoom();
+        requireMember(room, actor);
+
+        int deleted = favoriteRepository.deleteByUserIdAndMessageId(actor.id(), messageId);
+        if (deleted > 0) {
+            eventPublisher.publishMessageFavoriteUpdated(actor.id(), room.getId(), messageId, false);
+        }
+        return false;
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> getFavoriteMessageIds(UUID roomId, AuthenticatedUser actor) {
+        Room room = roomOrThrow(roomId);
+        requireMember(room, actor);
+        return favoriteRepository.findFavoriteMessageIdsByUserIdAndRoomId(actor.id(), roomId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FavoriteMessageResponse> getFavorites(UUID roomId, AuthenticatedUser actor) {
+        if (roomId != null) {
+            Room room = roomOrThrow(roomId);
+            requireMember(room, actor);
+        }
+        List<UserMessageFavorite> favorites = favoriteRepository.findFavoritesByUserId(actor.id(), roomId);
+        if (favorites.isEmpty()) {
+            return List.of();
+        }
+
+        List<Message> messages = favorites.stream().map(UserMessageFavorite::getMessage).toList();
+        Map<UUID, MessageResponse> responseByMessageId = toResponsesMultiRoom(messages, actor.id()).stream()
+                .collect(Collectors.toMap(MessageResponse::id, m -> m, (a, b) -> a));
+
+        return favorites.stream()
+                .map(f -> {
+                    Message m = f.getMessage();
+                    Room r = m.getRoom();
+                    MessageResponse msgResponse = responseByMessageId.get(m.getId());
+                    if (msgResponse == null) return null;
+                    return new FavoriteMessageResponse(
+                            f.getId(),
+                            f.getCreatedAt(),
+                            r.getId(),
+                            r.getName(),
+                            r.getType(),
+                            msgResponse
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private List<MessageResponse> toResponsesMultiRoom(List<Message> messages, UUID actorId) {
+        if (messages.isEmpty()) return List.of();
+        Map<UUID, List<Message>> byRoom = messages.stream()
+                .collect(Collectors.groupingBy(m -> m.getRoom().getId()));
+        Map<UUID, MessageResponse> mapped = new HashMap<>();
+        for (List<Message> roomMessages : byRoom.values()) {
+            List<MessageResponse> responses = toResponses(roomMessages, actorId);
+            for (MessageResponse res : responses) {
+                mapped.put(res.id(), res);
+            }
+        }
+        return messages.stream().map(m -> mapped.get(m.getId())).filter(Objects::nonNull).toList();
     }
 }
