@@ -1,58 +1,52 @@
-import { useEffect, useState } from 'react'
-import { api, ApiError, userAvatarPath } from '../../api'
+import { useEffect, useMemo, useState } from 'react'
+import { api, ApiError } from '../../api'
 import type { DirectoryUser, Message, Room } from '../../api'
 import { useEscapeClose } from '../../hooks/useEscapeClose'
-import { ROOM_ICON, roomDisplayName } from '../../utils/room'
-import { AvatarImage, initials } from '../chat/AvatarImage'
+import { getForwardCandidates } from '../../utils/forward'
+import type { ForwardCandidate } from '../../utils/forward'
+import { AvatarImage } from '../chat/AvatarImage'
+
+export interface ForwardMessageModalProps {
+  message: Message
+  rooms: Room[]
+  avatarVersions?: Record<string, string>
+  currentUserId?: string
+  onClose: () => void
+  notify: (text: string) => void
+}
 
 export function ForwardMessageModal({
   message,
   rooms,
+  avatarVersions,
+  currentUserId,
   onClose,
   notify,
-}: {
-  message: Message
-  rooms: Room[]
-  onClose: () => void
-  notify: (text: string) => void
-}) {
+}: ForwardMessageModalProps) {
   useEscapeClose(onClose)
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
-  const [selected, setSelected] = useState<(typeof candidates)[number] | null>(null)
+  const [selected, setSelected] = useState<ForwardCandidate | null>(null)
 
   useEffect(() => {
     api.userDirectory().then(setUsers).catch(() => setUsers([]))
   }, [])
 
-  const normalizedQuery = query.trim().toLowerCase()
-  const candidates = [
-    ...users
-      .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(normalizedQuery))
-      .map((user) => ({
-        type: 'user' as const,
-        id: user.id,
-        name: user.name || user.username,
-        subtitle: `@${user.username}`,
-        user,
-      })),
-    ...rooms
-      .filter((room) => room.type === 'CHANNEL' || room.type === 'PRIVATE_GROUP' || room.type === 'PUBLIC_GROUP')
-      .filter((room) => `${roomDisplayName(room)} ${room.name}`.toLowerCase().includes(normalizedQuery))
-      .map((room) => ({
-        type: 'room' as const,
-        id: room.id,
-        name: roomDisplayName(room),
-        subtitle: room.type === 'CHANNEL' ? 'Canal' : 'Grupo',
-        room,
-      })),
-  ].slice(0, 20)
+  const candidates = useMemo(() => {
+    return getForwardCandidates({
+      rooms,
+      users,
+      currentUserId,
+      avatarVersions,
+      query,
+    })
+  }, [rooms, users, currentUserId, avatarVersions, query])
 
-  const forward = async (destination: (typeof candidates)[number]) => {
+  const forward = async (destination: ForwardCandidate) => {
     setBusy(true)
     try {
-      const roomId = destination.type === 'user' ? (await api.createDm(destination.id)).id : destination.id
+      const roomId = destination.targetRoomId ?? (await api.createDm(destination.targetUserId!)).id
       // O anexo é replicado pelo backend; o texto segue o original. A API exige
       // conteúdo não vazio, então usamos o nome do arquivo como fallback — o
       // serviço descarta a legenda redundante quando ela coincide com o anexo.
@@ -72,7 +66,7 @@ export function ForwardMessageModal({
       <div className="admin-modal forward-modal">
         <div className="modal-head">
           <h3>Encaminhar mensagem</h3>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">
             ×
           </button>
         </div>
@@ -82,41 +76,70 @@ export function ForwardMessageModal({
           placeholder="Pesquisar pessoa, grupo ou canal"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && selected && !busy) {
+              event.preventDefault()
+              void forward(selected)
+            }
+          }}
+          autoFocus
         />
         <div className="forward-list">
-          {candidates.map((destination) => {
-        const isSelected = selected?.id === destination.id && selected?.type === destination.type
-        return (
-          <button
-            type="button"
-            className={`forward-user${isSelected ? ' selected' : ''}`}
-            disabled={busy}
-            key={`${destination.type}-${destination.id}`}
-            onClick={() => setSelected(destination)}
-          >
-            {destination.type === 'user' ? (
-              <AvatarImage
-                path={userAvatarPath(destination.id)}
-                className="admin-member-avatar"
-                fallback={<span className="admin-member-avatar">{initials(destination.name)}</span>}
-                alt={destination.name}
-              />
-            ) : (
-              <span className="admin-member-avatar forward-room-icon" aria-hidden="true">
-                {ROOM_ICON[destination.room.type] ?? '#'}
-              </span>
-            )}
-            <span>
-              <strong>{destination.name}</strong>
-              <small>{destination.subtitle}</small>
-            </span>
-          </button>
-        )
-      })}
+          {candidates.length === 0 ? (
+            <div className="forward-empty">Nenhum resultado encontrado</div>
+          ) : (
+            candidates.map((destination) => {
+              const isSelected = selected?.key === destination.key
+              return (
+                <button
+                  type="button"
+                  className={`forward-user${isSelected ? ' selected' : ''}`}
+                  disabled={busy}
+                  key={destination.key}
+                  onClick={() => setSelected(destination)}
+                  onDoubleClick={() => void forward(destination)}
+                >
+                  <span className="forward-avatar-wrap">
+                    <AvatarImage
+                      path={destination.avatarPath}
+                      className="forward-avatar-img"
+                      fallback={
+                        destination.iconType === 'user' ? (
+                          <span className="forward-user-fallback" aria-hidden="true">
+                            {destination.iconText}
+                          </span>
+                        ) : (
+                          <span
+                            className={`forward-room-fallback room-icon ${destination.iconType}`}
+                            aria-hidden="true"
+                          >
+                            {destination.iconText}
+                          </span>
+                        )
+                      }
+                      alt={destination.name}
+                    />
+                  </span>
+                  <div className="forward-user-info">
+                    <strong>{destination.name}</strong>
+                    <small>{destination.subtitle}</small>
+                  </div>
+                </button>
+              )
+            })
+          )}
         </div>
         <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" disabled={busy || !selected} onClick={() => selected && void forward(selected)}>{busy ? 'Enviando…' : 'Enviar'}</button>
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>
+            Cancelar
+          </button>
+          <button
+            className="btn-primary"
+            disabled={busy || !selected}
+            onClick={() => selected && void forward(selected)}
+          >
+            {busy ? 'Enviando…' : 'Enviar'}
+          </button>
         </div>
       </div>
     </div>

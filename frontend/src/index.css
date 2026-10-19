@@ -6197,12 +6197,20 @@ img.room-header-avatar {
 .quote-preview strong { color: var(--konnix-primary-deep); font-size: 0.76rem; }
 .quote-preview span { overflow: hidden; color: var(--konnix-ink-soft); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
 .quote-preview > button { width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--konnix-ink-soft); font-size: 1.1rem; }
-.forward-list { display: flex; max-height: 320px; margin-top: 0.7rem; flex-direction: column; gap: 2px; overflow-y: auto; }
-.forward-user { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem; border: 0; border-radius: 7px; background: transparent; color: var(--konnix-ink); text-align: left; }
+.forward-list { display: flex; max-height: 320px; margin-top: 0.7rem; flex-direction: column; gap: 4px; overflow-y: auto; }
+.forward-user { display: flex; align-items: center; gap: 0.65rem; padding: 0.45rem 0.6rem; border: 0; border-radius: 8px; background: transparent; color: var(--konnix-ink); text-align: left; cursor: pointer; transition: background-color 0.15s ease; width: 100%; box-sizing: border-box; }
 .forward-user:hover { background: var(--konnix-bg); }
-.forward-user.selected { background: color-mix(in srgb, var(--konnix-primary) 10%, var(--konnix-surface)); }
-.forward-user span { display: flex; flex-direction: column; gap: 0.1rem; }
-.forward-user small { color: var(--konnix-ink-soft); font-size: 0.72rem; }
+.forward-user.selected { background: color-mix(in srgb, var(--konnix-primary) 12%, var(--konnix-surface)); }
+.forward-avatar-wrap { width: 36px; height: 36px; flex: none; display: inline-flex; align-items: center; justify-content: center; position: relative; }
+.forward-avatar-img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; display: block; }
+.forward-room-fallback { width: 36px; height: 36px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--konnix-bg); color: var(--konnix-ink); border: 1px solid var(--konnix-border); font-size: 1rem; line-height: 1; }
+.forward-room-fallback.channel { color: var(--konnix-primary); font-weight: 700; }
+.forward-room-fallback.group { color: var(--konnix-ink-soft); }
+.forward-user-fallback { width: 36px; height: 36px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--konnix-bg); color: var(--konnix-ink); font-weight: 700; font-size: 0.82rem; border: 1px solid var(--konnix-border); line-height: 1; text-transform: uppercase; }
+.forward-user-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+.forward-user-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; color: var(--konnix-ink); }
+.forward-user-info small { color: var(--konnix-ink-soft); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forward-empty { padding: 1.5rem; text-align: center; color: var(--konnix-ink-soft); font-size: 0.85rem; }
 .forward-modal.admin-modal > .input { display: block; width: calc(100% - 60px); max-width: none; margin-top: 1rem; margin-bottom: 0.75rem; min-height: 44px; padding: 0.65rem 0.75rem; }
 .forward-modal > .forward-list { margin-top: 0; }
 
