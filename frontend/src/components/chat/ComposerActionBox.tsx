@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatBytes } from '../../api'
 import type { Attachment, Room } from '../../api'
-import { IconAudioWave, IconClip, IconCode, IconMic, IconPlus, IconStop, IconTrash, IconX } from '../icons'
+import { IconAudioWave, IconClip, IconCode, IconMic, IconPencil, IconPlus, IconStop, IconTrash, IconX } from '../icons'
 
 export function ComposerPendingAttachments({
   files,
   urls,
   onRemove,
+  onEdit,
 }: {
   files: File[]
   urls: string[]
   onRemove: (index: number) => void
+  onEdit?: (index: number) => void
 }) {
   if (files.length === 0) return null
   const hasImage = files.some((file) => file.type.startsWith('image/'))
@@ -25,6 +27,17 @@ export function ComposerPendingAttachments({
               <img src={urls[index]} alt={`Prévia de ${file.name}`} />
             </div>
             <span className="composer-pending-name" title={file.name}>{file.name}</span>
+            {onEdit && (
+              <button
+                className="composer-pending-edit"
+                type="button"
+                onClick={() => onEdit(index)}
+                title={`Desenhar / editar ${file.name}`}
+                aria-label={`Editar ${file.name}`}
+              >
+                <IconPencil size={13} />
+              </button>
+            )}
             <button className="composer-pending-remove" type="button" onClick={() => onRemove(index)} aria-label={`Remover ${file.name}`}>×</button>
           </div>
         ) : (

@@ -30,6 +30,7 @@ import {
   PersonIcon,
 } from '../icons'
 import { ForwardMessageModal } from '../modals/ForwardMessageModal'
+import { ImageEditorModal } from '../modals/ImageEditorModal'
 import { AddMembersModal, MembersModal, RemoveMembersModal } from '../modals/MembersModal'
 import { CreatePollModal } from '../modals/PollModals'
 import { ReadReceiptsModal } from '../modals/ReadReceiptsModal'
@@ -206,6 +207,7 @@ export function RoomView({
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
   const [pendingAttachmentUrls, setPendingAttachmentUrls] = useState<string[]>([])
+  const [editingImageState, setEditingImageState] = useState<{ file: File } | null>(null)
   const latestDraftRef = useRef(draft)
   const latestAttachmentsRef = useRef(pendingAttachments)
   const draftRoomRef = useRef(room.id)
@@ -325,35 +327,93 @@ export function RoomView({
     setRecordingSeconds(recording ? elapsedSeconds : 0)
   }, [])
 
-  const addPendingAttachments = useCallback((files: File[]) => {
-    if (files.length === 0 || editingMessage) return
-    const maxUploadBytes = api.getMaxUploadBytes()
-    const validFiles: File[] = []
-    for (const file of files) {
-      if (file.size > maxUploadBytes) {
-        notify(
-          `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
-        )
-      } else {
-        validFiles.push(file)
-      }
-    }
-    if (validFiles.length === 0) return
-    setPendingAttachments((current) => {
-      const next = [...current]
-      for (const file of validFiles) {
-        if (next.length >= 10) break
-        if (
-          !next.some(
-            (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
+  const addPendingAttachments = useCallback(
+    (files: File[], openEditor = true) => {
+      if (files.length === 0 || editingMessage) return
+      const maxUploadBytes = api.getMaxUploadBytes()
+      const validFiles: File[] = []
+      for (const file of files) {
+        if (file.size > maxUploadBytes) {
+          notify(
+            `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
           )
-        ) {
-          next.push(file)
+        } else {
+          validFiles.push(file)
         }
       }
-      return next
+      if (validFiles.length === 0) return
+
+      const imageFile = openEditor ? validFiles.find((f) => f.type.startsWith('image/')) : null
+
+      setPendingAttachments((current) => {
+        const next = [...current]
+        for (const file of validFiles) {
+          if (next.length >= 10) break
+          if (
+            !next.some(
+              (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
+            )
+          ) {
+            next.push(file)
+          }
+        }
+        return next
+      })
+
+      if (imageFile) {
+        setEditingImageState((current) => current || { file: imageFile })
+      }
+    },
+    [editingMessage, notify],
+  )
+
+  const handleEditorSaveDraft = useCallback((editedFile: File) => {
+    setPendingAttachments((current) => {
+      const original = editingImageState?.file
+      if (!original) return [...current, editedFile]
+      const index = current.findIndex(
+        (f) => f === original || (f.name === original.name && f.size === original.size),
+      )
+      if (index >= 0) {
+        const next = [...current]
+        next[index] = editedFile
+        return next
+      }
+      return [...current, editedFile]
     })
-  }, [editingMessage, notify])
+    setEditingImageState(null)
+  }, [editingImageState])
+
+  const handleEditorSend = useCallback(
+    async (editedFile: File, caption: string) => {
+      stopTyping(true)
+      if (muted) return
+      forceScrollToBottomRef.current = true
+      const original = editingImageState?.file
+      const quoted = quotedMessage
+
+      setPendingAttachments((current) => {
+        if (!original) return current
+        return current.filter(
+          (f) => !(f === original || (f.name === original.name && f.size === original.size)),
+        )
+      })
+      setDraft('')
+      setQuotedMessage(null)
+      setEditingImageState(null)
+
+      const sent = await onSend(caption, quoted?.id, [editedFile])
+      if (!sent) {
+        forceScrollToBottomRef.current = false
+        setDraft(caption)
+        setQuotedMessage(quoted)
+        setPendingAttachments((current) => [...current, editedFile])
+      } else {
+        void clearRoomDraft(me.id, room.id)
+      }
+    },
+    [editingImageState, muted, onSend, quotedMessage, stopTyping, me.id, room.id],
+  )
 
   const audioRecorder = useAudioRecorder({
     resetKey: audioResetKey,
@@ -1979,6 +2039,7 @@ export function RoomView({
               files={pendingAttachments}
               urls={pendingAttachmentUrls}
               onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              onEdit={(index) => setEditingImageState({ file: pendingAttachments[index] })}
             />
           )}
           {quotedMessage && (
@@ -2399,6 +2460,15 @@ export function RoomView({
             setPollOpen(false)
           }}
           notify={modalNotify}
+        />
+      )}
+      {editingImageState && (
+        <ImageEditorModal
+          file={editingImageState.file}
+          initialCaption={draft}
+          onClose={() => setEditingImageState(null)}
+          onSend={handleEditorSend}
+          onSaveDraft={handleEditorSaveDraft}
         />
       )}
       {isDragActive && (
