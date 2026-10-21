@@ -367,6 +367,11 @@ export function RoomView({
     [editingMessage, notify],
   )
 
+  const handleEditorClose = useCallback(() => {
+    setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
   const handleEditorSaveDraft = useCallback((editedFile: File) => {
     setPendingAttachments((current) => {
       const original = editingImageState?.file
@@ -382,6 +387,7 @@ export function RoomView({
       return [...current, editedFile]
     })
     setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
   }, [editingImageState])
 
   const handleEditorSend = useCallback(
@@ -2465,8 +2471,9 @@ export function RoomView({
       {editingImageState && (
         <ImageEditorModal
           file={editingImageState.file}
-          initialCaption={draft}
-          onClose={() => setEditingImageState(null)}
+          caption={draft}
+          onCaptionChange={setDraft}
+          onClose={handleEditorClose}
           onSend={handleEditorSend}
           onSaveDraft={handleEditorSaveDraft}
         />
