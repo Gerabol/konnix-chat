@@ -3110,18 +3110,6 @@ button:disabled {
   color: #ef4444;
 }
 
-.message-pinned-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--konnix-primary);
-  background: rgba(91, 76, 240, 0.08);
-  padding: 0.05rem 0.35rem;
-  border-radius: 4px;
-}
-
 .message-action-pin.active {
   color: var(--konnix-primary);
   background: rgba(91, 76, 240, 0.1);
@@ -3468,13 +3456,13 @@ button:disabled {
   color: var(--konnix-ink);
 }
 
-/* Indicador de mensagem favorita: posicionado fora do fluxo dentro da hora para
-   nunca alargar a caixa da mensagem. Fica à direita da hora nas mensagens dos
-   outros e à esquerda da hora nas próprias (comportamento espelhado). */
-.message-favorite-indicator {
+/* Indicadores de mensagem favorita e fixada: posicionados fora do fluxo dentro
+   da hora para nunca alargar a caixa da mensagem. Ficam à direita da hora nas
+   mensagens dos outros e à esquerda nas próprias (comportamento espelhado). */
+.message-favorite-indicator,
+.message-pin-indicator {
   position: absolute;
   top: 50%;
-  left: calc(100% + 4px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3484,9 +3472,26 @@ button:disabled {
   line-height: 1;
 }
 
-.message.mine .message-favorite-indicator {
+.message-pin-indicator {
+  color: var(--konnix-primary);
+  opacity: 1;
+  /* Mensagens dos outros: pin à direita da hora, mais próximo que o favorito. */
+  left: calc(100% + 4px);
+}
+
+.message-favorite-indicator {
+  left: calc(100% + 18px);
+}
+
+/* Mensagens próprias: indicadores à esquerda da hora (espelhado). */
+.message.mine .message-pin-indicator {
   left: auto;
   right: calc(100% + 4px);
+}
+
+.message.mine .message-favorite-indicator {
+  left: auto;
+  right: calc(100% + 18px);
 }
 
 .user-favorites-modal {

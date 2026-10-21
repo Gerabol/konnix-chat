@@ -7,7 +7,7 @@ import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
 import { AttachmentView } from './AttachmentView'
 import { AvatarImage, initials } from './AvatarImage'
-import { IconHeart } from '../icons'
+import { IconHeart, IconPin } from '../icons'
 import { MessageActionBar } from './MessageActionBar'
 import { PollCard } from './PollCard'
 
@@ -85,19 +85,24 @@ function MessageRowComponent({
   // Renderiza as marcações em um único elemento para poder posicioná-las antes do
   // nome nas mensagens próprias e depois do nome nas mensagens dos demais.
   const messageTags =
-    msg.forwardedFromUsername || isPinned || msg.editedAt ? (
+    msg.forwardedFromUsername || msg.editedAt ? (
       <span className="message-tags">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
-        {isPinned && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
         {msg.editedAt && <em className="message-edited">Editada</em>}
       </span>
     ) : null
-  // O indicador de favorito é renderizado dentro da hora e posicionado fora do
-  // fluxo pelo CSS: assim ele nunca alarga a caixa da mensagem e fica à direita
-  // da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
+  // Os indicadores de favorito e de fixada são renderizados dentro da hora e
+  // posicionados fora do fluxo pelo CSS: assim nunca alargam a caixa da mensagem
+  // e ficam à direita da hora nas mensagens dos outros e à esquerda nas próprias
+  // (espelhado). O pin usa apenas o ícone, no mesmo escopo do favorito.
   const favoriteIndicator = isFavorite ? (
     <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
       <IconHeart size={12} filled />
+    </span>
+  ) : null
+  const pinnedIndicator = isPinned ? (
+    <span className="message-pin-indicator" title="Mensagem fixada" aria-label="Mensagem fixada">
+      <IconPin size={12} />
     </span>
   ) : null
   const authorAvatarPath = msg.userId
@@ -285,8 +290,9 @@ function MessageRowComponent({
         <div className="message-meta">
           {isMine && (
             <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>
-              {formatTime(msg.createdAt)}
               {favoriteIndicator}
+              {pinnedIndicator}
+              {formatTime(msg.createdAt)}
             </span>
           )}
           {deleted ? (
@@ -319,8 +325,9 @@ function MessageRowComponent({
           )}
           {!isMine && (
             <span className="message-time">
-              {formatTime(msg.createdAt)}
               {favoriteIndicator}
+              {pinnedIndicator}
+              {formatTime(msg.createdAt)}
             </span>
           )}
           {isMine && readReceiptsEnabled && !deleted && (
