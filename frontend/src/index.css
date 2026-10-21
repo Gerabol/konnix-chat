@@ -3055,9 +3055,11 @@ button:disabled {
 }
 
 .pinned-icon {
-  font-size: 1.05rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  color: var(--konnix-primary);
 }
 
 .pinned-text-wrap {
@@ -3456,17 +3458,27 @@ button:disabled {
   color: var(--konnix-ink);
 }
 
-/* Indicadores de mensagem favorita e fixada: posicionados fora do fluxo dentro
-   da hora para nunca alargar a caixa da mensagem. Ficam à direita da hora nas
-   mensagens dos outros e à esquerda nas próprias (comportamento espelhado). */
-.message-favorite-indicator,
-.message-pin-indicator {
+/* Indicadores de mensagem favorita e fixada: o contêiner é posicionado fora do
+   fluxo dentro da hora para nunca alargar a caixa da mensagem. Como é um flex em
+   pacote, ocupa apenas o espaço dos ícones presentes — sem buraco quando só um
+   está ativo. Fica à direita da hora nas mensagens dos outros e à esquerda nas
+   próprias (comportamento espelhado). */
+.message-indicators {
   position: absolute;
   top: 50%;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
   transform: translateY(-50%);
+  /* Mensagens dos outros: indicadores à direita da hora. */
+  left: calc(100% + 4px);
+}
+
+.message-favorite-indicator,
+.message-pin-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--konnix-ink-soft);
   opacity: 0.85;
   line-height: 1;
@@ -3475,23 +3487,12 @@ button:disabled {
 .message-pin-indicator {
   color: var(--konnix-primary);
   opacity: 1;
-  /* Mensagens dos outros: pin à direita da hora, mais próximo que o favorito. */
-  left: calc(100% + 4px);
-}
-
-.message-favorite-indicator {
-  left: calc(100% + 18px);
 }
 
 /* Mensagens próprias: indicadores à esquerda da hora (espelhado). */
-.message.mine .message-pin-indicator {
+.message.mine .message-indicators {
   left: auto;
   right: calc(100% + 4px);
-}
-
-.message.mine .message-favorite-indicator {
-  left: auto;
-  right: calc(100% + 18px);
 }
 
 .user-favorites-modal {
