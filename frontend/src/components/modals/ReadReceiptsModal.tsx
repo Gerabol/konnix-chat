@@ -3,7 +3,7 @@ import { api, formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction, ReadReceipt } from '../../api'
 import { Modal } from './Modal'
 import { AvatarImage, initials } from '../chat/AvatarImage'
-import { formatReaderCount, readerDisplayName, sortReadersByDate } from '../../utils/readReceipts'
+import { readerDisplayName, sortReadersByDate } from '../../utils/readReceipts'
 
 export function ReadReceiptsModal({
   message,
@@ -41,15 +41,8 @@ export function ReadReceiptsModal({
     }
   }, [message.id])
 
-  const countLabel = readers.length > 0 ? formatReaderCount(readers.length) : null
-
   return (
     <Modal title="Visualizar leitura" onClose={onClose} className="read-receipts-modal">
-      {countLabel && (
-        <div className="read-receipts-summary">
-          <small>{countLabel}</small>
-        </div>
-      )}
       <div className="read-receipts-list">
         {loading && readers.length === 0 && (
           <span className="nav-empty">Carregando confirmações de leitura…</span>

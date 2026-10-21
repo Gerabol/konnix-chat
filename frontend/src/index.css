@@ -6051,14 +6051,6 @@ img.room-header-avatar {
   line-height: 1;
 }
 
-.read-receipts-summary {
-  margin: -0.25rem 0 0.5rem;
-  padding: 0 0.25rem;
-  color: var(--konnix-ink-soft);
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
 .read-receipts-list,
 .reaction-users-list {
   display: flex;
