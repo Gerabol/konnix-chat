@@ -189,21 +189,10 @@ public class ChatEventPublisher {
                 return;
             }
 
-            roomMemberRepository.findByRoomId(roomId).stream()
-                    .filter(member -> {
-                        var u = member.getUser();
-                        if (u == null) {
-                            return false;
-                        }
-                        if (u.isDisabled()) {
-                            return false;
-                        }
-                        String status = u.getAccountStatus();
-                        if (status != null && !status.isBlank() && "DISABLED".equals(status)) {
-                            return false;
-                        }
-                        return true;
-                    })
+            // Usa consulta com join fetch do usuário: publishTyping é acionado pela thread do
+            // WebSocket (sem transação), então acessar member.getUser() de forma lazy lançaria
+            // LazyInitializationException e o evento seria descartado silenciosamente.
+            roomMemberRepository.findActiveUsersByRoomId(roomId).stream()
                     .map(member -> member.getUser().getId())
                     .distinct()
                     .forEach(userId -> sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json)));
