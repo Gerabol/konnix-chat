@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
+import { canReplyPrivate } from '../../utils/privateReply'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
@@ -30,7 +31,7 @@ export interface MessageRowProps {
   actionPinned: boolean
   onPinAction: (msgId: string, pinned: boolean) => void
   highlighted: boolean
-  onJumpToQuoted: (messageId: string) => void
+  onJumpToQuoted: (messageId: string, originRoomId?: string | null) => void
   readReceiptsEnabled: boolean
   transcriptionEnabled: boolean
   onShowReads: (msgId: string) => void
@@ -41,6 +42,8 @@ export interface MessageRowProps {
   isFavorite?: boolean
   onToggleFavorite?: (msg: Message) => void
   validMentionUsernames?: Set<string>
+  roomType?: string
+  onReplyPrivate?: (msg: Message) => void
 }
 
 /** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
@@ -78,6 +81,8 @@ function MessageRowComponent({
   isFavorite = false,
   onToggleFavorite,
   validMentionUsernames,
+  roomType,
+  onReplyPrivate,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
   const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
@@ -375,6 +380,11 @@ function MessageRowComponent({
             onTogglePin={onTogglePin ? () => onTogglePin(msg) : undefined}
             isFavorite={isFavorite}
             onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
+            onReplyPrivate={
+              onReplyPrivate && canReplyPrivate(roomType, isMine, !!msg.userId)
+                ? () => onReplyPrivate(msg)
+                : undefined
+            }
           />
         )}
         {!deleted && (
@@ -383,9 +393,14 @@ function MessageRowComponent({
               <button
                 type="button"
                 className="quoted-message"
-                onClick={() => onJumpToQuoted(msg.quotedMessage!.id)}
+                onClick={() => onJumpToQuoted(msg.quotedMessage!.id, msg.quotedMessage?.originRoomId)}
               >
-                <strong>{msg.quotedMessage.username}</strong>
+                <div className="quoted-message-header">
+                  <strong>{msg.quotedMessage.username}</strong>
+                  {msg.quotedMessage.originRoomName && (
+                    <span className="quoted-message-origin">em {msg.quotedMessage.originRoomName}</span>
+                  )}
+                </div>
                 <span>{msg.quotedMessage.content || 'Anexo'}</span>
               </button>
             )}
