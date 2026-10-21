@@ -578,4 +578,209 @@ class MessageServiceTest {
                 .isEqualTo("MESSAGE_CONTENT_REQUIRED");
     }
 
+    @Test
+    void allowsPrivateReplyInDirectRoomToGroupMessage() {
+        UUID actorId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+        actor.setUsername("ana");
+
+        User partner = new User();
+        partner.setId(partnerId);
+        partner.setUsername("bruno");
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+        groupRoom.setName("dev-team");
+        groupRoom.setDisplayName("Equipe de Desenvolvimento");
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+        parentMessage.setUser(partner);
+        parentMessage.setContent("Alguém viu a issue #123?");
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        RoomMember actorMember = new RoomMember();
+        actorMember.setUser(actor);
+        actorMember.setJoinedAt(Instant.now());
+
+        RoomMember partnerMember = new RoomMember();
+        partnerMember.setUser(partner);
+        partnerMember.setJoinedAt(Instant.now());
+
+        when(roomMemberRepository.findByRoomId(directRoomId)).thenReturn(List.of(actorMember, partnerMember));
+        when(roomMemberRepository.findByRoomIdAndUserId(groupRoomId, partnerId)).thenReturn(Optional.of(partnerMember));
+        when(attachmentRepository.findAllByMessageIdIn(any())).thenReturn(List.of());
+        when(messageRepository.save(any(Message.class))).thenAnswer(call -> {
+            Message saved = call.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(UUID.randomUUID());
+            }
+            return saved;
+        });
+
+        MessageResponse response = messageService.create(directRoomId,
+                new CreateMessageRequest("Respondendo no particular sobre isso", parentMessageId, null),
+                principal, "127.0.0.1");
+
+        assertThat(response).isNotNull();
+        assertThat(response.parentMessageId()).isEqualTo(parentMessageId);
+        assertThat(response.quotedMessage()).isNotNull();
+        assertThat(response.quotedMessage().id()).isEqualTo(parentMessageId);
+        assertThat(response.quotedMessage().username()).isEqualTo("bruno");
+        assertThat(response.quotedMessage().originRoomId()).isEqualTo(groupRoomId);
+        assertThat(response.quotedMessage().originRoomName()).isEqualTo("Equipe de Desenvolvimento");
+    }
+
+    @Test
+    void rejectsPrivateReplyIfActorNotMemberOfGroup() {
+        UUID actorId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(false);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        assertThatThrownBy(() -> messageService.create(directRoomId,
+                new CreateMessageRequest("Tentando responder sem ser membro", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("NOT_ROOM_MEMBER");
+    }
+
+    @Test
+    void rejectsPrivateReplyIfDirectPartnerNotMemberOfGroup() {
+        UUID actorId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        User partner = new User();
+        partner.setId(partnerId);
+
+        User thirdUser = new User();
+        thirdUser.setId(UUID.randomUUID());
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+        parentMessage.setUser(thirdUser);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        RoomMember actorMember = new RoomMember();
+        actorMember.setUser(actor);
+        RoomMember partnerMember = new RoomMember();
+        partnerMember.setUser(partner);
+
+        when(roomMemberRepository.findByRoomId(directRoomId)).thenReturn(List.of(actorMember, partnerMember));
+        when(roomMemberRepository.findByRoomIdAndUserId(groupRoomId, partnerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.create(directRoomId,
+                new CreateMessageRequest("Tentando vazar info de grupo secreto", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("PARENT_ROOM_MISMATCH");
+    }
+
+    @Test
+    void rejectsCrossRoomReplyBetweenTwoNonDirectRooms() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomAId = UUID.randomUUID();
+        UUID roomBId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        Room roomA = new Room();
+        roomA.setId(roomAId);
+        roomA.setType("CHANNEL");
+
+        Room roomB = new Room();
+        roomB.setId(roomBId);
+        roomB.setType("CHANNEL");
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(roomA);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(roomBId)).thenReturn(Optional.of(roomB));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomBId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(roomB, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        assertThatThrownBy(() -> messageService.create(roomBId,
+                new CreateMessageRequest("Citação inválida entre canais", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("PARENT_ROOM_MISMATCH");
+    }
+
 }

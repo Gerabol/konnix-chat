@@ -3797,7 +3797,58 @@ button:disabled {
 .message-actions > button:hover, .message-emoji-action > button:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
 .message-emoji-action > button { font-size: 1.2rem; }
-.message-actions > button.message-action-pin, .message-actions > button.message-action-copy { display: inline-flex; align-items: center; justify-content: center; }
+.message-actions > button.message-action-pin, .message-actions > button.message-action-copy, .message-actions > button.message-action-more { display: inline-flex; align-items: center; justify-content: center; }
+.message-actions > button.message-action-more.active { background: var(--konnix-bg); color: var(--konnix-primary); }
+.message-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 195px;
+  padding: 4px;
+  border: 1px solid var(--konnix-border);
+  border-radius: 12px;
+  background: var(--konnix-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  animation: dropdown-enter 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.message-more-menu-portal {
+  position: fixed;
+  z-index: 10000;
+}
+.message-more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--konnix-ink);
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.message-more-menu-item:hover,
+.message-more-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--konnix-primary) 12%, transparent);
+  color: var(--konnix-primary);
+}
+.message-more-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--konnix-ink-soft);
+  flex-shrink: 0;
+}
+.message-more-menu-item:hover .message-more-menu-icon,
+.message-more-menu-item:focus-visible .message-more-menu-icon {
+  color: var(--konnix-primary);
+}
 .message-emoji-menu {
   display: flex;
   flex-direction: column;
@@ -6243,6 +6294,8 @@ img.room-header-avatar {
 .quoted-message:hover { background: color-mix(in srgb, var(--konnix-primary) 18%, transparent); }
 .quoted-message strong { color: var(--konnix-primary-deep); font-size: 0.72rem; }
 .quoted-message span { overflow: hidden; color: var(--konnix-ink-soft); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.quoted-message-header { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; line-height: 1.2; }
+.quoted-message-origin { font-size: 0.68rem; font-weight: 500; color: var(--konnix-ink-soft); opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .message-reactions { display: flex; gap: 0.25rem; margin-top: 0.25rem; }
 .message-reactions span { padding: 0.12rem 0.35rem; border: 1px solid var(--konnix-border); border-radius: 999px; background: var(--konnix-surface); font-size: 0.75rem; }
 .message-highlighted { animation: message-anchor-highlight 2.2s ease-out; }
@@ -6252,6 +6305,8 @@ img.room-header-avatar {
 .quote-preview div { display: flex; min-width: 0; flex-direction: column; gap: 0.1rem; }
 .quote-preview strong { color: var(--konnix-primary-deep); font-size: 0.76rem; }
 .quote-preview span { overflow: hidden; color: var(--konnix-ink-soft); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+.quote-preview-header { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.quote-preview-origin { font-size: 0.72rem; font-weight: 500; color: var(--konnix-ink-soft); opacity: 0.9; }
 .quote-preview > button { width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--konnix-ink-soft); font-size: 1.1rem; }
 .forward-list { display: flex; max-height: 320px; margin-top: 0.7rem; flex-direction: column; gap: 4px; overflow-y: auto; }
 .forward-user { display: flex; align-items: center; gap: 0.65rem; padding: 0.45rem 0.6rem; border: 0; border-radius: 8px; background: transparent; color: var(--konnix-ink); text-align: left; cursor: pointer; transition: background-color 0.15s ease; width: 100%; box-sizing: border-box; }
