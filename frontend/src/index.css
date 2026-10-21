@@ -3850,6 +3850,7 @@ button:disabled {
   margin: 0;
   max-width: 100%;
   min-width: 0;
+  align-self: flex-start;
   box-sizing: border-box;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3904,10 +3905,22 @@ button:disabled {
 .message-link:hover { color: var(--konnix-primary-deep); }
 
 .message.mine .message-content {
+  align-self: flex-end;
   background: rgba(91, 76, 240, 0.1);
   border-color: rgba(91, 76, 240, 0.22);
   border-radius: 12px;
   border-top-right-radius: 4px;
+}
+
+/* Quando há citação ou anexo (arquivo, imagem, áudio), o balão acompanha a largura
+   do elemento para manter coerência de tamanhos, em vez de encolher ao próprio texto.
+   Vale para mensagens próprias e dos outros, por isso sobrepõe os align-self acima. */
+.message .message-body:has(.quoted-message) .message-content,
+.message .message-body:has(> .attachment) .message-content,
+.message .message-body:has(> .attachment-image) .message-content,
+.message .message-body:has(> .attachment-audio) .message-content,
+.message .message-body:has(> .attachment-audio-loading) .message-content {
+  align-self: stretch;
 }
 
 .message-delete {
@@ -4113,13 +4126,14 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  width: fit-content;
   max-width: 320px;
 }
 
 .attachment-img-btn {
   display: block;
-  width: 100%;
-  max-width: 320px;
+  width: fit-content;
+  max-width: 100%;
   padding: 0;
   border: 0;
   border-radius: 12px;
@@ -4135,8 +4149,8 @@ button:disabled {
 
 .attachment-img {
   display: block;
-  width: 100%;
-  max-width: 320px;
+  width: auto;
+  max-width: 100%;
   max-height: 320px;
   object-fit: cover;
   border: 1px solid var(--konnix-border);

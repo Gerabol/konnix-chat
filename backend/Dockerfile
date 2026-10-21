@@ -26,8 +26,10 @@ RUN mkdir -p /app/uploads && chown -R konnix:konnix /app
 ENV JAVA_OPTS="-Xms256m -Xmx512m"
 COPY --from=build --chown=konnix:konnix /build/target/*.jar app.jar
 
-# Executa com usuário não-privilegiado (SEC-06)
-USER konnix
+# O entrypoint inicia como root apenas para corrigir o dono do volume de uploads
+# (criado como root:root pelo Docker) e então abandonar privilégios para "konnix".
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8080
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
