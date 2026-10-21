@@ -46,6 +46,7 @@ import { RoomFavoritesPanel } from './RoomFavoritesPanel'
 import { RoomFilesPanel } from './RoomFilesPanel'
 import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndicator'
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
+import { resolveQuotedOriginName } from '../../utils/privateReply'
 
 const SEARCH_DEBOUNCE_MS = 400
 const DRAFT_SAVE_DEBOUNCE_MS = 400
@@ -115,6 +116,10 @@ export interface RoomViewProps {
   initialTargetMessageId?: string | null
   onClearTargetMessageId?: () => void
   favoriteUpdate?: { roomId: string; messageId: string; favorite: boolean; timestamp: number } | null
+  initialQuotedMessage?: Message | null
+  onClearInitialQuotedMessage?: () => void
+  onReplyPrivate?: (message: Message, originRoom: Room) => void
+  onJumpToRoomMessage?: (roomId: string, messageId: string) => void
 }
 
 export function RoomView({
@@ -153,6 +158,10 @@ export function RoomView({
   initialTargetMessageId,
   onClearTargetMessageId,
   favoriteUpdate,
+  initialQuotedMessage,
+  onClearInitialQuotedMessage,
+  onReplyPrivate,
+  onJumpToRoomMessage,
 }: RoomViewProps) {
   const isPendingDm = room.id.startsWith('pending:')
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
@@ -368,6 +377,11 @@ export function RoomView({
     [editingMessage, notify],
   )
 
+  const handleEditorClose = useCallback(() => {
+    setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
   const handleEditorSaveDraft = useCallback((editedFile: File) => {
     setPendingAttachments((current) => {
       const original = editingImageState?.file
@@ -383,6 +397,7 @@ export function RoomView({
       return [...current, editedFile]
     })
     setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
   }, [editingImageState])
 
   const handleEditorSend = useCallback(
@@ -701,7 +716,7 @@ export function RoomView({
     setPendingAttachments([])
     setEditingMessage(null)
     setComposerExpanded(false)
-    setQuotedMessage(null)
+    setQuotedMessage(initialQuotedMessage ?? null)
     setForwardMessage(null)
     setPinnedActionId(null)
     setHighlightedMessageId(null)
@@ -1356,6 +1371,31 @@ export function RoomView({
     setReadMessageId(msgId)
   }, [])
 
+  const handleReplyPrivate = useCallback(
+    (msg: Message) => {
+      onReplyPrivate?.(msg, room)
+    },
+    [onReplyPrivate, room],
+  )
+
+  const handleJumpToQuoted = useCallback(
+    (messageId: string, originRoomId?: string | null) => {
+      if (originRoomId && originRoomId !== room.id && onJumpToRoomMessage) {
+        onJumpToRoomMessage(originRoomId, messageId)
+      } else {
+        jumpToMessage(messageId)
+      }
+    },
+    [room.id, onJumpToRoomMessage, jumpToMessage],
+  )
+
+  useEffect(() => {
+    if (!initialQuotedMessage) return
+    setQuotedMessage(initialQuotedMessage)
+    onClearInitialQuotedMessage?.()
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [initialQuotedMessage, onClearInitialQuotedMessage])
+
   const handleRespond = useCallback((m: Message) => {
     setRespondMessage(m)
   }, [])
@@ -1909,7 +1949,7 @@ export function RoomView({
                   actionPinned={pinnedActionId === m.id}
                   onPinAction={handlePinAction}
                   highlighted={highlightedMessageId === m.id}
-                  onJumpToQuoted={jumpToMessage}
+                  onJumpToQuoted={handleJumpToQuoted}
                   readReceiptsEnabled={readReceiptsEnabled}
                   transcriptionEnabled={transcriptionEnabled}
                   onShowReads={handleShowReads}
@@ -1920,6 +1960,8 @@ export function RoomView({
                   validMentionUsernames={validMentionUsernames}
                   isFavorite={favoriteMessageIds.has(m.id)}
                   onToggleFavorite={handleToggleFavorite}
+                  roomType={room.type}
+                  onReplyPrivate={room.type !== 'DIRECT' && onReplyPrivate ? handleReplyPrivate : undefined}
                 />
               ))}
             </div>
@@ -2046,7 +2088,14 @@ export function RoomView({
           {quotedMessage && (
             <div className="quote-preview">
               <div>
-                <strong>Respondendo a {quotedMessage.username || 'usuário'}</strong>
+                <div className="quote-preview-header">
+                  <strong>Respondendo a {quotedMessage.username || 'usuário'}</strong>
+                  {resolveQuotedOriginName(quotedMessage, room.id, rooms) && (
+                    <span className="quote-preview-origin">
+                      em {resolveQuotedOriginName(quotedMessage, room.id, rooms)}
+                    </span>
+                  )}
+                </div>
                 <span>{quotedMessage.content || 'Anexo'}</span>
               </div>
               <button type="button" onClick={() => setQuotedMessage(null)} aria-label="Desvincular citação">
@@ -2466,8 +2515,9 @@ export function RoomView({
       {editingImageState && (
         <ImageEditorModal
           file={editingImageState.file}
-          initialCaption={draft}
-          onClose={() => setEditingImageState(null)}
+          caption={draft}
+          onCaptionChange={setDraft}
+          onClose={handleEditorClose}
           onSend={handleEditorSend}
           onSaveDraft={handleEditorSaveDraft}
         />

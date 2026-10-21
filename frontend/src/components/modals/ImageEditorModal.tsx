@@ -35,7 +35,9 @@ import {
 
 export interface ImageEditorModalProps {
   file: File
+  caption?: string
   initialCaption?: string
+  onCaptionChange?: (caption: string) => void
   onClose: () => void
   onSend: (editedFile: File, caption: string) => Promise<void> | void
   onSaveDraft?: (editedFile: File) => void
@@ -43,7 +45,9 @@ export interface ImageEditorModalProps {
 
 export function ImageEditorModal({
   file,
+  caption: captionProp,
   initialCaption = '',
+  onCaptionChange: onCaptionChangeProp,
   onClose,
   onSend,
   onSaveDraft,
@@ -58,7 +62,19 @@ export function ImageEditorModal({
   const [shapeType, setShapeType] = useState<ShapeType>('rectangle')
   const [color, setColor] = useState<string>(DEFAULT_ANNOTATION_COLORS[0]) // Vermelho
   const [strokeSizeId, setStrokeSizeId] = useState<StrokeSizeId>('medium')
-  const [caption, setCaption] = useState<string>(initialCaption)
+
+  const isControlled = captionProp !== undefined && onCaptionChangeProp !== undefined
+  const [internalCaption, setInternalCaption] = useState<string>(initialCaption)
+  const caption = isControlled ? captionProp : internalCaption
+
+  const handleCaptionChange = (value: string) => {
+    if (isControlled) {
+      onCaptionChangeProp(value)
+    } else {
+      setInternalCaption(value)
+    }
+  }
+
   const [isExporting, setIsExporting] = useState<boolean>(false)
 
   // Entrada de texto inline sobre a imagem
@@ -624,8 +640,9 @@ export function ImageEditorModal({
               type="text"
               className="image-editor-caption-input"
               value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="Adicionar uma legenda…"
+              onChange={(e) => handleCaptionChange(e.target.value)}
+              placeholder="Enviar uma mensagem…"
+              aria-label="Enviar uma mensagem"
               disabled={isExporting}
               autoFocus
             />
