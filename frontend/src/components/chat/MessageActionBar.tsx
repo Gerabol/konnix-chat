@@ -119,7 +119,7 @@ export function MessageActionBar({
       if (!moreBtnRef.current) return
       const r = moreBtnRef.current.getBoundingClientRect()
       const menuW = 210
-      const menuH = 96
+      const menuH = 140
       let top = r.bottom + 4
       if (top + menuH > window.innerHeight) {
         top = Math.max(8, r.top - menuH - 4)
@@ -142,6 +142,8 @@ export function MessageActionBar({
       window.removeEventListener('resize', onScroll)
     }
   }, [moreOpen])
+
+  const hasMoreOptions = Boolean(onReplyPrivate || onToggleFavorite || onCopy)
 
   return (
     <div className="message-actions" ref={ref}>
@@ -195,20 +197,6 @@ export function MessageActionBar({
           <IconPin />
         </button>
       )}
-      {onToggleFavorite && (
-        <button
-          type="button"
-          className={`message-action-favorite ${isFavorite ? 'active' : ''}`}
-          title={isFavorite ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}
-          aria-label={isFavorite ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}
-          onClick={() => {
-            onPin(false)
-            onToggleFavorite()
-          }}
-        >
-          <IconHeart size={16} filled={isFavorite} />
-        </button>
-      )}
       {onRespond && (
         <button
           type="button"
@@ -245,20 +233,6 @@ export function MessageActionBar({
       >
         ❝
       </button>
-      {onCopy && (
-        <button
-          type="button"
-          className="message-action-copy"
-          title="Copiar mensagem"
-          aria-label="Copiar mensagem"
-          onClick={() => {
-            onPin(false)
-            onCopy()
-          }}
-        >
-          <IconCopy />
-        </button>
-      )}
       <button
         type="button"
         title="Encaminhar mensagem"
@@ -269,25 +243,27 @@ export function MessageActionBar({
       >
         ➜
       </button>
-      <button
-        ref={moreBtnRef}
-        type="button"
-        className={`message-action-more ${moreOpen ? 'active' : ''}`}
-        title="Mais opções"
-        aria-label="Mais opções da mensagem"
-        aria-haspopup="menu"
-        aria-expanded={moreOpen}
-        onClick={() => {
-          setOpen(false)
-          setMoreOpen((prev) => {
-            const next = !prev
-            onPin(next)
-            return next
-          })
-        }}
-      >
-        <IconDotsVertical size={16} />
-      </button>
+      {hasMoreOptions && (
+        <button
+          ref={moreBtnRef}
+          type="button"
+          className={`message-action-more ${moreOpen ? 'active' : ''}`}
+          title="Mais opções"
+          aria-label="Mais opções da mensagem"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => {
+            setOpen(false)
+            setMoreOpen((prev) => {
+              const next = !prev
+              onPin(next)
+              return next
+            })
+          }}
+        >
+          <IconDotsVertical size={16} />
+        </button>
+      )}
       {moreOpen &&
         morePos &&
         createPortal(
@@ -312,6 +288,23 @@ export function MessageActionBar({
                   <IconReplyPrivate size={16} />
                 </span>
                 <span>Responder em particular</span>
+              </button>
+            )}
+            {onToggleFavorite && (
+              <button
+                type="button"
+                className="message-more-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false)
+                  onPin(false)
+                  onToggleFavorite()
+                }}
+              >
+                <span className="message-more-menu-icon">
+                  <IconHeart size={16} filled={isFavorite} />
+                </span>
+                <span>{isFavorite ? 'Desfavoritar mensagem' : 'Favoritar mensagem'}</span>
               </button>
             )}
             {onCopy && (
