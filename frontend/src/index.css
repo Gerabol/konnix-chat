@@ -3791,7 +3791,61 @@ button:disabled {
 .message-actions > button:hover, .message-emoji-action > button:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
 .message-emoji-action > button { font-size: 1.2rem; }
-.message-actions > button.message-action-pin, .message-actions > button.message-action-copy { display: inline-flex; align-items: center; justify-content: center; }
+.message-actions > button.message-action-pin, .message-actions > button.message-action-copy, .message-actions > button.message-action-more { display: inline-flex; align-items: center; justify-content: center; }
+.message-actions > button.message-action-more.active { background: var(--konnix-bg); color: var(--konnix-primary); }
+.message-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 175px;
+  padding: 4px;
+  border: 1px solid var(--konnix-border);
+  border-radius: 12px;
+  background: var(--konnix-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  animation: dropdown-enter 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.message-more-menu-portal {
+  position: fixed;
+  z-index: 10000;
+}
+.message-more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--konnix-ink);
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.message-more-menu-item:hover,
+.message-more-menu-item:focus-visible {
+  background: var(--konnix-bg);
+  color: var(--konnix-primary);
+  outline: none;
+}
+.message-more-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--konnix-ink-soft);
+  flex-shrink: 0;
+}
+.message-more-menu-item:hover .message-more-menu-icon,
+.message-more-menu-item:focus-visible .message-more-menu-icon {
+  color: var(--konnix-primary);
+}
 .message-emoji-menu {
   display: flex;
   flex-direction: column;
@@ -5995,6 +6049,14 @@ img.room-header-avatar {
   color: var(--konnix-primary-deep);
   font-size: 0.9rem;
   line-height: 1;
+}
+
+.read-receipts-summary {
+  margin: -0.25rem 0 0.5rem;
+  padding: 0 0.25rem;
+  color: var(--konnix-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 .read-receipts-list,

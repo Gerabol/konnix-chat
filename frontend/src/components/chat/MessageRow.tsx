@@ -356,6 +356,7 @@ function MessageRowComponent({
             onTogglePin={onTogglePin ? () => onTogglePin(msg) : undefined}
             isFavorite={isFavorite}
             onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
+            onViewReads={readReceiptsEnabled ? () => onShowReads(msg.id) : undefined}
           />
         )}
         {!deleted && (
