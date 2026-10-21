@@ -20,6 +20,7 @@ import {
   IconCode,
   IconHeart,
   IconPencil,
+  IconPin,
   IconPlus,
   IconSearch,
   IconSend,
@@ -1819,7 +1820,7 @@ export function RoomView({
             title="Ir para a mensagem fixada"
           >
             <span className="pinned-icon" aria-hidden="true">
-              📌
+              <IconPin size={15} />
             </span>
             <div className="pinned-text-wrap">
               <span className="pinned-label">

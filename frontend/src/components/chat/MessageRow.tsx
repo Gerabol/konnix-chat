@@ -95,16 +95,26 @@ function MessageRowComponent({
   // posicionados fora do fluxo pelo CSS: assim nunca alargam a caixa da mensagem
   // e ficam à direita da hora nas mensagens dos outros e à esquerda nas próprias
   // (espelhado). O pin usa apenas o ícone, no mesmo escopo do favorito.
-  const favoriteIndicator = isFavorite ? (
-    <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
-      <IconHeart size={12} filled />
-    </span>
-  ) : null
-  const pinnedIndicator = isPinned ? (
-    <span className="message-pin-indicator" title="Mensagem fixada" aria-label="Mensagem fixada">
-      <IconPin size={12} />
-    </span>
-  ) : null
+  // Os indicadores de favorito e de fixada são renderizados num contêiner fora do
+  // fluxo, ao lado da hora: assim nunca alargam a caixa da mensagem e ficam à
+  // direita da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
+  // Por serem um flex em pacote, ocupam apenas o espaço dos ícones presentes, sem
+  // deixar buraco quando só um deles está ativo. O pin fica mais próximo da hora.
+  const indicators =
+    isFavorite || isPinned ? (
+      <span className="message-indicators">
+        {isPinned && (
+          <span className="message-pin-indicator" title="Mensagem fixada" aria-label="Mensagem fixada">
+            <IconPin size={12} />
+          </span>
+        )}
+        {isFavorite && (
+          <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
+            <IconHeart size={12} filled />
+          </span>
+        )}
+      </span>
+    ) : null
   const authorAvatarPath = msg.userId
     ? `${userAvatarPath(msg.userId)}${
         isMine
@@ -288,12 +298,25 @@ function MessageRowComponent({
       )}
       <div className="message-body">
         <div className="message-meta">
+          {/* Nas mensagens próprias a ordem visual é: favorito+fixada (dentro da
+              hora), hora, confirmação de leitura, tags/papéis e nome — por isso a
+              hora e a leitura vêm antes do bloco do autor no DOM. Nas mensagens dos
+              demais mantém-se a ordem original (autor e depois hora). */}
           {isMine && (
             <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>
-              {favoriteIndicator}
-              {pinnedIndicator}
+              {indicators}
               {formatTime(msg.createdAt)}
             </span>
+          )}
+          {isMine && readReceiptsEnabled && !deleted && (
+            <button
+              type="button"
+              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
+              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
+              onClick={onActivateClick(() => onShowReads(msg.id))}
+            >
+              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
+            </button>
           )}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
@@ -325,20 +348,9 @@ function MessageRowComponent({
           )}
           {!isMine && (
             <span className="message-time">
-              {favoriteIndicator}
-              {pinnedIndicator}
+              {indicators}
               {formatTime(msg.createdAt)}
             </span>
-          )}
-          {isMine && readReceiptsEnabled && !deleted && (
-            <button
-              type="button"
-              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
-              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
-              onClick={onActivateClick(() => onShowReads(msg.id))}
-            >
-              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
-            </button>
           )}
         </div>
         {!deleted && canWrite && (
