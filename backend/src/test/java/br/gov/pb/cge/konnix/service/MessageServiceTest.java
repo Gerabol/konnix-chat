@@ -3,12 +3,14 @@ package br.gov.pb.cge.konnix.service;
 import br.gov.pb.cge.konnix.api.exception.ApiException;
 import br.gov.pb.cge.konnix.api.message.dto.CreateMessageRequest;
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
+import br.gov.pb.cge.konnix.api.message.dto.ReadReceiptResponse;
 import br.gov.pb.cge.konnix.api.message.dto.UpdateMessageRequest;
 import br.gov.pb.cge.konnix.domain.attachment.Attachment;
 import br.gov.pb.cge.konnix.domain.attachment.AttachmentRepository;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
 import br.gov.pb.cge.konnix.domain.message.Message;
 import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
+import br.gov.pb.cge.konnix.domain.message.MessageRead;
 import br.gov.pb.cge.konnix.domain.message.MessageReadRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReactionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
@@ -579,6 +581,113 @@ class MessageServiceTest {
     }
 
     @Test
+    void getMessageReaders_whenValid_returnsReceipts() {
+        UUID actorId = UUID.randomUUID();
+        UUID reader1Id = UUID.randomUUID();
+        UUID reader2Id = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        User reader1 = new User();
+        reader1.setId(reader1Id);
+        reader1.setUsername("carlos");
+        reader1.setName("Carlos Eduardo");
+
+        User reader2 = new User();
+        reader2.setId(reader2Id);
+        reader2.setUsername("beatriz");
+        reader2.setName("Beatriz Lima");
+
+        MessageRead read1 = new MessageRead();
+        read1.setMessage(message);
+        read1.setUser(reader1);
+        read1.setReadAt(Instant.now().minusSeconds(120));
+
+        MessageRead read2 = new MessageRead();
+        read2.setMessage(message);
+        read2.setUser(reader2);
+        read2.setReadAt(Instant.now().minusSeconds(60));
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "autor", "Autor", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(true);
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(true);
+        when(messageReadRepository.findByMessageIdWithUser(message.getId())).thenReturn(List.of(read1, read2));
+
+        List<ReadReceiptResponse> result = messageService.getMessageReaders(message.getId(), actor);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).username()).isEqualTo("carlos");
+        assertThat(result.get(0).name()).isEqualTo("Carlos Eduardo");
+        assertThat(result.get(1).username()).isEqualTo("beatriz");
+        assertThat(result.get(1).name()).isEqualTo("Beatriz Lima");
+    }
+
+    @Test
+    void getMessageReaders_whenNotMember_throwsForbidden() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "estranho", "Estranho", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(false);
+
+        assertThatThrownBy(() -> messageService.getMessageReaders(message.getId(), actor))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("NOT_ROOM_MEMBER");
+    }
+
+    @Test
+    void getMessageReaders_whenMessageNotFound_throwsNotFound() {
+        UUID messageId = UUID.randomUUID();
+        AuthenticatedUser actor = new AuthenticatedUser(UUID.randomUUID(), "actor", "Actor", Set.of("USER"));
+
+        when(messageRepository.findById(messageId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.getMessageReaders(messageId, actor))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void getMessageReaders_whenReadReceiptsDisabled_returnsEmptyList() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "actor", "Actor", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(true);
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(false);
+
+        List<ReadReceiptResponse> result = messageService.getMessageReaders(message.getId(), actor);
+
+        assertThat(result).isEmpty();
+        verify(messageReadRepository, never()).findByMessageIdWithUser(any());
+    }
+
+    @Test
     void allowsPrivateReplyInDirectRoomToGroupMessage() {
         UUID actorId = UUID.randomUUID();
         UUID partnerId = UUID.randomUUID();
@@ -782,5 +891,4 @@ class MessageServiceTest {
                 .extracting(e -> ((ApiException) e).getCode())
                 .isEqualTo("PARENT_ROOM_MISMATCH");
     }
-
 }

@@ -3842,6 +3842,8 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 18px;
+  height: 18px;
   color: var(--konnix-ink-soft);
   flex-shrink: 0;
 }

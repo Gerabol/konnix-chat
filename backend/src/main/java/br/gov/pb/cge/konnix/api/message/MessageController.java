@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import br.gov.pb.cge.konnix.api.message.dto.FavoriteMessageResponse;
+import br.gov.pb.cge.konnix.api.message.dto.ReadReceiptResponse;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -114,6 +115,12 @@ public class MessageController {
             @RequestParam(required = false) UUID roomId,
             Authentication authentication) {
         return ApiResponse.ok(messageService.getFavorites(roomId, principal(authentication)));
+    }
+
+    @GetMapping("/api/v1/messages/{id}/readers")
+    public ApiResponse<List<ReadReceiptResponse>> readers(@PathVariable UUID id,
+                                                          Authentication authentication) {
+        return ApiResponse.ok(messageService.getMessageReaders(id, principal(authentication)));
     }
 
     private AuthenticatedUser principal(Authentication authentication) {

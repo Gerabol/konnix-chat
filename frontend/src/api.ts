@@ -682,6 +682,9 @@ export const api = {
     const q = roomId ? `?roomId=${encodeURIComponent(roomId)}` : ''
     return request<FavoriteMessage[]>(`/api/v1/messages/favorites${q}`)
   },
+  messageReaders(messageId: string) {
+    return request<ReadReceipt[]>(`/api/v1/messages/${messageId}/readers`)
+  },
   roomFiles(roomId: string) {
     return request<RoomFile[]>(`/api/v1/rooms/${roomId}/files`)
   },

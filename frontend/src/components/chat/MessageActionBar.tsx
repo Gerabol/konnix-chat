@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
-import { IconCopy, IconDotsVertical, IconHeart, IconPin, IconReplyPrivate } from '../icons'
+import { IconCopy, IconDotsVertical, IconEye, IconHeart, IconPin, IconReplyPrivate } from '../icons'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 export function MessageActionBar({
@@ -18,6 +18,7 @@ export function MessageActionBar({
   onTogglePin,
   isFavorite,
   onToggleFavorite,
+  onViewReads,
   onReplyPrivate,
 }: {
   pinned: boolean
@@ -33,6 +34,7 @@ export function MessageActionBar({
   onTogglePin?: () => void
   isFavorite?: boolean
   onToggleFavorite?: () => void
+  onViewReads?: () => void
   onReplyPrivate?: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -119,7 +121,7 @@ export function MessageActionBar({
       if (!moreBtnRef.current) return
       const r = moreBtnRef.current.getBoundingClientRect()
       const menuW = 210
-      const menuH = 140
+      const menuH = 184
       let top = r.bottom + 4
       if (top + menuH > window.innerHeight) {
         top = Math.max(8, r.top - menuH - 4)
@@ -143,7 +145,7 @@ export function MessageActionBar({
     }
   }, [moreOpen])
 
-  const hasMoreOptions = Boolean(onReplyPrivate || onToggleFavorite || onCopy)
+  const hasMoreOptions = Boolean(onViewReads || onReplyPrivate || onToggleFavorite || onCopy)
 
   return (
     <div className="message-actions" ref={ref}>
@@ -273,6 +275,23 @@ export function MessageActionBar({
             role="menu"
             style={{ position: 'fixed', left: morePos.left, top: morePos.top, zIndex: 10000 }}
           >
+            {onViewReads && (
+              <button
+                type="button"
+                className="message-more-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false)
+                  onPin(false)
+                  onViewReads()
+                }}
+              >
+                <span className="message-more-menu-icon">
+                  <IconEye size={16} />
+                </span>
+                <span>Visualizar leitura</span>
+              </button>
+            )}
             {onReplyPrivate && (
               <button
                 type="button"

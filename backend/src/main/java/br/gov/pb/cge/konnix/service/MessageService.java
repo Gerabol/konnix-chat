@@ -812,4 +812,17 @@ public class MessageService {
         }
         return messages.stream().map(m -> mapped.get(m.getId())).filter(Objects::nonNull).toList();
     }
+
+    @Transactional(readOnly = true)
+    public List<ReadReceiptResponse> getMessageReaders(UUID messageId, AuthenticatedUser actor) {
+        Message message = messageRepository.findById(messageId)
+                .orElseThrow(() -> ApiExceptions.notFound("Mensagem não encontrada"));
+        requireMember(message.getRoom(), actor);
+        if (!systemSettingService.readReceiptsEnabled()) {
+            return List.of();
+        }
+        return messageReadRepository.findByMessageIdWithUser(messageId).stream()
+                .map(ReadReceiptResponse::from)
+                .toList();
+    }
 }
