@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import type { ReadReceipt } from '../api'
-import { formatReaderCount, readerDisplayName, sortReadersByDate } from './readReceipts.ts'
+import { formatReaderCount, readerDisplayName, sortReadersByDate, canViewReads } from './readReceipts.ts'
 
 describe('readReceipts utils', () => {
   describe('formatReaderCount', () => {
@@ -65,6 +65,21 @@ describe('readReceipts utils', () => {
         readAt: '2026-10-21T10:00:00Z',
       }
       assert.equal(readerDisplayName(readerWithoutName), 'bob123')
+    })
+  })
+
+  describe('canViewReads', () => {
+    it('retorna true quando recibos estão ativos e a mensagem pertence a outro usuário', () => {
+      assert.equal(canViewReads(true, false), true)
+    })
+
+    it('retorna false para mensagem própria (já possui botão verde dedicado)', () => {
+      assert.equal(canViewReads(true, true), false)
+    })
+
+    it('retorna false quando recibos de leitura estão desativados globalmente', () => {
+      assert.equal(canViewReads(false, false), false)
+      assert.equal(canViewReads(false, true), false)
     })
   })
 })

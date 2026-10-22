@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
 import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
 import { canReplyPrivate } from '../../utils/privateReply'
+import { canViewReads } from '../../utils/readReceipts'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
@@ -380,7 +381,7 @@ function MessageRowComponent({
             onTogglePin={onTogglePin ? () => onTogglePin(msg) : undefined}
             isFavorite={isFavorite}
             onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
-            onViewReads={readReceiptsEnabled ? () => onShowReads(msg.id) : undefined}
+            onViewReads={canViewReads(readReceiptsEnabled, isMine) ? () => onShowReads(msg.id) : undefined}
             onReplyPrivate={
               onReplyPrivate && canReplyPrivate(roomType, isMine, !!msg.userId)
                 ? () => onReplyPrivate(msg)
