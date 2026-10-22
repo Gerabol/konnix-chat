@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
 import { IconCopy, IconDotsVertical, IconEye, IconHeart, IconPin, IconReplyPrivate } from '../icons'
@@ -112,27 +112,30 @@ export function MessageActionBar({
     }
   }, [open])
 
-  useEffect(() => {
-    if (!moreOpen || !moreBtnRef.current) {
+  useLayoutEffect(() => {
+    if (!moreOpen) {
       setMorePos(null)
       return
     }
     const update = () => {
-      if (!moreBtnRef.current) return
-      const r = moreBtnRef.current.getBoundingClientRect()
-      const menuW = 210
-      const menuH = 184
-      let top = r.bottom + 4
-      if (top + menuH > window.innerHeight) {
-        top = Math.max(8, r.top - menuH - 4)
+      const button = moreBtnRef.current
+      const menu = moreMenuRef.current
+      if (!button || !menu) return
+      const r = button.getBoundingClientRect()
+      const menuW = menu.offsetWidth
+      const menuH = menu.offsetHeight
+      const gap = 4
+      const margin = 8
+
+      let top = r.bottom + gap
+      if (top + menuH > window.innerHeight - margin) {
+        top = r.top - menuH - gap
       }
+      top = Math.max(margin, Math.min(top, window.innerHeight - menuH - margin))
+
       let left = r.right - menuW
-      if (left < 8) {
-        left = 8
-      }
-      if (left + menuW > window.innerWidth) {
-        left = Math.max(8, window.innerWidth - menuW - 8)
-      }
+      left = Math.max(margin, Math.min(left, window.innerWidth - menuW - margin))
+
       setMorePos({ left, top })
     }
     update()
@@ -267,13 +270,18 @@ export function MessageActionBar({
         </button>
       )}
       {moreOpen &&
-        morePos &&
         createPortal(
           <div
             ref={moreMenuRef}
             className="message-more-menu message-more-menu-portal"
             role="menu"
-            style={{ position: 'fixed', left: morePos.left, top: morePos.top, zIndex: 10000 }}
+            style={{
+              position: 'fixed',
+              left: morePos?.left ?? 0,
+              top: morePos?.top ?? 0,
+              zIndex: 10000,
+              visibility: morePos ? 'visible' : 'hidden',
+            }}
           >
             {onViewReads && (
               <button
