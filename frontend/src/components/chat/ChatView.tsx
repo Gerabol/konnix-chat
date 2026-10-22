@@ -24,6 +24,7 @@ import { UserFavoritesModal } from '../modals/UserFavoritesModal'
 import { EmptyState } from './EmptyState'
 import { RoomView } from './RoomView'
 import { Sidebar } from './Sidebar'
+import { buildPrivateReplyQuote } from '../../utils/privateReply'
 
 export interface ChatViewProps {
   session: Session
@@ -66,6 +67,7 @@ export function ChatView({
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
   const [favoritesModalOpen, setFavoritesModalOpen] = useState(false)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
+  const [pendingQuote, setPendingQuote] = useState<Message | null>(null)
   const [favoriteUpdate, setFavoriteUpdate] = useState<{
     roomId: string
     messageId: string
@@ -1227,6 +1229,44 @@ export function ChatView({
     setPreviewTheme(me.theme)
     setThemeOpen(true)
   }, [me.theme])
+
+  const handleReplyPrivate = useCallback(
+    (message: Message, originRoom: Room) => {
+      if (!message.userId) return
+
+      const quoteToApply = buildPrivateReplyQuote(message, originRoom)
+      setPendingQuote(quoteToApply)
+
+      const existingRoom = rooms.find(
+        (room) => room.type === 'DIRECT' && room.directPartner?.userId === message.userId,
+      )
+
+      if (existingRoom) {
+        if (activeRoomId === existingRoom.id) {
+          // Já está na sala privada; pendingQuote é consumido pelo RoomView via prop
+        } else {
+          void openRoom(existingRoom.id)
+        }
+      } else {
+        startDirectConversation(message.userId, {
+          username: message.username,
+          name: message.username,
+          presenceStatus: 'offline',
+        })
+      }
+    },
+    [rooms, activeRoomId, openRoom, startDirectConversation],
+  )
+
+  const handleJumpToRoomMessage = useCallback(
+    (roomId: string, messageId: string) => {
+      setTargetMessageId(messageId)
+      if (activeRoomId !== roomId) {
+        void openRoom(roomId)
+      }
+    },
+    [activeRoomId, openRoom],
+  )
   const openProfileEdit = useCallback(() => setProfileEditOpen(true), [])
   const openAbout = useCallback(() => setAboutOpen(true), [])
   const openReportIssue = useCallback(() => setReportIssueOpen(true), [])
@@ -1454,6 +1494,10 @@ export function ChatView({
               onCancelUpload={cancelUpload}
               initialTargetMessageId={targetMessageId}
               onClearTargetMessageId={() => setTargetMessageId(null)}
+              initialQuotedMessage={pendingQuote}
+              onClearInitialQuotedMessage={() => setPendingQuote(null)}
+              onReplyPrivate={handleReplyPrivate}
+              onJumpToRoomMessage={handleJumpToRoomMessage}
               favoriteUpdate={favoriteUpdate}
             />
           )}

@@ -178,9 +178,7 @@ public class MessageService {
             Message parent = messageRepository.findById(request.parentMessageId())
                     .filter(m -> m.getDeletedAt() == null)
                     .orElseThrow(() -> ApiExceptions.notFound("message/" + request.parentMessageId()));
-            if (!parent.getRoom().getId().equals(roomId)) {
-                throw ApiExceptions.parentRoomMismatch();
-            }
+            validateParentMessage(parent, room, actor);
             message.setParentMessage(parent);
         }
         List<Attachment> forwardedFiles = List.of();
@@ -212,6 +210,41 @@ public class MessageService {
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
         pushNotificationService.notifyNewMessage(roomId, response, displayName(room));
         return response;
+    }
+
+    private void validateParentMessage(Message parent, Room currentRoom, AuthenticatedUser actor) {
+        Room parentRoom = parent.getRoom();
+        if (parentRoom.getId().equals(currentRoom.getId())) {
+            return;
+        }
+
+        // Citações entre salas diferentes só são permitidas ao responder em particular (conversa direta)
+        if (!TYPE_DIRECT.equals(currentRoom.getType())) {
+            throw ApiExceptions.parentRoomMismatch();
+        }
+
+        // O usuário que está respondendo deve ser membro da sala de origem da mensagem citada
+        requireMember(parentRoom, actor);
+
+        // Em grupos privados, o interlocutor da conversa direta também deve ter acesso à sala de origem
+        // ou ser o próprio autor da mensagem citada, garantindo zero vazamento de dados.
+        if (RoomService.TYPE_PRIVATE_GROUP.equals(parentRoom.getType())) {
+            UUID otherUserId = roomMemberRepository.findByRoomId(currentRoom.getId()).stream()
+                    .map(rm -> rm.getUser().getId())
+                    .filter(uid -> !uid.equals(actor.id()))
+                    .findFirst()
+                    .orElse(actor.id());
+
+            boolean isPartnerMember = roomMemberRepository
+                    .findByRoomIdAndUserId(parentRoom.getId(), otherUserId)
+                    .map(RoomMember::isActive)
+                    .orElse(false);
+            boolean isPartnerAuthor = parent.getUser() != null && parent.getUser().getId().equals(otherUserId);
+
+            if (!isPartnerMember && !isPartnerAuthor) {
+                throw ApiExceptions.parentRoomMismatch();
+            }
+        }
     }
 
     public void processMentions(Message message, Room room, User author) {

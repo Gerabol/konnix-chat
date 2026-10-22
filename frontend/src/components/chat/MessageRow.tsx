@@ -2,12 +2,13 @@ import { memo, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
+import { canReplyPrivate } from '../../utils/privateReply'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
 import { AttachmentView } from './AttachmentView'
 import { AvatarImage, initials } from './AvatarImage'
-import { IconHeart } from '../icons'
+import { IconHeart, IconPin } from '../icons'
 import { MessageActionBar } from './MessageActionBar'
 import { PollCard } from './PollCard'
 
@@ -30,7 +31,7 @@ export interface MessageRowProps {
   actionPinned: boolean
   onPinAction: (msgId: string, pinned: boolean) => void
   highlighted: boolean
-  onJumpToQuoted: (messageId: string) => void
+  onJumpToQuoted: (messageId: string, originRoomId?: string | null) => void
   readReceiptsEnabled: boolean
   transcriptionEnabled: boolean
   onShowReads: (msgId: string) => void
@@ -41,6 +42,8 @@ export interface MessageRowProps {
   isFavorite?: boolean
   onToggleFavorite?: (msg: Message) => void
   validMentionUsernames?: Set<string>
+  roomType?: string
+  onReplyPrivate?: (msg: Message) => void
 }
 
 /** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
@@ -78,6 +81,8 @@ function MessageRowComponent({
   isFavorite = false,
   onToggleFavorite,
   validMentionUsernames,
+  roomType,
+  onReplyPrivate,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
   const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
@@ -85,21 +90,36 @@ function MessageRowComponent({
   // Renderiza as marcações em um único elemento para poder posicioná-las antes do
   // nome nas mensagens próprias e depois do nome nas mensagens dos demais.
   const messageTags =
-    msg.forwardedFromUsername || isPinned || msg.editedAt ? (
+    msg.forwardedFromUsername || msg.editedAt ? (
       <span className="message-tags">
         {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
-        {isPinned && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
         {msg.editedAt && <em className="message-edited">Editada</em>}
       </span>
     ) : null
-  // O indicador de favorito é renderizado dentro da hora e posicionado fora do
-  // fluxo pelo CSS: assim ele nunca alarga a caixa da mensagem e fica à direita
-  // da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
-  const favoriteIndicator = isFavorite ? (
-    <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
-      <IconHeart size={12} filled />
-    </span>
-  ) : null
+  // Os indicadores de favorito e de fixada são renderizados dentro da hora e
+  // posicionados fora do fluxo pelo CSS: assim nunca alargam a caixa da mensagem
+  // e ficam à direita da hora nas mensagens dos outros e à esquerda nas próprias
+  // (espelhado). O pin usa apenas o ícone, no mesmo escopo do favorito.
+  // Os indicadores de favorito e de fixada são renderizados num contêiner fora do
+  // fluxo, ao lado da hora: assim nunca alargam a caixa da mensagem e ficam à
+  // direita da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
+  // Por serem um flex em pacote, ocupam apenas o espaço dos ícones presentes, sem
+  // deixar buraco quando só um deles está ativo. O pin fica mais próximo da hora.
+  const indicators =
+    isFavorite || isPinned ? (
+      <span className="message-indicators">
+        {isPinned && (
+          <span className="message-pin-indicator" title="Mensagem fixada" aria-label="Mensagem fixada">
+            <IconPin size={12} />
+          </span>
+        )}
+        {isFavorite && (
+          <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
+            <IconHeart size={12} filled />
+          </span>
+        )}
+      </span>
+    ) : null
   const authorAvatarPath = msg.userId
     ? `${userAvatarPath(msg.userId)}${
         isMine
@@ -283,11 +303,25 @@ function MessageRowComponent({
       )}
       <div className="message-body">
         <div className="message-meta">
+          {/* Nas mensagens próprias a ordem visual é: favorito+fixada (dentro da
+              hora), hora, confirmação de leitura, tags/papéis e nome — por isso a
+              hora e a leitura vêm antes do bloco do autor no DOM. Nas mensagens dos
+              demais mantém-se a ordem original (autor e depois hora). */}
           {isMine && (
             <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>
+              {indicators}
               {formatTime(msg.createdAt)}
-              {favoriteIndicator}
             </span>
+          )}
+          {isMine && readReceiptsEnabled && !deleted && (
+            <button
+              type="button"
+              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
+              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
+              onClick={onActivateClick(() => onShowReads(msg.id))}
+            >
+              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
+            </button>
           )}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
@@ -319,19 +353,9 @@ function MessageRowComponent({
           )}
           {!isMine && (
             <span className="message-time">
+              {indicators}
               {formatTime(msg.createdAt)}
-              {favoriteIndicator}
             </span>
-          )}
-          {isMine && readReceiptsEnabled && !deleted && (
-            <button
-              type="button"
-              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
-              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
-              onClick={onActivateClick(() => onShowReads(msg.id))}
-            >
-              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
-            </button>
           )}
         </div>
         {!deleted && canWrite && (
@@ -357,6 +381,11 @@ function MessageRowComponent({
             isFavorite={isFavorite}
             onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
             onViewReads={readReceiptsEnabled ? () => onShowReads(msg.id) : undefined}
+            onReplyPrivate={
+              onReplyPrivate && canReplyPrivate(roomType, isMine, !!msg.userId)
+                ? () => onReplyPrivate(msg)
+                : undefined
+            }
           />
         )}
         {!deleted && (
@@ -365,9 +394,14 @@ function MessageRowComponent({
               <button
                 type="button"
                 className="quoted-message"
-                onClick={() => onJumpToQuoted(msg.quotedMessage!.id)}
+                onClick={() => onJumpToQuoted(msg.quotedMessage!.id, msg.quotedMessage?.originRoomId)}
               >
-                <strong>{msg.quotedMessage.username}</strong>
+                <div className="quoted-message-header">
+                  <strong>{msg.quotedMessage.username}</strong>
+                  {msg.quotedMessage.originRoomName && (
+                    <span className="quoted-message-origin">em {msg.quotedMessage.originRoomName}</span>
+                  )}
+                </div>
                 <span>{msg.quotedMessage.content || 'Anexo'}</span>
               </button>
             )}

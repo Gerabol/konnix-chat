@@ -3055,9 +3055,11 @@ button:disabled {
 }
 
 .pinned-icon {
-  font-size: 1.05rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  color: var(--konnix-primary);
 }
 
 .pinned-text-wrap {
@@ -3108,18 +3110,6 @@ button:disabled {
 .pinned-unpin-btn:hover {
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
-}
-
-.message-pinned-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--konnix-primary);
-  background: rgba(91, 76, 240, 0.08);
-  padding: 0.05rem 0.35rem;
-  border-radius: 4px;
 }
 
 .message-action-pin.active {
@@ -3468,23 +3458,39 @@ button:disabled {
   color: var(--konnix-ink);
 }
 
-/* Indicador de mensagem favorita: posicionado fora do fluxo dentro da hora para
-   nunca alargar a caixa da mensagem. Fica à direita da hora nas mensagens dos
-   outros e à esquerda da hora nas próprias (comportamento espelhado). */
-.message-favorite-indicator {
+/* Indicadores de mensagem favorita e fixada: o contêiner é posicionado fora do
+   fluxo dentro da hora para nunca alargar a caixa da mensagem. Como é um flex em
+   pacote, ocupa apenas o espaço dos ícones presentes — sem buraco quando só um
+   está ativo. Fica à direita da hora nas mensagens dos outros e à esquerda nas
+   próprias (comportamento espelhado). */
+.message-indicators {
   position: absolute;
   top: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transform: translateY(-50%);
+  /* Mensagens dos outros: indicadores à direita da hora. */
   left: calc(100% + 4px);
+}
+
+.message-favorite-indicator,
+.message-pin-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: translateY(-50%);
   color: var(--konnix-ink-soft);
   opacity: 0.85;
   line-height: 1;
 }
 
-.message.mine .message-favorite-indicator {
+.message-pin-indicator {
+  color: var(--konnix-primary);
+  opacity: 1;
+}
+
+/* Mensagens próprias: indicadores à esquerda da hora (espelhado). */
+.message.mine .message-indicators {
   left: auto;
   right: calc(100% + 4px);
 }
@@ -3797,7 +3803,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 175px;
+  min-width: 195px;
   padding: 4px;
   border: 1px solid var(--konnix-border);
   border-radius: 12px;
@@ -3829,9 +3835,8 @@ button:disabled {
 }
 .message-more-menu-item:hover,
 .message-more-menu-item:focus-visible {
-  background: var(--konnix-bg);
+  background: color-mix(in srgb, var(--konnix-primary) 12%, transparent);
   color: var(--konnix-primary);
-  outline: none;
 }
 .message-more-menu-icon {
   display: inline-flex;
@@ -3899,6 +3904,7 @@ button:disabled {
   margin: 0;
   max-width: 100%;
   min-width: 0;
+  align-self: flex-start;
   box-sizing: border-box;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3953,10 +3959,22 @@ button:disabled {
 .message-link:hover { color: var(--konnix-primary-deep); }
 
 .message.mine .message-content {
+  align-self: flex-end;
   background: rgba(91, 76, 240, 0.1);
   border-color: rgba(91, 76, 240, 0.22);
   border-radius: 12px;
   border-top-right-radius: 4px;
+}
+
+/* Quando há citação ou anexo (arquivo, imagem, áudio), o balão acompanha a largura
+   do elemento para manter coerência de tamanhos, em vez de encolher ao próprio texto.
+   Vale para mensagens próprias e dos outros, por isso sobrepõe os align-self acima. */
+.message .message-body:has(.quoted-message) .message-content,
+.message .message-body:has(> .attachment) .message-content,
+.message .message-body:has(> .attachment-image) .message-content,
+.message .message-body:has(> .attachment-audio) .message-content,
+.message .message-body:has(> .attachment-audio-loading) .message-content {
+  align-self: stretch;
 }
 
 .message-delete {
@@ -4162,13 +4180,14 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  width: fit-content;
   max-width: 320px;
 }
 
 .attachment-img-btn {
   display: block;
-  width: 100%;
-  max-width: 320px;
+  width: fit-content;
+  max-width: 100%;
   padding: 0;
   border: 0;
   border-radius: 12px;
@@ -4184,8 +4203,8 @@ button:disabled {
 
 .attachment-img {
   display: block;
-  width: 100%;
-  max-width: 320px;
+  width: auto;
+  max-width: 100%;
   max-height: 320px;
   object-fit: cover;
   border: 1px solid var(--konnix-border);
@@ -6277,6 +6296,8 @@ img.room-header-avatar {
 .quoted-message:hover { background: color-mix(in srgb, var(--konnix-primary) 18%, transparent); }
 .quoted-message strong { color: var(--konnix-primary-deep); font-size: 0.72rem; }
 .quoted-message span { overflow: hidden; color: var(--konnix-ink-soft); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.quoted-message-header { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; line-height: 1.2; }
+.quoted-message-origin { font-size: 0.68rem; font-weight: 500; color: var(--konnix-ink-soft); opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .message-reactions { display: flex; gap: 0.25rem; margin-top: 0.25rem; }
 .message-reactions span { padding: 0.12rem 0.35rem; border: 1px solid var(--konnix-border); border-radius: 999px; background: var(--konnix-surface); font-size: 0.75rem; }
 .message-highlighted { animation: message-anchor-highlight 2.2s ease-out; }
@@ -6286,6 +6307,8 @@ img.room-header-avatar {
 .quote-preview div { display: flex; min-width: 0; flex-direction: column; gap: 0.1rem; }
 .quote-preview strong { color: var(--konnix-primary-deep); font-size: 0.76rem; }
 .quote-preview span { overflow: hidden; color: var(--konnix-ink-soft); font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+.quote-preview-header { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.quote-preview-origin { font-size: 0.72rem; font-weight: 500; color: var(--konnix-ink-soft); opacity: 0.9; }
 .quote-preview > button { width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--konnix-ink-soft); font-size: 1.1rem; }
 .forward-list { display: flex; max-height: 320px; margin-top: 0.7rem; flex-direction: column; gap: 4px; overflow-y: auto; }
 .forward-user { display: flex; align-items: center; gap: 0.65rem; padding: 0.45rem 0.6rem; border: 0; border-radius: 8px; background: transparent; color: var(--konnix-ink); text-align: left; cursor: pointer; transition: background-color 0.15s ease; width: 100%; box-sizing: border-box; }

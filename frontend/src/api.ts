@@ -99,11 +99,19 @@ export type Message = {
   editedAt: string | null
   deletedAt: string | null
   readBy: ReadReceipt[]
-  quotedMessage: { id: string; username: string; content: string | null } | null
+  quotedMessage: {
+    id: string
+    username: string
+    content: string | null
+    originRoomId?: string | null
+    originRoomName?: string | null
+  } | null
   reactions: MessageReaction[]
   forwardedFromUsername: string | null
   poll: Poll | null
   roles: string[]
+  originRoomId?: string | null
+  originRoomName?: string | null
 }
 
 export type Poll = {
