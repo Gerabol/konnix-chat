@@ -3782,7 +3782,7 @@ button:disabled {
 .message-read-state.unread { color: #f59e0b; }
 .message-read-state.read { color: #20a565; }
 
-.message-actions { position: absolute; top: 0.1rem; left: 50%; right: auto; z-index: 3; display: none; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--konnix-border); border-radius: 9px; background: var(--konnix-surface); box-shadow: 0 4px 12px rgba(32, 34, 48, 0.1); transform: translateX(-50%); }
+.message-actions { position: absolute; top: 0.1rem; left: 50%; right: auto; z-index: 3; display: none; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--konnix-border); border-radius: 10px; background: var(--konnix-surface); box-shadow: 0 4px 12px rgba(32, 34, 48, 0.1); transform: translateX(-50%); }
 .message:hover .message-actions { display: inline-flex; }
 .message.action-pinned .message-actions { display: inline-flex; }
 .message.action-dismissed:hover .message-actions { display: none; }
@@ -3793,7 +3793,7 @@ button:disabled {
 /* Track real mouse/pen input because desktop WebViews can advertise hover: none. */
 .message.mouse-hovered:not(.action-dismissed) .message-actions { display: inline-flex; }
 .message.mouse-hovered .message-delete { opacity: 1; }
-.message-actions > button, .message-emoji-action > button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--konnix-ink-soft); font-size: 1rem; line-height: 1; }
+.message-actions > button, .message-emoji-action > button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--konnix-ink-soft); font-size: 1rem; line-height: 1; }
 .message-actions > button:hover, .message-emoji-action > button:hover { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
 .message-emoji-action > button { font-size: 1.2rem; }
@@ -3806,7 +3806,7 @@ button:disabled {
   min-width: 195px;
   padding: 4px;
   border: 1px solid var(--konnix-border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--konnix-surface);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   animation: dropdown-enter 0.15s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3822,7 +3822,7 @@ button:disabled {
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--konnix-ink);
   font-size: 0.82rem;
