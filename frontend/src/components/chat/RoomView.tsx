@@ -32,6 +32,7 @@ import {
 } from '../icons'
 import { ForwardMessageModal } from '../modals/ForwardMessageModal'
 import { ImageEditorModal } from '../modals/ImageEditorModal'
+import { MediaCarouselModal } from '../modals/MediaCarouselModal'
 import { AddMembersModal, MembersModal, RemoveMembersModal } from '../modals/MembersModal'
 import { CreatePollModal } from '../modals/PollModals'
 import { ReadReceiptsModal } from '../modals/ReadReceiptsModal'
@@ -47,6 +48,7 @@ import { RoomFilesPanel } from './RoomFilesPanel'
 import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndicator'
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 import { resolveQuotedOriginName } from '../../utils/privateReply'
+import { extractRoomMedia } from '../../utils/mediaCarousel'
 
 const SEARCH_DEBOUNCE_MS = 400
 const DRAFT_SAVE_DEBOUNCE_MS = 400
@@ -262,6 +264,8 @@ export function RoomView({
   const [filesError, setFilesError] = useState<string | null>(null)
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
+  const [carouselMediaId, setCarouselMediaId] = useState<string | null>(null)
+  const roomMediaItems = useMemo(() => extractRoomMedia(roomFiles, messages), [roomFiles, messages])
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set())
   const [favorites, setFavorites] = useState<FavoriteMessage[]>([])
@@ -831,6 +835,14 @@ export function RoomView({
       setFilesLoading(false)
     }
   }, [room.id])
+
+  const handleOpenMedia = useCallback(
+    (mediaId: string) => {
+      setCarouselMediaId(mediaId)
+      void loadRoomFiles()
+    },
+    [loadRoomFiles],
+  )
 
   const toggleFiles = () => {
     setFilesOpen((open) => {
@@ -1962,6 +1974,7 @@ export function RoomView({
                   onToggleFavorite={handleToggleFavorite}
                   roomType={room.type}
                   onReplyPrivate={room.type !== 'DIRECT' && onReplyPrivate ? handleReplyPrivate : undefined}
+                  onOpenMedia={handleOpenMedia}
                 />
               ))}
             </div>
@@ -2510,6 +2523,13 @@ export function RoomView({
             setPollOpen(false)
           }}
           notify={modalNotify}
+        />
+      )}
+      {carouselMediaId && (
+        <MediaCarouselModal
+          items={roomMediaItems}
+          initialMediaId={carouselMediaId}
+          onClose={() => setCarouselMediaId(null)}
         />
       )}
       {editingImageState && (
