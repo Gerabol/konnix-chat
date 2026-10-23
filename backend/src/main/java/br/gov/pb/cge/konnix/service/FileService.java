@@ -116,7 +116,7 @@ public class FileService {
 
         String mimeType = file.getContentType();
         byte[] data = readBytes(file);
-        if (isAudio(file, mimeType)) {
+        if (isAudio(mimeType, originalName)) {
             if (isAlreadyMp3(originalName, mimeType)) {
                 mimeType = "audio/mpeg";
             } else if (data.length <= 15 * 1024 * 1024) {
@@ -225,10 +225,22 @@ public class FileService {
         }
     }
 
-    private boolean isAudio(MultipartFile file, String mimeType) {
-        return (mimeType != null && mimeType.toLowerCase(Locale.ROOT).startsWith("audio/"))
-                || (file.getOriginalFilename() != null
-                && file.getOriginalFilename().toLowerCase(Locale.ROOT).matches(".*\\.(webm|mp4|m4a|wav|ogg|oga|aac|flac|mp3)$"));
+    /**
+     * Trata o arquivo como áudio quando o MIME declara {@code audio/}. Se o MIME
+     * não for confiável (nulo ou genérico, como {@code application/octet-stream}),
+     * aceita-se apenas extensões exclusivas de áudio. Contêineres como
+     * {@code .mp4} e {@code .webm} ficam de fora porque também carregam vídeo.
+     */
+    static boolean isAudio(String mimeType, String originalName) {
+        String normalizedMime = mimeType == null ? "" : mimeType.toLowerCase(Locale.ROOT).trim();
+        if (normalizedMime.startsWith("audio/")) {
+            return true;
+        }
+        if (normalizedMime.startsWith("video/")) {
+            return false;
+        }
+        return originalName != null
+                && originalName.toLowerCase(Locale.ROOT).matches(".*\\.(mp3|wav|ogg|oga|m4a|aac|flac)$");
     }
 
     private boolean isAlreadyMp3(String originalName, String mimeType) {
@@ -246,10 +258,9 @@ public class FileService {
         if (lower.endsWith(".mp3")) return "audio/mpeg";
         if (lower.endsWith(".wav")) return "audio/wav";
         if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
-        if (lower.endsWith(".m4a") || lower.endsWith(".mp4")) return "audio/mp4";
+        if (lower.endsWith(".m4a")) return "audio/mp4";
         if (lower.endsWith(".aac")) return "audio/aac";
         if (lower.endsWith(".flac")) return "audio/flac";
-        if (lower.endsWith(".webm")) return "audio/webm";
         return "audio/mpeg";
     }
 

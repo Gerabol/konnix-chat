@@ -1,4 +1,5 @@
 import type { Message } from '../api.ts'
+import { isAudioAttachment } from './attachmentKind.ts'
 
 const SAMPLE_RATE = 44100
 const DEDUP_WINDOW_MS = 1500
@@ -266,9 +267,10 @@ export function formatNotificationSnippet(
 
   if (msg.attachment) {
     const mime = msg.attachment.mimeType?.toLowerCase() || ''
-    const isAudio =
-      mime.startsWith('audio/') ||
-      /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm)$/i.test(attachmentName)
+    const isAudio = isAudioAttachment({
+      mimeType: msg.attachment.mimeType,
+      originalName: attachmentName,
+    })
     const isImage =
       mime.startsWith('image/') ||
       /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(attachmentName)
