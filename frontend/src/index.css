@@ -8929,7 +8929,7 @@ img.room-header-avatar {
 .image-editor-caption-input {
   flex: 1;
   height: 42px;
-  border-radius: 21px;
+  border-radius: 10px;
   padding: 0 1.15rem;
   border: 1px solid var(--konnix-border);
   background: var(--konnix-bg);
@@ -8957,7 +8957,7 @@ img.room-header-avatar {
   gap: 0.45rem;
   height: 42px;
   padding: 0 1.35rem;
-  border-radius: 21px;
+  border-radius: 9px;
   border: 0;
   background: var(--konnix-primary);
   color: #fff;
@@ -8975,7 +8975,7 @@ img.room-header-avatar {
 .image-editor-cancel-btn {
   height: 42px;
   padding: 0 1.1rem;
-  border-radius: 21px;
+  border-radius: 9px;
   border: 1px solid var(--konnix-border);
   background: var(--konnix-surface);
   color: var(--konnix-ink-soft);
@@ -8992,7 +8992,7 @@ img.room-header-avatar {
 .image-editor-secondary-btn {
   height: 42px;
   padding: 0 1.1rem;
-  border-radius: 21px;
+  border-radius: 9px;
   border: 1px solid var(--konnix-border);
   background: var(--konnix-surface);
   color: var(--konnix-ink);
