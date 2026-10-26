@@ -42,16 +42,31 @@ export function getMediaType(mimeType: string, filename?: string): MediaType {
 /**
  * Normaliza e consolida arquivos de mídia (imagens e vídeos) da sala,
  * ordenados cronologicamente (do mais antigo para o mais recente).
+ * Garante que anexos de mensagens apagadas sejam completamente descartados.
  */
 export function extractRoomMedia(
   roomFiles: RoomFile[] = [],
   messages: Message[] = [],
 ): MediaItem[] {
+  // Identifica todos os anexos de mensagens apagadas para purgar de qualquer fonte
+  const deletedAttachmentIds = new Set<string>()
+  for (const msg of messages) {
+    if (msg.deletedAt) {
+      const list: Attachment[] = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
+      for (const att of list) {
+        if (att?.id) {
+          deletedAttachmentIds.add(att.id)
+        }
+      }
+    }
+  }
+
   const itemsMap = new Map<string, MediaItem>()
 
-  // 1. Processar arquivos retornados pela API de arquivos da sala
+  // 1. Processar arquivos retornados pela API de arquivos da sala (ignorando apagados)
   for (const file of roomFiles) {
     if (!isMediaAttachment(file)) continue
+    if (deletedAttachmentIds.has(file.id)) continue
     itemsMap.set(file.id, {
       id: file.id,
       originalName: file.originalName,
@@ -64,11 +79,13 @@ export function extractRoomMedia(
     })
   }
 
-  // 2. Complementar com mensagens da timeline (ex: mídias enviadas recentemente que ainda não estão no cache da sala)
+  // 2. Complementar com mensagens da timeline (somente mensagens ativas/não apagadas)
   for (const msg of messages) {
+    if (msg.deletedAt) continue
     const list: Attachment[] = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
     for (const att of list) {
       if (!isMediaAttachment(att)) continue
+      if (deletedAttachmentIds.has(att.id)) continue
       if (!itemsMap.has(att.id)) {
         itemsMap.set(att.id, {
           id: att.id,

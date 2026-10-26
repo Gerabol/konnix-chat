@@ -30,6 +30,7 @@ import java.util.HexFormat;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -278,6 +279,30 @@ class FileStorageIntegrationTest {
     @Test
     void downloadDeArquivoInexistente() throws Exception {
         mockMvc.perform(get("/api/v1/files/{id}", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("FILE_NOT_FOUND"));
+    }
+
+    @Test
+    void downloadDeArquivoDeMensagemApagadaRetornaNotFound() throws Exception {
+        String roomId = createRoom(adminToken, "canal-dlapagada", "CHANNEL");
+        MvcResult uploadResult = mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "foto.png", "image/png", CONTEUDO))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode uploadBody = objectMapper.readTree(uploadResult.getResponse().getContentAsString());
+        String messageId = uploadBody.path("data").path("id").asText();
+        String attachmentId = uploadBody.path("data").path("attachment").path("id").asText();
+
+        // Apagar a mensagem
+        mockMvc.perform(delete("/api/v1/messages/{id}", messageId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+
+        // Tentar baixar o anexo da mensagem apagada deve retornar 404 (FILE_NOT_FOUND)
+        mockMvc.perform(get("/api/v1/files/{id}", attachmentId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("FILE_NOT_FOUND"));

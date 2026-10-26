@@ -139,6 +139,21 @@ export function MediaCarouselModal({
 
   useEscapeClose(onClose)
 
+  // Se a lista de mídias for esvaziada (todas as fotos foram apagadas), fecha o modal
+  useEffect(() => {
+    if (items.length === 0) {
+      onClose()
+      return
+    }
+    // Ajustar o índice caso exceda o limite após deleções
+    setCurrentIndex((prev) => {
+      if (prev >= items.length) {
+        return Math.max(0, items.length - 1)
+      }
+      return prev
+    })
+  }, [items, onClose])
+
   useEffect(() => {
     closeRef.current?.focus()
   }, [])

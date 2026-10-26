@@ -5,6 +5,7 @@ import type { FavoriteMessage, Message, PresenceStatus, PublicProfile, Room, Roo
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
+import { attachmentBlobCache } from '../../utils/attachmentCache'
 import {
   classifyGrowth,
   isNearBottom,
@@ -822,6 +823,28 @@ export function RoomView({
       void loadFavorites()
     }
   }, [favoriteUpdate, room.id, favoritesOpen, loadFavorites])
+
+  // Purgar anexos de mensagens apagadas de roomFiles e do cache de blobs em memória
+  useEffect(() => {
+    const deletedAttIds = new Set<string>()
+    for (const msg of messages) {
+      if (msg.deletedAt) {
+        const list = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
+        for (const att of list) {
+          if (att?.id) deletedAttIds.add(att.id)
+        }
+      }
+    }
+    if (deletedAttIds.size > 0) {
+      setRoomFiles((prev) => {
+        const next = prev.filter((file) => !deletedAttIds.has(file.id))
+        return next.length === prev.length ? prev : next
+      })
+      for (const id of deletedAttIds) {
+        attachmentBlobCache.delete(id)
+      }
+    }
+  }, [messages])
 
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)

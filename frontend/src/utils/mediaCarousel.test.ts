@@ -139,6 +139,86 @@ describe('mediaCarousel utils', () => {
       assert.strictEqual(result[2].id, 'file-3')
       assert.strictEqual(result[2].type, 'image')
     })
+
+    test('excludes attachments from deleted messages both from messages and roomFiles', () => {
+      const roomFiles: RoomFile[] = [
+        {
+          id: 'file-deleted',
+          originalName: 'foto-antiga-deletada.png',
+          mimeType: 'image/png',
+          size: 120000,
+          createdAt: '2026-10-23T08:00:00Z',
+          userId: 'u1',
+          username: 'ana',
+          name: 'Ana Silva',
+        },
+        {
+          id: 'file-active',
+          originalName: 'foto-ativa.png',
+          mimeType: 'image/png',
+          size: 150000,
+          createdAt: '2026-10-23T08:30:00Z',
+          userId: 'u2',
+          username: 'bruno',
+          name: 'Bruno Lima',
+        },
+      ]
+
+      const messages: Message[] = [
+        {
+          id: 'msg-deleted',
+          roomId: 'r1',
+          userId: 'u1',
+          username: 'ana',
+          content: 'Esta mensagem foi apagada.',
+          messageType: 'USER',
+          parentMessageId: null,
+          attachment: {
+            id: 'file-deleted',
+            originalName: 'foto-antiga-deletada.png',
+            mimeType: 'image/png',
+            size: 120000,
+          },
+          createdAt: '2026-10-23T08:00:00Z',
+          updatedAt: '2026-10-23T08:10:00Z',
+          editedAt: null,
+          deletedAt: '2026-10-23T08:10:00Z', // Deleted!
+          readBy: [],
+          quotedMessage: null,
+          reactions: [],
+          forwardedFromUsername: null,
+        },
+        {
+          id: 'msg-timeline-deleted',
+          roomId: 'r1',
+          userId: 'u1',
+          username: 'ana',
+          content: 'Outra foto que foi apagada e só estava na timeline',
+          messageType: 'USER',
+          parentMessageId: null,
+          attachment: {
+            id: 'file-timeline-deleted',
+            originalName: 'timeline-deletada.jpg',
+            mimeType: 'image/jpeg',
+            size: 80000,
+          },
+          createdAt: '2026-10-23T08:40:00Z',
+          updatedAt: '2026-10-23T08:45:00Z',
+          editedAt: null,
+          deletedAt: '2026-10-23T08:45:00Z', // Deleted!
+          readBy: [],
+          quotedMessage: null,
+          reactions: [],
+          forwardedFromUsername: null,
+        },
+      ]
+
+      const result = extractRoomMedia(roomFiles, messages)
+
+      // Only file-active should remain; both file-deleted and file-timeline-deleted must be excluded
+      assert.strictEqual(result.length, 1)
+      assert.strictEqual(result[0].id, 'file-active')
+    })
   })
 
   describe('navigation index boundaries', () => {
