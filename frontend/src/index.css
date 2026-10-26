@@ -9183,32 +9183,45 @@ img.room-header-avatar {
 }
 
 /* Modal Carrossel de Mídias (Fotos e Vídeos) */
-.media-carousel-overlay {
+.modal-overlay.media-carousel-overlay {
   position: fixed;
   inset: 0;
   z-index: 1050;
-  padding: 0;
-  background: rgba(0, 0, 0, 0.92);
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  background: rgba(0, 0, 0, 0.94);
   backdrop-filter: blur(10px);
   display: flex;
   flex-direction: column;
+  align-items: stretch !important;
+  justify-content: stretch !important;
   overflow: hidden;
+  box-sizing: border-box;
   user-select: none;
 }
 
 .media-carousel-container {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   width: 100%;
   height: 100%;
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
+  margin: 0 auto;
 }
 
 .media-carousel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
   padding: calc(12px + var(--safe-top, 0px)) 20px 12px;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
   z-index: 20;
@@ -9299,10 +9312,12 @@ img.room-header-avatar {
   position: relative;
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   overflow: hidden;
   min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .media-carousel-stage {
@@ -9310,11 +9325,19 @@ img.room-header-avatar {
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: auto;
+  overscroll-behavior: contain;
   position: relative;
   padding: 16px;
+  box-sizing: border-box;
+}
+
+.media-carousel-stage > .media-carousel-img,
+.media-carousel-stage > .media-carousel-video-wrapper,
+.media-carousel-stage > .media-carousel-loading,
+.media-carousel-stage > .media-carousel-error {
+  margin: auto;
+  flex-shrink: 0;
 }
 
 .media-carousel-img {
@@ -9326,14 +9349,21 @@ img.room-header-avatar {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
   user-select: none;
   cursor: zoom-in;
+  display: block;
+}
+
+.media-carousel-img[style] {
+  margin: auto;
 }
 
 .media-carousel-video-wrapper {
-  max-width: 92vw;
+  margin: auto;
+  max-width: 94vw;
   max-height: 72vh;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .media-carousel-video {
@@ -9343,6 +9373,7 @@ img.room-header-avatar {
   outline: none;
   background: #000;
   box-shadow: 0 10px 36px rgba(0, 0, 0, 0.7);
+  display: block;
 }
 
 .media-carousel-nav-btn {
@@ -9392,6 +9423,7 @@ img.room-header-avatar {
   justify-content: center;
   gap: 0.75rem;
   color: #fff;
+  margin: auto;
 }
 
 .media-carousel-spinner {
@@ -9413,6 +9445,8 @@ img.room-header-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 20px calc(14px + var(--safe-bottom, 0px));
   background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
   z-index: 20;
@@ -9424,9 +9458,13 @@ img.room-header-avatar {
   gap: 10px;
   overflow-x: auto;
   max-width: 100%;
+  width: fit-content;
+  margin: 0 auto;
   padding: 6px 10px;
+  box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 
 .media-carousel-thumb-strip::-webkit-scrollbar {
@@ -9505,24 +9543,40 @@ img.room-header-avatar {
 }
 
 @media (max-width: 640px) {
+  .modal-overlay.media-carousel-overlay {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100vw !important;
+  }
+  .media-carousel-container {
+    width: 100vw;
+  }
   .media-carousel-header {
     padding: calc(8px + var(--safe-top, 0px)) 12px 8px;
+    width: 100%;
+    box-sizing: border-box;
   }
   .media-carousel-filename {
-    max-width: 200px;
+    max-width: 180px;
+  }
+  .media-carousel-stage {
+    padding: 8px;
   }
   .media-carousel-nav-btn {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
   }
   .media-carousel-nav-btn.prev {
-    left: 8px;
+    left: 6px;
   }
   .media-carousel-nav-btn.next {
-    right: 8px;
+    right: 6px;
+  }
+  .media-carousel-footer {
+    padding: 8px 10px calc(12px + var(--safe-bottom, 0px));
   }
   .media-carousel-thumb {
-    flex: 0 0 60px;
-    height: 42px;
+    flex: 0 0 58px;
+    height: 40px;
   }
 }
