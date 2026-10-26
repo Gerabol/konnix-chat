@@ -5,14 +5,11 @@ import { saveDownloadedBlob } from '../../platform'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import {
   FIT_ZOOM_INDEX,
-  canZoomIn,
-  canZoomOut,
   clampZoomIndex,
   displaySize,
   toggleZoom,
   zoomIn,
   zoomOut,
-  zoomPercent,
 } from '../../utils/imageZoom'
 import type { MediaItem } from '../../utils/mediaCarousel'
 import { getNextMediaIndex, getPrevMediaIndex } from '../../utils/mediaCarousel'
@@ -138,12 +135,26 @@ export function MediaCarouselModal({
   )
   const [loading, setLoading] = useState<boolean>(!mediaUrl)
   const [error, setError] = useState<string | null>(null)
+  const [isOverflowing, setIsOverflowing] = useState(items.length > 4)
 
   useEscapeClose(onClose)
 
   useEffect(() => {
     closeRef.current?.focus()
   }, [])
+
+  // Medição da trilha de miniaturas para centralização exata no iOS WebKit
+  useLayoutEffect(() => {
+    const strip = thumbStripRef.current
+    if (!strip) return
+    const check = () => {
+      setIsOverflowing(strip.scrollWidth > strip.clientWidth + 2)
+    }
+    check()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null
+    observer?.observe(strip)
+    return () => observer?.disconnect()
+  }, [items.length])
 
   // Auto-scroll da miniatura ativa na barra inferior
   useEffect(() => {
@@ -480,41 +491,15 @@ export function MediaCarouselModal({
               <IconChevronRight size={28} />
             </button>
           )}
-
-          {/* Controles de Zoom para Imagens */}
-          {!loading && !error && currentItem.type === 'image' && (
-            <div className="lightbox-zoom" role="group" aria-label="Zoom da imagem">
-              <button
-                type="button"
-                className="lightbox-zoom-btn"
-                onClick={() => setZoom(zoomOut(zoomIndex))}
-                disabled={!canZoomOut(zoomIndex)}
-                aria-label="Reduzir zoom"
-                title="Reduzir zoom (−)"
-              >
-                −
-              </button>
-              <span className="lightbox-zoom-level" aria-live="polite">
-                {zoomPercent(zoomIndex)}%
-              </span>
-              <button
-                type="button"
-                className="lightbox-zoom-btn"
-                onClick={() => setZoom(zoomIn(zoomIndex))}
-                disabled={!canZoomIn(zoomIndex)}
-                aria-label="Aumentar zoom"
-                title="Aumentar zoom (+)"
-              >
-                +
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Faixa inferior de miniaturas com primeiro frame e auto-scroll */}
         {items.length > 1 && (
           <footer className="media-carousel-footer">
-            <div className="media-carousel-thumb-strip" ref={thumbStripRef}>
+            <div
+              className={`media-carousel-thumb-strip ${isOverflowing ? 'is-overflowing' : 'is-centered'}`}
+              ref={thumbStripRef}
+            >
               <div className="media-carousel-thumb-track">
                 {items.map((item, index) => {
                   const isActive = index === currentIndex

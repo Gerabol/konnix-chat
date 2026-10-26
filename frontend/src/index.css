@@ -9463,6 +9463,14 @@ img.room-header-avatar {
   -webkit-overflow-scrolling: touch;
 }
 
+.media-carousel-thumb-strip.is-centered {
+  justify-content: center;
+}
+
+.media-carousel-thumb-strip.is-overflowing {
+  justify-content: flex-start;
+}
+
 .media-carousel-thumb-strip::-webkit-scrollbar {
   height: 6px;
 }
@@ -9476,10 +9484,18 @@ img.room-header-avatar {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 auto;
   padding: 6px 16px;
   min-width: min-content;
   box-sizing: border-box;
+}
+
+.media-carousel-thumb-strip.is-centered .media-carousel-thumb-track {
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.media-carousel-thumb-strip.is-overflowing .media-carousel-thumb-track {
+  margin: 0;
 }
 
 .media-carousel-thumb {
