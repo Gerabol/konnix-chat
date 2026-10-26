@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["**/*.test.ts", "src/utils/audioEncoder.ts", "src/workers/transcriptionWorker.ts"]
+}

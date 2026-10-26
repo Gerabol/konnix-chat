@@ -212,6 +212,25 @@ export type MessageTimeSeriesResponse = {
   points: MessageTimeSeriesPoint[]
 }
 
+export type AttachmentTimeSeriesResponse = {
+  granularity: 'day' | 'month' | 'year'
+  period: MessageTimeSeriesPeriod
+  totalAttachments: number
+  averageAttachments: number
+  peakAttachments: number
+  peakPeriodLabel: string
+  points: { dateKey: string; label: string; attachments: number }[]
+}
+
+export type EngagementInsights = {
+  period: MessageTimeSeriesPeriod
+  totalActiveUsers: number
+  totalAbsentUsers: number
+  themeUsage: { theme: Theme; users: number }[]
+  topUsers: { userId: string; username: string; name: string | null; messages: number }[]
+  absentUsers: { id: string; username: string; name: string | null; email: string | null; presenceStatus: PresenceStatus; theme: Theme }[]
+}
+
 export type AppSettings = { name: string; maxUploadBytes: number }
 export type ServerInfo = { product: string; version: string; serverName: string; maxUploadBytes?: number; audioTranscriptionEnabled?: boolean }
 export type ApiTokenMetadata = { id: string; tokenPreview: string; username: string; createdBy: string | null; createdAt: string; expiresAt: string; revoked: boolean }
@@ -567,6 +586,12 @@ export const api = {
   },
   adminMessageTimeSeries(period: MessageTimeSeriesPeriod = 'DAYS_7') {
     return request<MessageTimeSeriesResponse>(`/api/v1/admin/monitoring/messages-timeseries?period=${period}`)
+  },
+  adminAttachmentTimeSeries(period: MessageTimeSeriesPeriod = 'DAYS_7') {
+    return request<AttachmentTimeSeriesResponse>(`/api/v1/admin/monitoring/attachments-timeseries?period=${period}`)
+  },
+  adminEngagementInsights(period: MessageTimeSeriesPeriod = 'DAYS_7') {
+    return request<EngagementInsights>(`/api/v1/admin/monitoring/engagement?period=${period}`)
   },
   getMaxUploadBytes() {
     return cachedMaxUploadBytes
