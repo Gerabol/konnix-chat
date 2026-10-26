@@ -6,6 +6,7 @@ import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { isAudioFile as isAudioFileLike } from '../../utils/attachmentKind'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
+import { attachmentBlobCache } from '../../utils/attachmentCache'
 import {
   classifyGrowth,
   isNearBottom,
@@ -33,6 +34,7 @@ import {
 } from '../icons'
 import { ForwardMessageModal } from '../modals/ForwardMessageModal'
 import { ImageEditorModal } from '../modals/ImageEditorModal'
+import { MediaCarouselModal } from '../modals/MediaCarouselModal'
 import { AddMembersModal, MembersModal, RemoveMembersModal } from '../modals/MembersModal'
 import { CreatePollModal } from '../modals/PollModals'
 import { ReadReceiptsModal } from '../modals/ReadReceiptsModal'
@@ -48,6 +50,7 @@ import { RoomFilesPanel } from './RoomFilesPanel'
 import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndicator'
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 import { resolveQuotedOriginName } from '../../utils/privateReply'
+import { extractRoomMedia } from '../../utils/mediaCarousel'
 
 const SEARCH_DEBOUNCE_MS = 400
 const DRAFT_SAVE_DEBOUNCE_MS = 400
@@ -263,6 +266,8 @@ export function RoomView({
   const [filesError, setFilesError] = useState<string | null>(null)
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
+  const [carouselMediaId, setCarouselMediaId] = useState<string | null>(null)
+  const roomMediaItems = useMemo(() => extractRoomMedia(roomFiles, messages), [roomFiles, messages])
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set())
   const [favorites, setFavorites] = useState<FavoriteMessage[]>([])
@@ -820,6 +825,28 @@ export function RoomView({
     }
   }, [favoriteUpdate, room.id, favoritesOpen, loadFavorites])
 
+  // Purgar anexos de mensagens apagadas de roomFiles e do cache de blobs em memória
+  useEffect(() => {
+    const deletedAttIds = new Set<string>()
+    for (const msg of messages) {
+      if (msg.deletedAt) {
+        const list = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
+        for (const att of list) {
+          if (att?.id) deletedAttIds.add(att.id)
+        }
+      }
+    }
+    if (deletedAttIds.size > 0) {
+      setRoomFiles((prev) => {
+        const next = prev.filter((file) => !deletedAttIds.has(file.id))
+        return next.length === prev.length ? prev : next
+      })
+      for (const id of deletedAttIds) {
+        attachmentBlobCache.delete(id)
+      }
+    }
+  }, [messages])
+
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)
     setFilesError(null)
@@ -832,6 +859,14 @@ export function RoomView({
       setFilesLoading(false)
     }
   }, [room.id])
+
+  const handleOpenMedia = useCallback(
+    (mediaId: string) => {
+      setCarouselMediaId(mediaId)
+      void loadRoomFiles()
+    },
+    [loadRoomFiles],
+  )
 
   const toggleFiles = () => {
     setFilesOpen((open) => {
@@ -1963,6 +1998,7 @@ export function RoomView({
                   onToggleFavorite={handleToggleFavorite}
                   roomType={room.type}
                   onReplyPrivate={room.type !== 'DIRECT' && onReplyPrivate ? handleReplyPrivate : undefined}
+                  onOpenMedia={handleOpenMedia}
                 />
               ))}
             </div>
@@ -2509,6 +2545,13 @@ export function RoomView({
             setPollOpen(false)
           }}
           notify={modalNotify}
+        />
+      )}
+      {carouselMediaId && (
+        <MediaCarouselModal
+          items={roomMediaItems}
+          initialMediaId={carouselMediaId}
+          onClose={() => setCarouselMediaId(null)}
         />
       )}
       {editingImageState && (

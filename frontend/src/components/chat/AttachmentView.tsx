@@ -3,8 +3,10 @@ import { api, ApiError, formatBytes, userAvatarPath } from '../../api'
 import type { Attachment, Message } from '../../api'
 import { ImageLightbox } from '../modals/ImageLightbox'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
+import { isImageMime, isVideoMime } from '../../utils/mediaCarousel'
 import { IconAudioWave } from '../icons'
 import { AudioPlayer } from './AudioPlayer'
+import { VideoAttachmentCard } from './VideoAttachmentCard'
 
 export function attachmentExtension(att: Attachment): string {
   return att.originalName.split('.').pop()?.toLowerCase() ?? ''
@@ -17,12 +19,14 @@ export function attachmentIconClass(att: Attachment): string {
   if (['doc', 'docx', 'odt', 'rtf'].includes(ext) || att.mimeType.includes('word')) return 'document'
   if (['ppt', 'pptx', 'odp'].includes(ext) || att.mimeType.includes('presentation')) return 'presentation'
   if (att.mimeType.startsWith('audio/')) return 'audio'
+  if (isVideoMime(att.mimeType, att.originalName)) return 'video'
   return 'generic'
 }
 
 export function attachmentIcon(att: Attachment, isImage: boolean, isAudio: boolean): string {
   if (isImage) return '🖼'
   if (isAudio) return '🎵'
+  if (isVideoMime(att.mimeType, att.originalName)) return '🎬'
   const kind = attachmentIconClass(att)
   if (kind === 'pdf') return '📕'
   if (kind === 'spreadsheet') return '📊'
@@ -35,13 +39,16 @@ export function AttachmentView({
   msg,
   authorAvatarPath,
   transcriptionEnabled = true,
+  onOpenMedia,
 }: {
   msg: Message
   authorAvatarPath?: string | null
   transcriptionEnabled?: boolean
+  onOpenMedia?: (mediaId: string) => void
 }) {
   const att = msg.attachment
-  const isImage = !!att && att.mimeType.startsWith('image/')
+  const isImage = !!att && isImageMime(att.mimeType, att.originalName)
+  const isVideo = !!att && isVideoMime(att.mimeType, att.originalName)
   const isAudio = !!att && att.mimeType.startsWith('audio/')
   const cachedUrl = att ? attachmentBlobCache.get(att.id) : undefined
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -111,12 +118,20 @@ export function AttachmentView({
   }
 
   if (isImage) {
+    const handleImageClick = () => {
+      if (onOpenMedia) {
+        onOpenMedia(att.id)
+      } else {
+        setLightboxOpen(true)
+      }
+    }
+
     return (
       <div className="attachment-image">
         <button
           type="button"
           className="attachment-img-btn"
-          onClick={() => setLightboxOpen(true)}
+          onClick={handleImageClick}
           title="Clique para ampliar"
           aria-label={`Ampliar imagem ${att.originalName}`}
         >
@@ -133,6 +148,24 @@ export function AttachmentView({
           <ImageLightbox src={state.url} alt={att.originalName} onClose={() => setLightboxOpen(false)} />
         )}
       </div>
+    )
+  }
+
+  if (isVideo) {
+    const handleVideoClick = () => {
+      if (onOpenMedia) {
+        onOpenMedia(att.id)
+      } else {
+        setLightboxOpen(true)
+      }
+    }
+
+    return (
+      <VideoAttachmentCard
+        att={att}
+        url={state.url}
+        onOpen={handleVideoClick}
+      />
     )
   }
 

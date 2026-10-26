@@ -45,6 +45,7 @@ export interface MessageRowProps {
   validMentionUsernames?: Set<string>
   roomType?: string
   onReplyPrivate?: (msg: Message) => void
+  onOpenMedia?: (mediaId: string) => void
 }
 
 /** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
@@ -84,6 +85,7 @@ function MessageRowComponent({
   validMentionUsernames,
   roomType,
   onReplyPrivate,
+  onOpenMedia,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
   const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
@@ -412,6 +414,7 @@ function MessageRowComponent({
                 msg={{ ...msg, attachment }}
                 authorAvatarPath={authorAvatarPath}
                 transcriptionEnabled={transcriptionEnabled}
+                onOpenMedia={onOpenMedia}
               />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}

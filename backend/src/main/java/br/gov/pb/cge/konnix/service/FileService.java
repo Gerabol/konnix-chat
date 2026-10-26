@@ -176,6 +176,9 @@ public class FileService {
         Attachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(ApiExceptions::fileNotFound);
         Message message = attachment.getMessage();
+        if (message != null && message.getDeletedAt() != null) {
+            throw ApiExceptions.fileNotFound();
+        }
         Room room = message.getRoom();
         requireMember(room, actor);
         File file = storageService.fileFor(attachment.getStoragePath());

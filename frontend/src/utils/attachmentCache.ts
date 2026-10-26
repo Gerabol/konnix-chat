@@ -19,6 +19,14 @@ class AttachmentBlobCache {
     return this.cache.has(key)
   }
 
+  delete(key: string): boolean {
+    const url = this.cache.get(key)
+    if (url && url.startsWith('blob:')) {
+      URL.revokeObjectURL(url)
+    }
+    return this.cache.delete(key)
+  }
+
   set(key: string, url: string): void {
     if (this.cache.has(key)) {
       const existing = this.cache.get(key)
