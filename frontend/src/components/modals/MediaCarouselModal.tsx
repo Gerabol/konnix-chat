@@ -115,8 +115,13 @@ export function MediaCarouselModal({
     items.findIndex((item) => item.id === initialMediaId),
   )
   const [currentIndex, setCurrentIndex] = useState(initialIndex >= 0 ? initialIndex : 0)
+  const [hasNavigated, setHasNavigated] = useState(false)
+  const isInitialDirectVideo = useRef(
+    items[initialIndex]?.type === 'video' && items[initialIndex]?.id === initialMediaId,
+  )
 
   const currentItem = items[currentIndex] ?? null
+  const shouldAutoPlay = isInitialDirectVideo.current && !hasNavigated && currentItem?.id === initialMediaId
 
   const stageRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -213,11 +218,13 @@ export function MediaCarouselModal({
 
   const handlePrev = useCallback(() => {
     if (videoRef.current) videoRef.current.pause()
+    setHasNavigated(true)
     setCurrentIndex((prev) => getPrevMediaIndex(prev))
   }, [])
 
   const handleNext = useCallback(() => {
     if (videoRef.current) videoRef.current.pause()
+    setHasNavigated(true)
     setCurrentIndex((prev) => getNextMediaIndex(prev, items.length))
   }, [items.length])
 
@@ -452,7 +459,8 @@ export function MediaCarouselModal({
                   key={currentItem.id}
                   src={mediaUrl}
                   controls
-                  autoPlay
+                  autoPlay={shouldAutoPlay}
+                  preload="metadata"
                   playsInline
                   className="media-carousel-video"
                 />
@@ -517,6 +525,7 @@ export function MediaCarouselModal({
                     className={`media-carousel-thumb ${isActive ? 'active' : ''}`}
                     onClick={() => {
                       if (videoRef.current) videoRef.current.pause()
+                      setHasNavigated(true)
                       setCurrentIndex(index)
                     }}
                     title={`${item.originalName} (${item.type === 'video' ? 'Vídeo' : 'Imagem'})`}

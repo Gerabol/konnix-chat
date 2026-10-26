@@ -3972,6 +3972,7 @@ button:disabled {
 .message .message-body:has(.quoted-message) .message-content,
 .message .message-body:has(> .attachment) .message-content,
 .message .message-body:has(> .attachment-image) .message-content,
+.message .message-body:has(> .video-attachment-card) .message-content,
 .message .message-body:has(> .attachment-audio) .message-content,
 .message .message-body:has(> .attachment-audio-loading) .message-content {
   align-self: stretch;
@@ -4180,13 +4181,18 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  width: fit-content;
+  width: min-content;
+  min-width: min(100%, 160px);
   max-width: 320px;
+}
+
+.message.mine .attachment-image {
+  align-items: flex-end;
 }
 
 .attachment-img-btn {
   display: block;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   padding: 0;
   border: 0;
@@ -4194,6 +4200,10 @@ button:disabled {
   background: none;
   line-height: 0;
   cursor: pointer;
+}
+
+.message.mine .attachment-img-btn {
+  align-self: flex-end;
 }
 
 .attachment-img-btn:focus-visible {
@@ -4213,10 +4223,20 @@ button:disabled {
   background: var(--konnix-bg);
 }
 
+.message.mine .attachment-img {
+  margin-left: auto;
+}
+
 .attachment-image-meta {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+.message.mine .attachment-image-meta {
+  justify-content: flex-end;
 }
 
 .attachment-image-meta strong {
