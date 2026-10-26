@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, wsUrl } from '../../api'
+import { api, ApiError, formatUploadSize, wsUrl } from '../../api'
 import type { DirectoryUser, Message, MessageReaction, PresenceStatus, ReadReceipt, Room, Theme, User } from '../../api'
 import { useOnline } from '../../hooks/useOnline'
 import { usePwaInstall } from '../../hooks/usePwaInstall'
 import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
-import type { DmPartner, Session, TypingUser } from '../../types'
+import type { DmPartner, PendingUploadItem, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { isMobilePlatform } from '../../utils/pwa'
+import { formatNotificationSnippet, playNotificationSound, unlockNotificationSound } from '../../utils/notificationSound'
 import { syncPushSubscription } from '../../utils/push'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
@@ -19,9 +20,11 @@ import { NewRoomModal } from '../modals/NewRoomModal'
 import { ProfileEditModal } from '../modals/ProfileEditModal'
 import { ReportIssueModal } from '../modals/ReportIssueModal'
 import { ThemeModal } from '../modals/ThemeModal'
+import { UserFavoritesModal } from '../modals/UserFavoritesModal'
 import { EmptyState } from './EmptyState'
 import { RoomView } from './RoomView'
 import { Sidebar } from './Sidebar'
+import { buildPrivateReplyQuote } from '../../utils/privateReply'
 
 export interface ChatViewProps {
   session: Session
@@ -48,6 +51,7 @@ export function ChatView({
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true)
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(true)
   const [toast, setToast] = useState<{ id: number; text: string; anchor: 'content' | 'modal' } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Message | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -61,6 +65,15 @@ export function ChatView({
   const [themeOpen, setThemeOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
+  const [favoritesModalOpen, setFavoritesModalOpen] = useState(false)
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
+  const [pendingQuote, setPendingQuote] = useState<Message | null>(null)
+  const [favoriteUpdate, setFavoriteUpdate] = useState<{
+    roomId: string
+    messageId: string
+    favorite: boolean
+    timestamp: number
+  } | null>(null)
   const [previewTheme, setPreviewTheme] = useState<Theme | null>(null)
   const [loadingRoom, setLoadingRoom] = useState(false)
   const [composing, setComposing] = useState(false)
@@ -149,6 +162,7 @@ export function ChatView({
       lastInteraction = Date.now()
       scheduleAway()
       registerInteraction()
+      unlockNotificationSound()
     }
 
     const events: (keyof DocumentEventMap)[] = ['pointerdown', 'keydown', 'input', 'touchstart']
@@ -258,7 +272,7 @@ export function ChatView({
   const loadRooms = useCallback(async () => {
     try {
       const nextRooms = await api.rooms()
-      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0 } : room)))
+      setRooms(nextRooms.map((room) => (room.id === activeRoomIdRef.current ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
     } catch {
       showToast('Falha ao carregar salas')
     }
@@ -299,7 +313,7 @@ export function ChatView({
       setHasMore(false)
       setNextBefore(null)
       setSidebarOpen(false)
-      setRooms((prev) => prev.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room)))
+      setRooms((prev) => prev.map((room) => (room.id === roomId ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
       setLoadingRoom(true)
       try {
         const res = await api.messages(roomId, 50)
@@ -366,6 +380,14 @@ export function ChatView({
     }
   }, [closeRoom])
 
+  const goHome = useCallback(() => {
+    if (isMobilePlatform()) {
+      closeSidebar()
+      return
+    }
+    closeRoom()
+  }, [closeSidebar, closeRoom])
+
   useEffect(() => {
     const handleBack = () => {
       if (activeRoomIdRef.current) {
@@ -385,6 +407,12 @@ export function ChatView({
       .readReceiptSetting()
       .then((setting) => setReadReceiptsEnabled(setting.enabled))
       .catch(() => undefined)
+    api
+      .transcriptionSetting()
+      .then((setting) => setTranscriptionEnabled(setting.enabled))
+      .catch(() => undefined)
+    api.serverInfo().catch(() => undefined)
+    api.audioTranscriptionSetting().catch(() => undefined)
   }, [])
 
   const loadMore = useCallback(async () => {
@@ -415,11 +443,37 @@ export function ChatView({
     let ws: WebSocket | null = null
     let closedByUser = false
     let retry: ReturnType<typeof setTimeout> | null = null
+    let pingInterval: ReturnType<typeof setInterval> | null = null
+    let lastPongAt = Date.now()
+    let lastWakeupSyncAt = 0
+
+    const sendPing = () => {
+      const activeWs = wsRef.current
+      if (!activeWs || activeWs.readyState !== WebSocket.OPEN) return
+      if (Date.now() - lastPongAt > 40_000) {
+        console.warn('[WebSocket] Heartbeat expirado (>40s). Reconectando...')
+        try { activeWs.close() } catch {}
+        return
+      }
+      try {
+        activeWs.send(JSON.stringify({ type: 'ping' }))
+      } catch {
+        try { activeWs.close() } catch {}
+      }
+    }
 
     const connect = () => {
+      if (closedByUser) return
+      if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+        return
+      }
+      lastPongAt = Date.now()
       ws = new WebSocket(wsUrl())
       wsRef.current = ws
       ws.onopen = () => {
+        lastPongAt = Date.now()
+        if (pingInterval) clearInterval(pingInterval)
+        pingInterval = setInterval(sendPing, 25_000)
         const manual = readManualPresence()
         if (manual) {
           if (manual !== presenceStatusRef.current && !presenceUpdateInFlightRef.current) {
@@ -446,6 +500,10 @@ export function ChatView({
             type: string
             roomId: string
             data: Message
+          }
+          lastPongAt = Date.now()
+          if (evt.type === 'pong') {
+            return
           }
           if (evt.type === 'message.created') {
             const msg = evt.data
@@ -494,19 +552,7 @@ export function ChatView({
               const isDirect = room?.type === 'DIRECT'
               const notifTitle = isDirect ? (msg.username || 'Konnix Chat') : `${label} • ${msg.username}`
 
-              let snippet = msg.content?.replace(/\s+/g, ' ').trim() || ''
-              if (!snippet && msg.attachment) {
-                if (msg.attachment.mimeType?.startsWith('audio/')) {
-                  snippet = '🎤 Mensagem de áudio'
-                } else if (msg.attachment.mimeType?.startsWith('image/')) {
-                  snippet = '📷 Enviou uma foto'
-                } else {
-                  snippet = `📎 Arquivo: ${msg.attachment.originalName || 'Anexo'}`
-                }
-              } else if (!snippet && msg.poll) {
-                snippet = `📊 Enquete: ${msg.poll.question}`
-              }
-              const notifBody = snippet || 'Nova mensagem'
+              const notifBody = formatNotificationSnippet(msg)
 
               // Respeitar status de presença: se ocupado ou em missão, só notifica DM ou menção direta
               const currentPresence = presenceStatusRef.current
@@ -520,10 +566,21 @@ export function ChatView({
 
               if (appInBackground && !suppressNotification) {
                 let enabled = false
+                let explicitlyDisabled = false
                 try {
-                  enabled = localStorage.getItem('konnix-system-notifications') === 'true'
+                  const stored = localStorage.getItem('konnix-system-notifications')
+                  explicitlyDisabled = stored === 'false'
+                  enabled =
+                    stored === 'true' ||
+                    (!isTauri &&
+                      stored !== 'false' &&
+                      typeof Notification !== 'undefined' &&
+                      Notification.permission === 'granted')
                 } catch {
                   /* preferência opcional */
+                }
+                if (!explicitlyDisabled) {
+                  playNotificationSound(msg.id)
                 }
                 if (enabled) {
                   if (isTauri) {
@@ -533,6 +590,7 @@ export function ChatView({
                   }
                 }
               } else if (!isActiveRoom && !suppressNotification) {
+                playNotificationSound(msg.id)
                 showToast(`${notifTitle}: ${notifBody}`)
               }
             }
@@ -687,14 +745,50 @@ export function ChatView({
                 prev.map((room) => (room.id === payload.roomId ? { ...room, favorite: payload.favorite } : room)),
               )
             }
+          } else if (evt.type === 'room.unread.updated') {
+            const payload = evt.data as unknown as { roomId: string; markedUnread: boolean }
+            if (payload?.roomId) {
+              setRooms((prev) =>
+                prev.map((room) =>
+                  room.id === payload.roomId ? { ...room, markedUnread: payload.markedUnread } : room,
+                ),
+              )
+            }
+          } else if (evt.type === 'room.mentions.updated') {
+            const payload = evt.data as unknown as { roomId: string; unreadMentionsCount: number }
+            if (payload?.roomId) {
+              setRooms((prev) =>
+                prev.map((room) =>
+                  room.id === payload.roomId
+                    ? { ...room, unreadMentionsCount: payload.unreadMentionsCount }
+                    : room,
+                ),
+              )
+            }
+          } else if (evt.type === 'message.favorite.updated') {
+            const payload = evt.data as unknown as { roomId: string; messageId: string; favorite: boolean }
+            if (payload?.roomId && payload?.messageId) {
+              setFavoriteUpdate({
+                roomId: payload.roomId,
+                messageId: payload.messageId,
+                favorite: payload.favorite,
+                timestamp: Date.now(),
+              })
+            }
           }
         } catch {
           /* ignora payloads inválidos */
         }
       }
       ws.onclose = () => {
+        if (pingInterval) {
+          clearInterval(pingInterval)
+          pingInterval = null
+        }
         if (wsRef.current === ws) wsRef.current = null
+        ws = null
         if (!closedByUser) {
+          if (retry) clearTimeout(retry)
           retry = setTimeout(connect, 1000)
         }
       }
@@ -703,35 +797,95 @@ export function ChatView({
 
     connect()
 
-    const onVisibilityOrFocus = () => {
+    const triggerWakeupSync = (reason: 'visibility' | 'focus' | 'online' | 'time-drift') => {
+      const now = Date.now()
+      if (now - lastWakeupSyncAt < 1000) {
+        return
+      }
+      lastWakeupSyncAt = now
+
+      const currentWs = wsRef.current
+      const isDeadOrGhost =
+        !currentWs ||
+        currentWs.readyState === WebSocket.CLOSED ||
+        currentWs.readyState === WebSocket.CLOSING ||
+        reason === 'time-drift' ||
+        now - lastPongAt > 25_000
+
+      if (isDeadOrGhost) {
+        console.warn(`[WebSocket] Resetando conexão devido a wake-up (${reason})...`)
+        if (ws) {
+          try {
+            ws.onclose = null
+            ws.onerror = null
+            ws.close()
+          } catch {}
+          ws = null
+        }
+        wsRef.current = null
+        connect()
+      } else if (currentWs.readyState === WebSocket.OPEN) {
+        sendPing()
+      }
+
+      void loadRooms()
+      const activeRoom = activeRoomIdRef.current
+      if (activeRoom && !activeRoom.startsWith('pending:')) {
+        setRooms((prev) =>
+          prev.map((room) =>
+            room.id === activeRoom
+              ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 }
+              : room,
+          ),
+        )
+        void api.markRoomRead(activeRoom).catch(() => undefined)
+        void api.messages(activeRoom, 50).then((res) => {
+          if (activeRoomIdRef.current === activeRoom) {
+            setMessages(res.messages)
+            setHasMore(res.hasMore)
+            setNextBefore(res.nextBefore)
+          }
+        }).catch(() => undefined)
+      }
+      void syncPushSubscription().catch(() => undefined)
+    }
+
+    const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        const currentWs = wsRef.current
-        if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
-          connect()
-        }
-        void loadRooms()
-        const activeRoom = activeRoomIdRef.current
-        if (activeRoom && !activeRoom.startsWith('pending:')) {
-          setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
-          void api.markRoomRead(activeRoom).catch(() => undefined)
-          void api.messages(activeRoom, 50).then((res) => {
-            if (activeRoomIdRef.current === activeRoom) {
-              setMessages(res.messages)
-              setHasMore(res.hasMore)
-              setNextBefore(res.nextBefore)
-            }
-          }).catch(() => undefined)
-        }
-        void syncPushSubscription().catch(() => undefined)
+        triggerWakeupSync('visibility')
       }
     }
-    document.addEventListener('visibilitychange', onVisibilityOrFocus)
-    window.addEventListener('focus', onVisibilityOrFocus)
+
+    const onFocus = () => {
+      triggerWakeupSync('focus')
+    }
+
+    const onOnline = () => {
+      triggerWakeupSync('online')
+    }
+
+    let lastTick = Date.now()
+    const driftInterval = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - lastTick
+      lastTick = now
+      if (elapsed > 3500) {
+        console.warn(`[Lifecycle] Salto temporal detectado (${elapsed}ms). Acordando de suspensão...`)
+        triggerWakeupSync('time-drift')
+      }
+    }, 1000)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
 
     return () => {
       closedByUser = true
-      document.removeEventListener('visibilitychange', onVisibilityOrFocus)
-      window.removeEventListener('focus', onVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
+      clearInterval(driftInterval)
+      if (pingInterval) clearInterval(pingInterval)
       if (retry) clearTimeout(retry)
       ws?.close()
     }
@@ -740,10 +894,7 @@ export function ChatView({
   useEffect(() => {
     if (!session.token) return
     const interval = setInterval(() => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        void loadRooms()
-      }
+      void loadRooms()
     }, 60_000)
     return () => clearInterval(interval)
   }, [session.token, loadRooms])
@@ -754,7 +905,7 @@ export function ChatView({
       if (document.visibilityState !== 'visible') return
       const activeRoom = activeRoomIdRef.current
       if (activeRoom && !activeRoom.startsWith('pending:')) {
-        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0 } : room)))
+        setRooms((prev) => prev.map((room) => (room.id === activeRoom ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room)))
         void api.markRoomRead(activeRoom).catch(() => undefined)
       }
     }, 10_000)
@@ -768,9 +919,16 @@ export function ChatView({
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const data = e.data as { type?: string; roomId?: string } | null
-      if (data && data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
+      const data = e.data as { type?: string; roomId?: string; messageId?: string } | null
+      if (!data) return
+      if (data.type === 'konnix:navigate' && typeof data.roomId === 'string' && data.roomId) {
         openRoom(data.roomId)
+      } else if (data.type === 'konnix:push-received') {
+        const currentPresence = presenceStatusRef.current
+        if (currentPresence !== 'busy' && currentPresence !== 'mission' && currentPresence !== 'vacation') {
+          playNotificationSound(data.messageId)
+        }
+        void loadRooms()
       }
     }
     const onDesktopNotification = (e: Event) => {
@@ -835,14 +993,101 @@ export function ChatView({
     }
   }, [standalone, installApp])
 
+  const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([])
+  const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map())
+
+  const executeFileUpload = useCallback(async (item: PendingUploadItem) => {
+    const controller = new AbortController()
+    uploadAbortControllersRef.current.set(item.tempId, controller)
+
+    setPendingUploads((prev) =>
+      prev.map((entry) =>
+        entry.tempId === item.tempId
+          ? { ...entry, status: 'uploading', progress: 0, loadedBytes: 0, errorMessage: undefined }
+          : entry,
+      ),
+    )
+
+    try {
+      const created = await api.uploadFile(item.roomId, item.file, item.content, {
+        signal: controller.signal,
+        onProgress: (loaded, total, percent) => {
+          setPendingUploads((prev) =>
+            prev.map((entry) =>
+              entry.tempId === item.tempId
+                ? {
+                    ...entry,
+                    loadedBytes: loaded,
+                    totalBytes: total,
+                    progress: percent,
+                    status: percent >= 100 ? 'processing' : 'uploading',
+                  }
+                : entry,
+            ),
+          )
+        },
+      })
+
+      uploadAbortControllersRef.current.delete(item.tempId)
+      if (created.attachment?.id) {
+        const localUrl = URL.createObjectURL(item.file)
+        attachmentBlobCache.set(created.attachment.id, localUrl)
+      }
+
+      setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== item.tempId))
+      setRooms((prev) =>
+        prev.map((room) => (room.id === item.roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
+      )
+      if (activeRoomIdRef.current === item.roomId) {
+        setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
+      }
+    } catch (err) {
+      uploadAbortControllersRef.current.delete(item.tempId)
+      if (err instanceof ApiError && err.code === 'UPLOAD_ABORTED') {
+        setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== item.tempId))
+        return
+      }
+      const errorMessage = err instanceof ApiError ? err.message : 'Falha ao enviar arquivo'
+      setPendingUploads((prev) =>
+        prev.map((entry) =>
+          entry.tempId === item.tempId
+            ? { ...entry, status: 'error', errorMessage }
+            : entry,
+        ),
+      )
+    }
+  }, [])
+
+  const retryUpload = useCallback(
+    (tempId: string) => {
+      const target = pendingUploads.find((item) => item.tempId === tempId)
+      if (!target) return
+      void executeFileUpload(target)
+    },
+    [pendingUploads, executeFileUpload],
+  )
+
+  const cancelUpload = useCallback((tempId: string) => {
+    const controller = uploadAbortControllersRef.current.get(tempId)
+    if (controller) {
+      controller.abort()
+      uploadAbortControllersRef.current.delete(tempId)
+    }
+    setPendingUploads((prev) => prev.filter((entry) => entry.tempId !== tempId))
+  }, [])
+
   const sendMessage = async (
     content: string,
     parentMessageId?: string,
     attachments: File[] = [],
   ): Promise<boolean> => {
     let roomId = activeRoomId
-    if (!roomId || (!content.trim() && attachments.length === 0) || !online || composing || me.accountStatus === 'READ_ONLY')
+    if (!roomId || (!content.trim() && attachments.length === 0)) return false
+    if (me.accountStatus === 'READ_ONLY') {
+      showToast('Sua conta está em modo somente leitura.')
       return false
+    }
+    if (attachments.length === 0 && composing) return false
     if (roomId.startsWith('pending:')) {
       const user = pendingDmRef.current
       if (!user) return false
@@ -861,34 +1106,58 @@ export function ChatView({
         showToast(err instanceof ApiError ? err.message : 'Não foi possível iniciar a conversa')
         setComposing(false)
         return false
+      } finally {
+        setComposing(false)
       }
     }
-    setComposing(true)
-    try {
-      let createdMessages: Message[]
-      if (attachments.length === 0) {
-        createdMessages = [await api.sendMessage(roomId, content.trim(), parentMessageId)]
-      } else {
-        createdMessages = await Promise.all(
-          attachments.map(async (file, index) => {
-            const created = await api.uploadFile(roomId, file, index === 0 ? content.trim() : undefined)
-            if (created.attachment?.id) {
-              const localUrl = URL.createObjectURL(file)
-              attachmentBlobCache.set(created.attachment.id, localUrl)
-            }
-            return created
-          }),
+
+    if (attachments.length > 0) {
+      void api.serverInfo().catch(() => undefined)
+      const maxUploadBytes = api.getMaxUploadBytes()
+      const oversized = attachments.find((file) => file.size > maxUploadBytes)
+      if (oversized) {
+        showToast(
+          `O arquivo "${oversized.name}" (${formatUploadSize(oversized.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
         )
+        return false
       }
-      for (const created of createdMessages) {
-        setRooms((prev) =>
-          prev.map((room) => (room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
-        )
-        setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
+
+      const targetRoomId = roomId
+      const nowIso = new Date().toISOString()
+      const newUploadItems: PendingUploadItem[] = attachments.map((file, index) => ({
+        tempId: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
+        roomId: targetRoomId,
+        file,
+        content: index === 0 && content.trim() ? content.trim() : undefined,
+        createdAt: nowIso,
+        progress: 0,
+        loadedBytes: 0,
+        totalBytes: file.size,
+        status: 'uploading',
+      }))
+
+      setPendingUploads((prev) => [...prev, ...newUploadItems])
+      setForceScrollRequest((prev) => prev + 1)
+      for (const item of newUploadItems) {
+        void executeFileUpload(item)
       }
       return true
+    }
+
+    setComposing(true)
+    try {
+      const created = await api.sendMessage(roomId, content.trim(), parentMessageId)
+      setRooms((prev) =>
+        prev.map((room) => (room.id === roomId ? { ...room, lastActivityAt: created.createdAt } : room)),
+      )
+      setMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]))
+      return true
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Falha ao enviar mensagem')
+      if (!navigator.onLine) {
+        showToast('Você parece estar sem conexão com a internet. Verifique sua rede.')
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'Falha ao enviar mensagem')
+      }
       return false
     } finally {
       setComposing(false)
@@ -960,6 +1229,44 @@ export function ChatView({
     setPreviewTheme(me.theme)
     setThemeOpen(true)
   }, [me.theme])
+
+  const handleReplyPrivate = useCallback(
+    (message: Message, originRoom: Room) => {
+      if (!message.userId) return
+
+      const quoteToApply = buildPrivateReplyQuote(message, originRoom)
+      setPendingQuote(quoteToApply)
+
+      const existingRoom = rooms.find(
+        (room) => room.type === 'DIRECT' && room.directPartner?.userId === message.userId,
+      )
+
+      if (existingRoom) {
+        if (activeRoomId === existingRoom.id) {
+          // Já está na sala privada; pendingQuote é consumido pelo RoomView via prop
+        } else {
+          void openRoom(existingRoom.id)
+        }
+      } else {
+        startDirectConversation(message.userId, {
+          username: message.username,
+          name: message.username,
+          presenceStatus: 'offline',
+        })
+      }
+    },
+    [rooms, activeRoomId, openRoom, startDirectConversation],
+  )
+
+  const handleJumpToRoomMessage = useCallback(
+    (roomId: string, messageId: string) => {
+      setTargetMessageId(messageId)
+      if (activeRoomId !== roomId) {
+        void openRoom(roomId)
+      }
+    },
+    [activeRoomId, openRoom],
+  )
   const openProfileEdit = useCallback(() => setProfileEditOpen(true), [])
   const openAbout = useCallback(() => setAboutOpen(true), [])
   const openReportIssue = useCallback(() => setReportIssueOpen(true), [])
@@ -997,6 +1304,74 @@ export function ChatView({
         : [...previous, result].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
     )
   }, [])
+
+  const handleMarkRoomUnread = useCallback(
+    async (roomId: string) => {
+      // Atualização otimista
+      setRooms((prev) =>
+        prev.map((room) => (room.id === roomId ? { ...room, markedUnread: true } : room)),
+      )
+      // Se a sala marcada for a ativa no momento, fecha para não ser lida de imediato
+      if (activeRoomIdRef.current === roomId) {
+        setActiveRoomId(null)
+        setMessages([])
+        setSidebarOpen(true)
+      }
+      try {
+        await api.markRoomUnread(roomId)
+        showToast('Conversa marcada como não lida')
+      } catch {
+        showToast('Não foi possível marcar a conversa como não lida')
+        setRooms((prev) =>
+          prev.map((room) => (room.id === roomId ? { ...room, markedUnread: false } : room)),
+        )
+      }
+    },
+    [showToast],
+  )
+
+  const handleMarkRoomRead = useCallback(
+    async (roomId: string) => {
+      setRooms((prev) =>
+        prev.map((room) =>
+          room.id === roomId ? { ...room, unreadCount: 0, markedUnread: false, unreadMentionsCount: 0 } : room,
+        ),
+      )
+      try {
+        await api.markRoomRead(roomId)
+      } catch {
+        // silencioso
+      }
+    },
+    [],
+  )
+
+  const handleToggleRoomFavorite = useCallback(
+    async (roomId: string) => {
+      const room = roomsRef.current.find((r) => r.id === roomId)
+      if (!room) return
+      const nextFavorite = !room.favorite
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, favorite: nextFavorite } : r)),
+      )
+      try {
+        const updated = await api.toggleRoomFavorite(roomId)
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.id === roomId
+              ? { ...r, favorite: updated.favorite, directPartner: updated.directPartner ?? r.directPartner }
+              : r,
+          ),
+        )
+      } catch {
+        showToast('Não foi possível atualizar o favorito')
+        setRooms((prev) =>
+          prev.map((r) => (r.id === roomId ? { ...r, favorite: room.favorite } : r)),
+        )
+      }
+    },
+    [showToast],
+  )
 
   const q = search.trim().toLowerCase()
   const channels = useMemo(
@@ -1052,6 +1427,7 @@ export function ChatView({
           onEditProfile={openProfileEdit}
           onAbout={openAbout}
           onReportIssue={openReportIssue}
+          onOpenFavorites={() => setFavoritesModalOpen(true)}
           myAvatarVersion={myAvatarVersion}
           onInstallApp={installAppDirectly}
           standalone={standalone}
@@ -1062,7 +1438,11 @@ export function ChatView({
           onPresenceError={showToast}
           typingByRoom={typingByRoom}
           avatarVersions={avatarVersions}
+          onMarkRoomUnread={handleMarkRoomUnread}
+          onMarkRoomRead={handleMarkRoomRead}
+          onToggleRoomFavorite={handleToggleRoomFavorite}
           onClose={closeSidebar}
+          onGoHome={goHome}
         />
 
         <main className="main">
@@ -1101,12 +1481,24 @@ export function ChatView({
               onStartDm={startDirectConversation}
               notify={showToast}
               readReceiptsEnabled={readReceiptsEnabled}
+                  transcriptionEnabled={transcriptionEnabled}
               onSearchResult={addSearchResult}
               onPollUpdated={addSearchResult}
               onRoomUpdated={(updated) =>
                 setRooms((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
               }
               onOpenRoom={openRoom}
+              onMarkUnread={handleMarkRoomUnread}
+              pendingUploads={pendingUploads.filter((u) => u.roomId === activeRoom.id)}
+              onRetryUpload={retryUpload}
+              onCancelUpload={cancelUpload}
+              initialTargetMessageId={targetMessageId}
+              onClearTargetMessageId={() => setTargetMessageId(null)}
+              initialQuotedMessage={pendingQuote}
+              onClearInitialQuotedMessage={() => setPendingQuote(null)}
+              onReplyPrivate={handleReplyPrivate}
+              onJumpToRoomMessage={handleJumpToRoomMessage}
+              favoriteUpdate={favoriteUpdate}
             />
           )}
         </main>
@@ -1162,6 +1554,19 @@ export function ChatView({
         />
       )}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {favoritesModalOpen && (
+        <UserFavoritesModal
+          onClose={() => setFavoritesModalOpen(false)}
+          onSelectRoom={(roomId, messageId) => {
+            setFavoritesModalOpen(false)
+            setTargetMessageId(messageId)
+            if (activeRoomId !== roomId) {
+              void openRoom(roomId)
+            }
+          }}
+          notify={modalNotify}
+        />
+      )}
       {downloadModalOpen && (
         <DownloadAppModal
           onClose={() => setDownloadModalOpen(false)}

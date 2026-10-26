@@ -1,31 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconMic, IconStop } from '../icons'
+import { AudioTooShortError, processRecordedAudio } from '../../utils/audioEncoder'
 
+/**
+ * Função mantida para retrocompatibilidade, codificando com alta fidelidade e duração garantida.
+ */
 export async function encodeRecordingAsMp3(blob: Blob): Promise<Blob> {
-  const context = new AudioContext()
-  try {
-    const decoded = await context.decodeAudioData(await blob.arrayBuffer())
-    const encoderModule = await import('lamejs')
-    const encoder = new encoderModule.Mp3Encoder(1, decoded.sampleRate, 128)
-    const firstChannel = decoded.getChannelData(0)
-    const secondChannel = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : null
-    const samples = new Int16Array(firstChannel.length)
-    for (let index = 0; index < firstChannel.length; index += 1) {
-      const mixed = secondChannel ? (firstChannel[index] + secondChannel[index]) / 2 : firstChannel[index]
-      const sample = Math.max(-1, Math.min(1, mixed))
-      samples[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff
-    }
-    const parts: BlobPart[] = []
-    for (let offset = 0; offset < samples.length; offset += 1152) {
-      const encoded = encoder.encodeBuffer(samples.subarray(offset, offset + 1152))
-      if (encoded.length > 0) parts.push(new Uint8Array(encoded))
-    }
-    const flushed = encoder.flush()
-    if (flushed.length > 0) parts.push(new Uint8Array(flushed))
-    return new Blob(parts, { type: 'audio/mpeg' })
-  } finally {
-    await context.close()
-  }
+  const result = await processRecordedAudio(blob, 0.2)
+  return result.file
 }
 
 export function useAudioRecorder({
@@ -87,8 +69,17 @@ export function useAudioRecorder({
   }, [onRecordingChange])
 
   const stop = () => {
-    if (mediaRef.current && mediaRef.current.state !== 'inactive') {
-      mediaRef.current.stop()
+    const recorder = mediaRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        // Solicita descarregamento imediato de todos os dados residuais para o ondataavailable
+        if (recorder.state === 'recording') {
+          recorder.requestData()
+        }
+      } catch {
+        // Ignora caso já esteja finalizando
+      }
+      recorder.stop()
     }
   }
 
@@ -107,7 +98,16 @@ export function useAudioRecorder({
     }
     try {
       const lifecycle = lifecycleRef.current
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Captura otimizada para voz com supressão de ruído, cancelamento de eco e ganho automático
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 44100,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
       if (lifecycle !== lifecycleRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
@@ -121,22 +121,38 @@ export function useAudioRecorder({
         if (e.data.size > 0) chunksRef.current.push(e.data)
       }
       rec.onstop = async () => {
-        releaseResources()
         const mimeType = rec.mimeType || 'audio/webm'
-        const blob = new Blob(chunksRef.current, { type: mimeType })
+        const chunks = [...chunksRef.current]
+        const startedAt = startedAtRef.current
+        const elapsed = startedAt ? (Date.now() - startedAt) / 1000 : 0
+
+        releaseResources()
         setRecording(false)
         onRecordingChange(false, 0)
-        if (blob.size === 0) {
+
+        // Previne envio de áudios acidentais ou sem conteúdo audível (< 0.5s)
+        if (elapsed < 0.5 || chunks.length === 0) {
+          onError('Áudio muito curto (mínimo de 0,5s). Segure para falar.')
+          return
+        }
+
+        const rawBlob = new Blob(chunks, { type: mimeType })
+        if (rawBlob.size === 0) {
           onError('A gravação ficou vazia. Tente novamente')
           return
         }
+
         try {
-          const mp3 = await encodeRecordingAsMp3(blob)
-          if (mp3.size === 0) throw new Error('empty mp3')
-          onDone(new File([mp3], `gravacao-${Date.now()}.mp3`, { type: 'audio/mpeg' }))
-        } catch {
-          const sourceExtension = mimeType.split('/')[1]?.split(';')[0] || 'webm'
-          onDone(new File([blob], `gravacao-${Date.now()}.${sourceExtension}`, { type: mimeType }))
+          // Processa, valida duração real e gera MP3 com duração finita garantida
+          const { file } = await processRecordedAudio(rawBlob, 0.5)
+          onDone(file)
+        } catch (err: unknown) {
+          if (err instanceof AudioTooShortError) {
+            onError(err.message)
+          } else {
+            console.error('[useAudioRecorder] Falha ao processar gravação:', err)
+            onError('Não foi possível processar o áudio gravado.')
+          }
         }
       }
       rec.onerror = () => {

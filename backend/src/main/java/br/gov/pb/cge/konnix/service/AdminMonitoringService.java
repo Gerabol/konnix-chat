@@ -1,6 +1,8 @@
 package br.gov.pb.cge.konnix.service;
 
+import br.gov.pb.cge.konnix.api.admin.dto.AttachmentTimeSeriesResponse;
 import br.gov.pb.cge.konnix.api.admin.dto.AuditOptionsResponse;
+import br.gov.pb.cge.konnix.api.admin.dto.EngagementInsightsResponse;
 import br.gov.pb.cge.konnix.api.admin.dto.MessageTimeSeriesPeriod;
 import br.gov.pb.cge.konnix.api.admin.dto.MessageTimeSeriesResponse;
 import br.gov.pb.cge.konnix.api.admin.dto.MonitoringMetricsResponse;
@@ -10,6 +12,7 @@ import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.session.SessionRepository;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
+import br.gov.pb.cge.konnix.domain.user.UserTheme;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,9 +24,10 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -56,11 +60,7 @@ public class AdminMonitoringService {
 
     @Transactional(readOnly = true)
     public AuditOptionsResponse auditOptions() {
-        var users = userRepository.findAll().stream()
-                .sorted(Comparator.comparing(user -> user.getName() == null ? user.getUsername() : user.getName(),
-                        String.CASE_INSENSITIVE_ORDER))
-                .map(user -> new AuditOptionsResponse.UserOption(user.getId(), user.getUsername(), user.getName()))
-                .toList();
+        var users = userRepository.findAuditUserOptions();
         var actions = auditLogRepository.findDistinctActionByOrderByActionAsc().stream()
                 .filter(Objects::nonNull)
                 .toList();
@@ -123,6 +123,77 @@ public class AdminMonitoringService {
             case DAYS_7, DAYS_30, DAYS_90 -> buildDailyTimeSeries(selectedPeriod, zone);
             case MONTHS_12 -> buildMonthlyTimeSeries(selectedPeriod, zone);
             case YEARS -> buildYearlyTimeSeries(selectedPeriod, zone);
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentTimeSeriesResponse attachmentTimeSeries(MessageTimeSeriesPeriod period) {
+        MessageTimeSeriesPeriod selectedPeriod = period == null ? MessageTimeSeriesPeriod.DAYS_7 : period;
+        ZoneId zone = ZoneId.systemDefault();
+
+        return switch (selectedPeriod) {
+            case DAYS_7, DAYS_30, DAYS_90 -> buildDailyAttachmentTimeSeries(selectedPeriod, zone);
+            case MONTHS_12 -> buildMonthlyAttachmentTimeSeries(selectedPeriod, zone);
+            case YEARS -> buildYearlyAttachmentTimeSeries(selectedPeriod, zone);
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public EngagementInsightsResponse engagementInsights(MessageTimeSeriesPeriod period) {
+        MessageTimeSeriesPeriod selectedPeriod = period == null ? MessageTimeSeriesPeriod.DAYS_7 : period;
+        ZoneId zone = ZoneId.systemDefault();
+        Instant from = periodStart(selectedPeriod, zone);
+
+        Map<String, Long> themes = new LinkedHashMap<>();
+        for (Object[] row : userRepository.countUsersByTheme()) {
+            String theme = UserTheme.normalize((String) row[0]);
+            long users = ((Number) row[1]).longValue();
+            themes.merge(theme, users, Long::sum);
+        }
+        List<EngagementInsightsResponse.ThemeUsage> themeUsage = themes.entrySet().stream()
+                .map(entry -> new EngagementInsightsResponse.ThemeUsage(entry.getKey(), entry.getValue()))
+                .sorted((left, right) -> {
+                    int byCount = Long.compare(right.users(), left.users());
+                    return byCount != 0 ? byCount : left.theme().compareTo(right.theme());
+                })
+                .toList();
+
+        List<EngagementInsightsResponse.TopUser> topUsers = messageRepository
+                .findTopMessageUsersSince(from, 5).stream()
+                .map(row -> new EngagementInsightsResponse.TopUser(
+                        (String) row[0],
+                        (String) row[1],
+                        (String) row[2],
+                        ((Number) row[3]).longValue()))
+                .toList();
+
+        List<EngagementInsightsResponse.AbsentUser> absentUsers = userRepository
+                .findActiveUsersAbsentSince(from).stream()
+                .map(row -> new EngagementInsightsResponse.AbsentUser(
+                        (String) row[0],
+                        (String) row[1],
+                        (String) row[2],
+                        (String) row[3],
+                        row[4] == null ? "offline" : (String) row[4],
+                        UserTheme.normalize((String) row[5])))
+                .toList();
+
+        return new EngagementInsightsResponse(
+                selectedPeriod.name(),
+                userRepository.countByAccountStatus("ACTIVE"),
+                absentUsers.size(),
+                themeUsage,
+                topUsers,
+                absentUsers);
+    }
+
+    private Instant periodStart(MessageTimeSeriesPeriod period, ZoneId zone) {
+        return switch (period) {
+            case DAYS_7, DAYS_30, DAYS_90 ->
+                    LocalDate.now(zone).minusDays(period.getCount() - 1L).atStartOfDay(zone).toInstant();
+            case MONTHS_12 ->
+                    YearMonth.now(zone).minusMonths(period.getCount() - 1L).atDay(1).atStartOfDay(zone).toInstant();
+            case YEARS -> Instant.EPOCH;
         };
     }
 
@@ -231,5 +302,93 @@ public class AdminMonitoringService {
                 peakPeriodLabel,
                 points
         );
+    }
+
+    private AttachmentTimeSeriesResponse buildDailyAttachmentTimeSeries(MessageTimeSeriesPeriod period, ZoneId zone) {
+        int days = period.getCount();
+        LocalDate endDate = LocalDate.now(zone);
+        LocalDate startDate = endDate.minusDays(days - 1L);
+        Instant fromInstant = startDate.atStartOfDay(zone).toInstant();
+
+        Map<String, Long> countsByDay = attachmentRepository.countActivitySince(fromInstant, zone.getId()).stream()
+                .collect(Collectors.toMap(
+                        row -> (String) row[0],
+                        row -> ((Number) row[1]).longValue()));
+
+        DateTimeFormatter labelFormatter = DateTimeFormatter.ofPattern("dd/MM");
+        List<AttachmentTimeSeriesResponse.Point> points = new ArrayList<>(days);
+        for (int i = 0; i < days; i++) {
+            LocalDate date = startDate.plusDays(i);
+            String dateKey = date.toString();
+            points.add(new AttachmentTimeSeriesResponse.Point(
+                    dateKey, date.format(labelFormatter), countsByDay.getOrDefault(dateKey, 0L)));
+        }
+
+        return createAttachmentResponse("day", period.name(), points);
+    }
+
+    private AttachmentTimeSeriesResponse buildMonthlyAttachmentTimeSeries(MessageTimeSeriesPeriod period, ZoneId zone) {
+        int months = period.getCount();
+        YearMonth currentMonth = YearMonth.now(zone);
+        YearMonth startMonth = currentMonth.minusMonths(months - 1L);
+        Instant fromInstant = startMonth.atDay(1).atStartOfDay(zone).toInstant();
+
+        Map<String, Long> countsByMonth = attachmentRepository.countActivityByMonthSince(fromInstant, zone.getId()).stream()
+                .collect(Collectors.toMap(
+                        row -> (String) row[0],
+                        row -> ((Number) row[1]).longValue()));
+
+        DateTimeFormatter labelFormatter = DateTimeFormatter.ofPattern("MMM/yy", Locale.forLanguageTag("pt-BR"));
+        List<AttachmentTimeSeriesResponse.Point> points = new ArrayList<>(months);
+        for (int i = 0; i < months; i++) {
+            YearMonth ym = startMonth.plusMonths(i);
+            String dateKey = ym.toString();
+            points.add(new AttachmentTimeSeriesResponse.Point(
+                    dateKey, ym.format(labelFormatter), countsByMonth.getOrDefault(dateKey, 0L)));
+        }
+
+        return createAttachmentResponse("month", period.name(), points);
+    }
+
+    private AttachmentTimeSeriesResponse buildYearlyAttachmentTimeSeries(MessageTimeSeriesPeriod period, ZoneId zone) {
+        var rawData = attachmentRepository.countActivityByYear(zone.getId());
+        Map<String, Long> countsByYear = rawData.stream()
+                .collect(Collectors.toMap(
+                        row -> (String) row[0],
+                        row -> ((Number) row[1]).longValue()));
+
+        int currentYear = LocalDate.now(zone).getYear();
+        int minYear = rawData.stream()
+                .map(row -> Integer.parseInt((String) row[0]))
+                .min(Integer::compareTo)
+                .orElse(currentYear - 2);
+        int startYear = Math.min(minYear, currentYear - 2);
+
+        List<AttachmentTimeSeriesResponse.Point> points = new ArrayList<>(currentYear - startYear + 1);
+        for (int year = startYear; year <= currentYear; year++) {
+            String dateKey = String.valueOf(year);
+            points.add(new AttachmentTimeSeriesResponse.Point(
+                    dateKey, dateKey, countsByYear.getOrDefault(dateKey, 0L)));
+        }
+
+        return createAttachmentResponse("year", period.name(), points);
+    }
+
+    private AttachmentTimeSeriesResponse createAttachmentResponse(String granularity, String periodName,
+                                                                  List<AttachmentTimeSeriesResponse.Point> points) {
+        long total = 0;
+        long peak = 0;
+        String peakLabel = points.isEmpty() ? "" : points.get(0).label();
+        for (var point : points) {
+            total += point.attachments();
+            if (point.attachments() > peak) {
+                peak = point.attachments();
+                peakLabel = point.label();
+            }
+        }
+        double average = points.isEmpty() ? 0.0 : (double) total / points.size();
+        double roundedAverage = Math.round(average * 100.0) / 100.0;
+        return new AttachmentTimeSeriesResponse(
+                granularity, periodName, total, roundedAverage, peak, peakLabel, points);
     }
 }

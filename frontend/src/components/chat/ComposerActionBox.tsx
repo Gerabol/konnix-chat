@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatBytes } from '../../api'
-import type { Room } from '../../api'
-import { IconClip, IconCode, IconMic, IconPlus, IconStop, IconTrash, IconX } from '../icons'
+import type { Attachment, Room } from '../../api'
+import { isAudioAttachment, isAudioFile } from '../../utils/attachmentKind'
+import { IconAudioWave, IconClip, IconCode, IconMic, IconPencil, IconPlus, IconStop, IconTrash, IconX } from '../icons'
 
 export function ComposerPendingAttachments({
   files,
   urls,
   onRemove,
+  onEdit,
 }: {
   files: File[]
   urls: string[]
   onRemove: (index: number) => void
+  onEdit?: (index: number) => void
 }) {
   if (files.length === 0) return null
   const hasImage = files.some((file) => file.type.startsWith('image/'))
   return (
     <div className={`composer-pending-attachments ${hasImage ? 'has-image' : ''}`} data-composer-pending-attachments aria-label="Anexos pendentes">
       {files.map((file, index) => {
+        const isAudio = isAudioFile(file)
         const image = file.type.startsWith('image/') && urls[index]
         return image ? (
           <div className="composer-pending-attachment composer-pending-image" key={`${file.name}-${file.lastModified}-${index}`}>
@@ -24,13 +28,59 @@ export function ComposerPendingAttachments({
               <img src={urls[index]} alt={`Prévia de ${file.name}`} />
             </div>
             <span className="composer-pending-name" title={file.name}>{file.name}</span>
+            {onEdit && (
+              <button
+                className="composer-pending-edit"
+                type="button"
+                onClick={() => onEdit(index)}
+                title={`Desenhar / editar ${file.name}`}
+                aria-label={`Editar ${file.name}`}
+              >
+                <IconPencil size={13} />
+              </button>
+            )}
             <button className="composer-pending-remove" type="button" onClick={() => onRemove(index)} aria-label={`Remover ${file.name}`}>×</button>
           </div>
         ) : (
-          <div className="composer-pending-attachment composer-pending-file" key={`${file.name}-${file.lastModified}-${index}`}>
-            <span className="composer-pending-icon" aria-hidden="true">📎</span>
-            <span className="composer-pending-details" title={file.name}><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
-            <button className="composer-pending-remove" type="button" onClick={() => onRemove(index)} aria-label={`Remover ${file.name}`}>×</button>
+          <div className={`composer-pending-attachment composer-pending-file ${isAudio ? 'composer-pending-audio' : ''}`} key={`${file.name}-${file.lastModified}-${index}`}>
+            <span className={`composer-pending-icon ${isAudio ? 'audio' : 'generic'}`} aria-hidden="true">
+              {isAudio ? <IconAudioWave size={17} /> : <IconClip size={16} />}
+            </span>
+            <span className="composer-pending-details" title={file.name}>
+              <strong>
+                {isAudio || /^gravacao-\d+\.mp3$/i.test(file.name)
+                  ? 'Mensagem de voz'
+                  : file.name}
+              </strong>
+              <small>{formatBytes(file.size)}</small>
+            </span>
+            <button className="composer-pending-remove" type="button" onClick={() => onRemove(index)} aria-label={`Remover ${isAudio ? 'áudio' : file.name}`}>×</button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Anexos da mensagem em edição. Não há como trocar o arquivo, então são apenas
+ * exibidos para dar contexto de qual arquivo a legenda em edição pertence.
+ */
+export function ComposerEditingAttachments({ attachments }: { attachments: Attachment[] }) {
+  if (attachments.length === 0) return null
+  return (
+    <div className="composer-pending-attachments" aria-label="Anexos da mensagem em edição">
+      {attachments.map((attachment) => {
+        const isAudio = isAudioAttachment(attachment)
+        return (
+          <div className={`composer-pending-attachment composer-pending-file ${isAudio ? 'composer-pending-audio' : ''}`} key={attachment.id}>
+            <span className={`composer-pending-icon ${isAudio ? 'audio' : 'generic'}`} aria-hidden="true">
+              {isAudio ? <IconAudioWave size={17} /> : <IconClip size={16} />}
+            </span>
+            <span className="composer-pending-details" title={attachment.originalName}>
+              <strong>{isAudio ? 'Mensagem de voz' : attachment.originalName}</strong>
+              <small>{formatBytes(attachment.size)}</small>
+            </span>
           </div>
         )
       })}

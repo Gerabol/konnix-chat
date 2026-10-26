@@ -69,6 +69,7 @@ Todas as respostas REST da plataforma seguem rigorosamente a estrutura de envelo
 - `POST /{id}/messages`: Envia nova mensagem de texto ou inicia thread.
 - `POST /{id}/files`: Upload multipart de anexos.
 - `POST /{id}/read`: Marca todas as mensagens da sala como lidas.
+- `POST /{id}/unread`: Marca a conversa como não lida individualmente para o usuário (sem afetar recibos de leitura de mensagens já lidas).
 
 ### 3.3. Mensagens (`/api/v1/messages`)
 - `PATCH /{id}`: Edita o texto de uma mensagem própria.

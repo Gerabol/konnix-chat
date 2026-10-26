@@ -1,7 +1,9 @@
-import { formatTime, userAvatarPath } from '../../api'
-import type { Message, MessageReaction } from '../../api'
+import { useEffect, useState } from 'react'
+import { api, formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
+import type { Message, MessageReaction, ReadReceipt } from '../../api'
 import { Modal } from './Modal'
 import { AvatarImage, initials } from '../chat/AvatarImage'
+import { readerDisplayName, sortReadersByDate } from '../../utils/readReceipts'
 
 export function ReadReceiptsModal({
   message,
@@ -10,29 +12,70 @@ export function ReadReceiptsModal({
   message: Message
   onClose: () => void
 }) {
-  const readers = message.readBy ?? []
+  const [readers, setReaders] = useState<ReadReceipt[]>(() =>
+    sortReadersByDate(message.readBy ?? []),
+  )
+  const [loading, setLoading] = useState(readers.length === 0)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    api
+      .messageReaders(message.id)
+      .then((data) => {
+        if (active) {
+          setReaders(sortReadersByDate(data))
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          if (readers.length === 0) {
+            setError('Não foi possível carregar as leituras.')
+          }
+          setLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [message.id])
+
   return (
-    <Modal title="Confirmação de leitura" onClose={onClose} className="read-receipts-modal">
+    <Modal title="Visualizar leitura" onClose={onClose} className="read-receipts-modal">
       <div className="read-receipts-list">
-        {readers.length === 0 && <span className="nav-empty">Ainda não lida por outra pessoa.</span>}
-        {readers.map((reader) => (
-          <div className="read-receipt-row" key={`${reader.userId}-${reader.readAt}`}>
-            <AvatarImage
-              path={userAvatarPath(reader.userId)}
-              className="mini-avatar"
-              fallback={<span className="mini-avatar">{initials(reader.name || reader.username)}</span>}
-              alt={reader.name || reader.username}
-            />
-            <span className="picker-item-text">
-              <strong>{reader.name || reader.username}</strong>
-              <small>@{reader.username}</small>
-            </span>
-            <time dateTime={reader.readAt}>{formatTime(reader.readAt)}</time>
-          </div>
-        ))}
+        {loading && readers.length === 0 && (
+          <span className="nav-empty">Carregando confirmações de leitura…</span>
+        )}
+        {!loading && error && <span className="nav-empty notif-error">{error}</span>}
+        {!loading && !error && readers.length === 0 && (
+          <span className="nav-empty">Ainda não lida por outra pessoa.</span>
+        )}
+        {readers.map((reader) => {
+          const displayName = readerDisplayName(reader)
+          return (
+            <div className="read-receipt-row" key={`${reader.userId}-${reader.readAt}`}>
+              <AvatarImage
+                path={userAvatarPath(reader.userId)}
+                className="mini-avatar"
+                fallback={<span className="mini-avatar">{initials(displayName)}</span>}
+                alt={displayName}
+              />
+              <span className="picker-item-text">
+                <strong>{displayName}</strong>
+                <small>@{reader.username}</small>
+              </span>
+              <time dateTime={reader.readAt} title={formatFullTimestamp(reader.readAt)}>
+                {formatTime(reader.readAt)}
+              </time>
+            </div>
+          )
+        })}
       </div>
       <div className="modal-actions">
-        <button className="btn-ghost" onClick={onClose}>Fechar</button>
+        <button type="button" className="btn-ghost" onClick={onClose}>
+          Fechar
+        </button>
       </div>
     </Modal>
   )

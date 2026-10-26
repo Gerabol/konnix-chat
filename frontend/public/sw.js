@@ -2,12 +2,14 @@
  * Cache controlado: somente assets estáticos (HTML/JS/CSS/ícones/fontes).
  * Nunca cacheia: respostas da API, mensagens, anexos, tokens.
  */
-const VERSION = 'konnix-shell-v17';
+const VERSION = 'konnix-shell-v20';
 
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/icons/Konnix white.png',
+  '/icons/Konnix dark.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/maskable-512.png',
@@ -50,13 +52,34 @@ self.addEventListener('fetch', (event) => {
   }
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(VERSION).then((cache) => cache.put('/index.html', copy));
-          return response;
-        })
-        .catch(() => caches.match('/index.html'))
+      (async () => {
+        const timeoutPromise = new Promise((resolve) => {
+          setTimeout(resolve, 2500, null);
+        });
+
+        const networkPromise = fetch(request)
+          .then((response) => {
+            if (response && response.ok) {
+              const copy = response.clone();
+              caches.open(VERSION).then((cache) => cache.put('/index.html', copy));
+            }
+            return response;
+          })
+          .catch(() => null);
+
+        const winner = await Promise.race([networkPromise, timeoutPromise]);
+        if (winner) {
+          return winner;
+        }
+
+        const cached = await caches.match('/index.html');
+        if (cached) {
+          return cached;
+        }
+
+        const networkFallback = await networkPromise;
+        return networkFallback || Response.error();
+      })()
     );
     return;
   }
@@ -131,12 +154,22 @@ self.addEventListener('push', (event) => {
           console.warn('[SW Push] Falha ao despachar postMessage para clientes:', clientErr);
         }
 
+        let existingForTag = [];
+        try {
+          existingForTag = await self.registration.getNotifications({ tag: notificationTag });
+        } catch {
+          existingForTag = [];
+        }
+        const alreadyDisplayed = existingForTag.length > 0;
+        const effectiveTitle = alreadyDisplayed && existingForTag[0].title ? existingForTag[0].title : payload.title;
+        const effectiveBody = alreadyDisplayed && existingForTag[0].body ? existingForTag[0].body : payload.body;
+
         const notificationOptions = {
-          body: payload.body,
+          body: effectiveBody,
           icon: '/icons/icon-192.png',
           badge: '/icons/icon-192.png',
           tag: notificationTag,
-          renotify: true,
+          renotify: !alreadyDisplayed,
           data: {
             ...(payload.data || {}),
             unreadCount,
@@ -146,12 +179,12 @@ self.addEventListener('push', (event) => {
         };
 
         // Adiciona vibrate somente se suportado pelo ambiente (WebKit/Safari no iOS não suporta e pode falhar)
-        if ('vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
+        if (!alreadyDisplayed && 'vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
           notificationOptions.vibrate = [200, 100, 200];
         }
 
-        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag);
-        await self.registration.showNotification(payload.title, notificationOptions);
+        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag, { alreadyDisplayed });
+        await self.registration.showNotification(effectiveTitle, notificationOptions);
         console.log('[SW Push] registration.showNotification concluído com sucesso.');
 
         // Atualiza o app badge no PWA mobile se suportado

@@ -17,9 +17,28 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, UUID> {
 
     List<RoomMember> findByRoomId(UUID roomId);
 
+    @Query("""
+            select rm from RoomMember rm
+            join fetch rm.user u
+            where rm.room.id = :roomId
+              and (u.accountStatus is null or u.accountStatus <> 'DISABLED')
+              and u.active = true
+            """)
+    List<RoomMember> findActiveUsersByRoomId(@Param("roomId") UUID roomId);
+
     List<RoomMember> findByRoomIdIn(Collection<UUID> roomIds);
 
     List<RoomMember> findByRoomIdAndUserIdIn(UUID roomId, List<UUID> userIds);
+
+    @Query("""
+            select rm from RoomMember rm
+            join fetch rm.user u
+            where rm.room.id = :roomId
+              and rm.user.id in :userIds
+              and (u.accountStatus is null or u.accountStatus <> 'DISABLED')
+              and u.active = true
+            """)
+    List<RoomMember> findActiveByRoomIdAndUserIdIn(@Param("roomId") UUID roomId, @Param("userIds") List<UUID> userIds);
 
     List<RoomMember> findByUserId(UUID userId);
 

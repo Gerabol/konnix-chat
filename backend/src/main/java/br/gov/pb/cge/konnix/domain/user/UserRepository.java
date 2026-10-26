@@ -50,9 +50,39 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     Page<User> search(@Param("query") String query, Pageable pageable);
 
+    @Query("""
+            select new br.gov.pb.cge.konnix.api.admin.dto.AuditOptionsResponse$UserOption(u.id, u.username, u.name)
+            from User u
+            order by lower(coalesce(u.name, u.username)) asc
+            """)
+    List<br.gov.pb.cge.konnix.api.admin.dto.AuditOptionsResponse.UserOption> findAuditUserOptions();
+
     long countByActiveTrueAndRoles_Name(String roleName);
 
     long countByAccountStatus(String accountStatus);
+
+    @Query(value = """
+            select u.theme, count(*) as users
+            from users u
+            group by u.theme
+            order by users desc, u.theme asc
+            """, nativeQuery = true)
+    List<Object[]> countUsersByTheme();
+
+    @Query(value = """
+            select cast(u.id as varchar), u.username, u.name, u.email, u.presence_status, u.theme
+            from users u
+            where u.active = true
+              and u.account_status = 'ACTIVE'
+              and not exists (
+                  select 1 from messages m
+                  where m.user_id = u.id
+                    and m.deleted_at is null
+                    and m.created_at >= :from
+              )
+            order by lower(coalesce(u.name, u.username)) asc, lower(u.username) asc
+            """, nativeQuery = true)
+    List<Object[]> findActiveUsersAbsentSince(@Param("from") java.time.Instant from);
 
     List<User> findByActiveTrueAndRoles_Name(String roleName);
 

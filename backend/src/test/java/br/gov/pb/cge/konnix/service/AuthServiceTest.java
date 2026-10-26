@@ -154,4 +154,10 @@ class AuthServiceTest {
         verify(auditService).record("LOGOUT", user, "auth", "joao", "127.0.0.1");
         verify(chatWebSocketHandler).markUserOfflineImmediately(userId);
     }
+
+    @Test
+    void logoutComTokenNuloNaoGeraErro() {
+        authService.logout(null, null, "127.0.0.1");
+        verify(tokenService).revoke(null);
+    }
 }

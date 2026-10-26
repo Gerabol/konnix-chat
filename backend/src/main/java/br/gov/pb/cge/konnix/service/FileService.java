@@ -59,6 +59,7 @@ public class FileService {
     private final SystemSettingService systemSettingService;
     private final long maxFileSize;
     private final RoomAccessService roomAccessService;
+    private final MessageService messageService;
 
     public FileService(FileStorageService storageService,
                        AttachmentRepository attachmentRepository,
@@ -71,6 +72,7 @@ public class FileService {
                        PushNotificationService pushNotificationService,
                        SystemSettingService systemSettingService,
                        RoomAccessService roomAccessService,
+                       MessageService messageService,
                        @Value("${konnix.files.max-size:62914560}") long maxFileSize) {
         this.storageService = storageService;
         this.attachmentRepository = attachmentRepository;
@@ -83,6 +85,7 @@ public class FileService {
         this.pushNotificationService = pushNotificationService;
         this.systemSettingService = systemSettingService;
         this.roomAccessService = roomAccessService;
+        this.messageService = messageService;
         this.maxFileSize = maxFileSize;
     }
 
@@ -113,11 +116,21 @@ public class FileService {
 
         String mimeType = file.getContentType();
         byte[] data = readBytes(file);
-        if (isAudio(file, mimeType) && !"audio/mpeg".equalsIgnoreCase(mimeType)) {
-            ConvertedAudio converted = convertToMp3(data, originalName);
-            data = converted.data();
-            originalName = converted.originalName();
-            mimeType = "audio/mpeg";
+        if (isAudio(mimeType, originalName)) {
+            if (isAlreadyMp3(originalName, mimeType)) {
+                mimeType = "audio/mpeg";
+            } else if (data.length <= 15 * 1024 * 1024) {
+                try {
+                    ConvertedAudio converted = convertToMp3(data, originalName);
+                    data = converted.data();
+                    originalName = converted.originalName();
+                    mimeType = "audio/mpeg";
+                } catch (RuntimeException ignored) {
+                    mimeType = inferAudioMimeType(originalName, mimeType);
+                }
+            } else {
+                mimeType = inferAudioMimeType(originalName, mimeType);
+            }
         }
         FileStorageService.StoredFile stored = storageService.store(data);
         try {
@@ -130,6 +143,7 @@ public class FileService {
             room.setUpdatedAt(Instant.now());
             roomRepository.save(room);
             messageRepository.save(message);
+            messageService.processMentions(message, room, actorUser);
 
             Attachment attachment = new Attachment();
             attachment.setMessage(message);
@@ -144,7 +158,10 @@ public class FileService {
 
             auditService.record("FILE_UPLOADED", actorUser, "attachment",
                     room.getId() + ":" + attachment.getId(), ipAddress);
-            MessageResponse response = MessageResponse.from(message, attachment);
+            // responseFor relê os anexos do banco, o que dispara o flush e popula
+            // o @CreationTimestamp da mensagem. Montar a resposta direto da entidade
+            // em memória devolveria createdAt nulo (exibido como 31/12/1969).
+            MessageResponse response = messageService.responseFor(message, actor.id());
             eventPublisher.publish(room.getId(), MessageService.EVENT_MESSAGE_CREATED, response);
             pushNotificationService.notifyNewMessage(room.getId(), response, displayName(room));
             return response;
@@ -208,10 +225,43 @@ public class FileService {
         }
     }
 
-    private boolean isAudio(MultipartFile file, String mimeType) {
-        return (mimeType != null && mimeType.toLowerCase(Locale.ROOT).startsWith("audio/"))
-                || (file.getOriginalFilename() != null
-                && file.getOriginalFilename().toLowerCase(Locale.ROOT).matches(".*\\.(webm|mp4|m4a|wav|ogg|oga|aac|flac|mp3)$"));
+    /**
+     * Trata o arquivo como áudio quando o MIME declara {@code audio/}. Se o MIME
+     * não for confiável (nulo ou genérico, como {@code application/octet-stream}),
+     * aceita-se apenas extensões exclusivas de áudio. Contêineres como
+     * {@code .mp4} e {@code .webm} ficam de fora porque também carregam vídeo.
+     */
+    static boolean isAudio(String mimeType, String originalName) {
+        String normalizedMime = mimeType == null ? "" : mimeType.toLowerCase(Locale.ROOT).trim();
+        if (normalizedMime.startsWith("audio/")) {
+            return true;
+        }
+        if (normalizedMime.startsWith("video/")) {
+            return false;
+        }
+        return originalName != null
+                && originalName.toLowerCase(Locale.ROOT).matches(".*\\.(mp3|wav|ogg|oga|m4a|aac|flac)$");
+    }
+
+    private boolean isAlreadyMp3(String originalName, String mimeType) {
+        if ("audio/mpeg".equalsIgnoreCase(mimeType) || "audio/mp3".equalsIgnoreCase(mimeType)) {
+            return true;
+        }
+        return originalName != null && originalName.toLowerCase(Locale.ROOT).endsWith(".mp3");
+    }
+
+    private String inferAudioMimeType(String originalName, String currentMime) {
+        if (currentMime != null && currentMime.toLowerCase(Locale.ROOT).startsWith("audio/")) {
+            return currentMime;
+        }
+        String lower = originalName == null ? "" : originalName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
+        if (lower.endsWith(".m4a")) return "audio/mp4";
+        if (lower.endsWith(".aac")) return "audio/aac";
+        if (lower.endsWith(".flac")) return "audio/flac";
+        return "audio/mpeg";
     }
 
     private ConvertedAudio convertToMp3(byte[] data, String originalName) {

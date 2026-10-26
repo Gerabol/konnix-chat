@@ -43,7 +43,9 @@ public class AuthController {
         String username = authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser principal
                 ? principal.username()
                 : null;
-        authService.logout(token, username, clientIp(http));
+        if (token != null && !token.isBlank()) {
+            authService.logout(token, username, clientIp(http));
+        }
         return ApiResponse.ok(null);
     }
 

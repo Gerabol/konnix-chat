@@ -15,6 +15,8 @@ import br.gov.pb.cge.konnix.domain.message.MessageRead;
 import br.gov.pb.cge.konnix.domain.message.MessageReadRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReaction;
 import br.gov.pb.cge.konnix.domain.message.MessageReactionRepository;
+import br.gov.pb.cge.konnix.domain.message.MessageMention;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.poll.Poll;
 import br.gov.pb.cge.konnix.domain.poll.PollOption;
 import br.gov.pb.cge.konnix.domain.poll.PollOptionRepository;
@@ -25,6 +27,9 @@ import br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse;
 import br.gov.pb.cge.konnix.domain.room.Room;
 import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
+import br.gov.pb.cge.konnix.api.message.dto.FavoriteMessageResponse;
+import br.gov.pb.cge.konnix.domain.message.UserMessageFavorite;
+import br.gov.pb.cge.konnix.domain.message.UserMessageFavoriteRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.user.User;
 import br.gov.pb.cge.konnix.domain.user.UserRepository;
@@ -32,6 +37,7 @@ import br.gov.pb.cge.konnix.security.AuthenticatedUser;
 import br.gov.pb.cge.konnix.storage.FileStorageService;
 import br.gov.pb.cge.konnix.push.PushNotificationService;
 import br.gov.pb.cge.konnix.websocket.ChatEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -44,14 +50,24 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class MessageService {
+
+    private static final Pattern MENTION_PATTERN = Pattern.compile("@([a-zA-Z0-9._-]+)");
+
+    /** Conversas diretas são 1:1, portanto menções não se aplicam. */
+    private static final String TYPE_DIRECT = "DIRECT";
 
     public static final int DEFAULT_LIMIT = 50;
     public static final int MAX_LIMIT = 200;
@@ -69,6 +85,7 @@ public class MessageService {
     private final ChatEventPublisher eventPublisher;
     private final PushNotificationService pushNotificationService;
     private final MessageReadRepository messageReadRepository;
+    private final MessageMentionRepository messageMentionRepository;
     private final SystemSettingService systemSettingService;
     private final MessageReactionRepository reactionRepository;
     private final PollRepository pollRepository;
@@ -76,6 +93,46 @@ public class MessageService {
     private final PollVoteRepository pollVoteRepository;
     private final RoomAccessService roomAccessService;
     private final FileStorageService storageService;
+    private final UserMessageFavoriteRepository favoriteRepository;
+
+    @Autowired
+    public MessageService(MessageRepository messageRepository,
+                          RoomRepository roomRepository,
+                          RoomMemberRepository roomMemberRepository,
+                          UserRepository userRepository,
+                          AttachmentRepository attachmentRepository,
+                          AuditService auditService,
+                          ChatEventPublisher eventPublisher,
+                          PushNotificationService pushNotificationService,
+                          MessageReadRepository messageReadRepository,
+                          MessageMentionRepository messageMentionRepository,
+                          SystemSettingService systemSettingService,
+                          MessageReactionRepository reactionRepository,
+                          PollRepository pollRepository,
+                          PollOptionRepository pollOptionRepository,
+                          PollVoteRepository pollVoteRepository,
+                          RoomAccessService roomAccessService,
+                          FileStorageService storageService,
+                          UserMessageFavoriteRepository favoriteRepository) {
+        this.messageRepository = messageRepository;
+        this.roomRepository = roomRepository;
+        this.roomMemberRepository = roomMemberRepository;
+        this.userRepository = userRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
+        this.pushNotificationService = pushNotificationService;
+        this.messageReadRepository = messageReadRepository;
+        this.messageMentionRepository = messageMentionRepository;
+        this.systemSettingService = systemSettingService;
+        this.reactionRepository = reactionRepository;
+        this.pollRepository = pollRepository;
+        this.pollOptionRepository = pollOptionRepository;
+        this.pollVoteRepository = pollVoteRepository;
+        this.roomAccessService = roomAccessService;
+        this.storageService = storageService;
+        this.favoriteRepository = favoriteRepository;
+    }
 
     public MessageService(MessageRepository messageRepository,
                           RoomRepository roomRepository,
@@ -86,6 +143,7 @@ public class MessageService {
                           ChatEventPublisher eventPublisher,
                           PushNotificationService pushNotificationService,
                           MessageReadRepository messageReadRepository,
+                          MessageMentionRepository messageMentionRepository,
                           SystemSettingService systemSettingService,
                           MessageReactionRepository reactionRepository,
                           PollRepository pollRepository,
@@ -93,22 +151,11 @@ public class MessageService {
                           PollVoteRepository pollVoteRepository,
                           RoomAccessService roomAccessService,
                           FileStorageService storageService) {
-        this.messageRepository = messageRepository;
-        this.roomRepository = roomRepository;
-        this.roomMemberRepository = roomMemberRepository;
-        this.userRepository = userRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.auditService = auditService;
-        this.eventPublisher = eventPublisher;
-        this.pushNotificationService = pushNotificationService;
-        this.messageReadRepository = messageReadRepository;
-        this.systemSettingService = systemSettingService;
-        this.reactionRepository = reactionRepository;
-        this.pollRepository = pollRepository;
-        this.pollOptionRepository = pollOptionRepository;
-        this.pollVoteRepository = pollVoteRepository;
-        this.roomAccessService = roomAccessService;
-        this.storageService = storageService;
+        this(messageRepository, roomRepository, roomMemberRepository, userRepository,
+                attachmentRepository, auditService, eventPublisher, pushNotificationService,
+                messageReadRepository, messageMentionRepository, systemSettingService,
+                reactionRepository, pollRepository, pollOptionRepository, pollVoteRepository,
+                roomAccessService, storageService, null);
     }
 
     @Transactional
@@ -131,9 +178,7 @@ public class MessageService {
             Message parent = messageRepository.findById(request.parentMessageId())
                     .filter(m -> m.getDeletedAt() == null)
                     .orElseThrow(() -> ApiExceptions.notFound("message/" + request.parentMessageId()));
-            if (!parent.getRoom().getId().equals(roomId)) {
-                throw ApiExceptions.parentRoomMismatch();
-            }
+            validateParentMessage(parent, room, actor);
             message.setParentMessage(parent);
         }
         List<Attachment> forwardedFiles = List.of();
@@ -156,6 +201,7 @@ public class MessageService {
         room.setUpdatedAt(Instant.now());
         roomRepository.save(room);
         messageRepository.save(message);
+        processMentions(message, room, author);
         if (!forwardedFiles.isEmpty()) {
             copyForwardedFiles(message, forwardedFiles, author, ipAddress);
         }
@@ -164,6 +210,88 @@ public class MessageService {
         eventPublisher.publish(roomId, EVENT_MESSAGE_CREATED, response);
         pushNotificationService.notifyNewMessage(roomId, response, displayName(room));
         return response;
+    }
+
+    private void validateParentMessage(Message parent, Room currentRoom, AuthenticatedUser actor) {
+        Room parentRoom = parent.getRoom();
+        if (parentRoom.getId().equals(currentRoom.getId())) {
+            return;
+        }
+
+        // Citações entre salas diferentes só são permitidas ao responder em particular (conversa direta)
+        if (!TYPE_DIRECT.equals(currentRoom.getType())) {
+            throw ApiExceptions.parentRoomMismatch();
+        }
+
+        // O usuário que está respondendo deve ser membro da sala de origem da mensagem citada
+        requireMember(parentRoom, actor);
+
+        // Em grupos privados, o interlocutor da conversa direta também deve ter acesso à sala de origem
+        // ou ser o próprio autor da mensagem citada, garantindo zero vazamento de dados.
+        if (RoomService.TYPE_PRIVATE_GROUP.equals(parentRoom.getType())) {
+            UUID otherUserId = roomMemberRepository.findByRoomId(currentRoom.getId()).stream()
+                    .map(rm -> rm.getUser().getId())
+                    .filter(uid -> !uid.equals(actor.id()))
+                    .findFirst()
+                    .orElse(actor.id());
+
+            boolean isPartnerMember = roomMemberRepository
+                    .findByRoomIdAndUserId(parentRoom.getId(), otherUserId)
+                    .map(RoomMember::isActive)
+                    .orElse(false);
+            boolean isPartnerAuthor = parent.getUser() != null && parent.getUser().getId().equals(otherUserId);
+
+            if (!isPartnerMember && !isPartnerAuthor) {
+                throw ApiExceptions.parentRoomMismatch();
+            }
+        }
+    }
+
+    public void processMentions(Message message, Room room, User author) {
+        if (TYPE_DIRECT.equals(room.getType())) {
+            return;
+        }
+        if (message.getContent() == null || message.getContent().isBlank()) {
+            return;
+        }
+        Matcher matcher = MENTION_PATTERN.matcher(message.getContent());
+        Set<String> mentionedUsernames = new HashSet<>();
+        while (matcher.find()) {
+            mentionedUsernames.add(matcher.group(1).toLowerCase(Locale.ROOT));
+        }
+        if (mentionedUsernames.isEmpty()) {
+            return;
+        }
+
+        List<RoomMember> activeMembers = roomMemberRepository.findByRoomId(room.getId()).stream()
+                .filter(RoomMember::isActive)
+                .toList();
+
+        List<MessageMention> mentionsToSave = new ArrayList<>();
+        for (RoomMember member : activeMembers) {
+            User user = member.getUser();
+            if (user == null || user.getId().equals(author.getId())) {
+                continue;
+            }
+            if (user.isDisabled()) {
+                continue;
+            }
+            String status = user.getAccountStatus();
+            if (status != null && !status.isBlank() && "DISABLED".equals(status)) {
+                continue;
+            }
+            if (mentionedUsernames.contains(user.getUsername().toLowerCase(Locale.ROOT))) {
+                mentionsToSave.add(new MessageMention(message, room, user));
+            }
+        }
+
+        if (!mentionsToSave.isEmpty()) {
+            messageMentionRepository.saveAll(mentionsToSave);
+            for (MessageMention mention : mentionsToSave) {
+                long unreadCount = messageMentionRepository.countUnreadByRoomId(room.getId(), mention.getUser().getId());
+                eventPublisher.publishMentionsUpdated(mention.getUser().getId(), room.getId(), unreadCount);
+            }
+        }
     }
 
     /** O texto padrão de um anexo é o próprio nome do arquivo. */
@@ -230,6 +358,9 @@ public class MessageService {
     @Transactional(readOnly = true)
     public List<MessageResponse> search(UUID roomId, String query, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
+        if (room.isHidden() && !actor.hasRole("ADMIN")) {
+            throw ApiExceptions.notFound("room/" + roomId);
+        }
         requireMember(room, actor);
         String normalized = query == null ? "" : query.trim();
         if (normalized.isBlank()) return List.of();
@@ -242,6 +373,19 @@ public class MessageService {
     public void markRoomRead(UUID roomId, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
         requireMember(room, actor);
+
+        roomMemberRepository.findByRoomIdAndUserId(roomId, actor.id())
+                .ifPresent(member -> {
+                    if (member.isMarkedUnread()) {
+                        member.setMarkedUnread(false);
+                        roomMemberRepository.save(member);
+                        eventPublisher.publishUnreadUpdated(actor.id(), roomId, false);
+                    }
+                });
+
+        messageMentionRepository.markRoomMentionsAsRead(roomId, actor.id(), Instant.now());
+        eventPublisher.publishMentionsUpdated(actor.id(), roomId, 0);
+
         if (!systemSettingService.readReceiptsEnabled()) {
             return;
         }
@@ -299,7 +443,11 @@ public class MessageService {
         if (message.getForwardedFromUser() != null) {
             throw ApiExceptions.cannotEditMessage();
         }
-        message.setContent(request.content().trim());
+        String content = request.content() == null ? "" : request.content().trim();
+        if (content.isEmpty() && attachmentRepository.findByMessageId(message.getId()).isEmpty()) {
+            throw ApiExceptions.messageContentRequired();
+        }
+        message.setContent(content);
         message.setEditedAt(Instant.now());
         messageRepository.save(message);
         auditService.record("MESSAGE_UPDATED", actorUser(actor.id()), "message", message.getId().toString(), ipAddress);
@@ -423,6 +571,14 @@ public class MessageService {
         List<UUID> roomIds = messages.stream().map(m -> m.getRoom().getId()).distinct().toList();
         List<RoomMember> allMembers = roomMemberRepository.findByRoomIdIn(roomIds);
         Map<UUID, Long> memberCountByRoom = allMembers.stream()
+                .filter(rm -> {
+                    var u = rm.getUser();
+                    if (u == null) return false;
+                    if (u.isDisabled()) return false;
+                    String s = u.getAccountStatus();
+                    if (s != null && !s.isBlank() && "DISABLED".equals(s)) return false;
+                    return true;
+                })
                 .collect(Collectors.groupingBy(rm -> rm.getRoom().getId(), Collectors.counting()));
         Map<String, String> roleByRoomAndUser = allMembers.stream()
                 .collect(Collectors.toMap(
@@ -540,7 +696,16 @@ public class MessageService {
         if (poll == null) return null;
         List<PollOption> options = pollOptionRepository.findByPollIdInOrderByPositionAsc(List.of(poll.getId()));
         List<PollVote> votes = pollVoteRepository.findByPollIdIn(List.of(poll.getId()));
-        int totalMembers = roomMemberRepository.findByRoomId(message.getRoom().getId()).size();
+        int totalMembers = (int) roomMemberRepository.findByRoomId(message.getRoom().getId()).stream()
+                .filter(m -> {
+                    var u = m.getUser();
+                    if (u == null) return false;
+                    if (u.isDisabled()) return false;
+                    String s = u.getAccountStatus();
+                    if (s != null && !s.isBlank() && "DISABLED".equals(s)) return false;
+                    return true;
+                })
+                .count();
         int totalVoters = (int) votes.stream().map(vote -> vote.getUser().getId()).distinct().count();
         return new MessageResponse.PollData(poll.getId(), poll.getQuestion(), poll.isAllowMultiple(), totalMembers, totalVoters, options.stream()
                 .map(option -> new MessageResponse.PollOptionData(option.getId(), option.getLabel(),
@@ -551,5 +716,113 @@ public class MessageService {
                                 .map(vote -> new MessageResponse.PollVoterData(vote.getUser().getId(), vote.getUser().getUsername(), vote.getUser().getName(), vote.getCreatedAt()))
                                 .toList()))
                 .toList());
+    }
+
+    @Transactional
+    public boolean toggleFavorite(UUID messageId, AuthenticatedUser actor) {
+        requireWritable(actor);
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> ApiExceptions.notFound("message/" + messageId));
+        Room room = message.getRoom();
+        requireMember(room, actor);
+
+        var existing = favoriteRepository.findByUserIdAndMessageId(actor.id(), messageId);
+        boolean isFavoriteNow;
+        if (existing.isPresent()) {
+            favoriteRepository.delete(existing.get());
+            isFavoriteNow = false;
+        } else {
+            User user = actorUser(actor.id());
+            favoriteRepository.save(new UserMessageFavorite(user, message));
+            isFavoriteNow = true;
+        }
+
+        eventPublisher.publishMessageFavoriteUpdated(actor.id(), room.getId(), messageId, isFavoriteNow);
+        return isFavoriteNow;
+    }
+
+    @Transactional
+    public boolean removeFavorite(UUID messageId, AuthenticatedUser actor) {
+        requireWritable(actor);
+        Message message = messageRepository.findById(messageId)
+                .filter(m -> m.getDeletedAt() == null)
+                .orElseThrow(() -> ApiExceptions.notFound("message/" + messageId));
+        Room room = message.getRoom();
+        requireMember(room, actor);
+
+        int deleted = favoriteRepository.deleteByUserIdAndMessageId(actor.id(), messageId);
+        if (deleted > 0) {
+            eventPublisher.publishMessageFavoriteUpdated(actor.id(), room.getId(), messageId, false);
+        }
+        return false;
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> getFavoriteMessageIds(UUID roomId, AuthenticatedUser actor) {
+        Room room = roomOrThrow(roomId);
+        requireMember(room, actor);
+        return favoriteRepository.findFavoriteMessageIdsByUserIdAndRoomId(actor.id(), roomId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FavoriteMessageResponse> getFavorites(UUID roomId, AuthenticatedUser actor) {
+        if (roomId != null) {
+            Room room = roomOrThrow(roomId);
+            requireMember(room, actor);
+        }
+        List<UserMessageFavorite> favorites = favoriteRepository.findFavoritesByUserId(actor.id(), roomId);
+        if (favorites.isEmpty()) {
+            return List.of();
+        }
+
+        List<Message> messages = favorites.stream().map(UserMessageFavorite::getMessage).toList();
+        Map<UUID, MessageResponse> responseByMessageId = toResponsesMultiRoom(messages, actor.id()).stream()
+                .collect(Collectors.toMap(MessageResponse::id, m -> m, (a, b) -> a));
+
+        return favorites.stream()
+                .map(f -> {
+                    Message m = f.getMessage();
+                    Room r = m.getRoom();
+                    MessageResponse msgResponse = responseByMessageId.get(m.getId());
+                    if (msgResponse == null) return null;
+                    return new FavoriteMessageResponse(
+                            f.getId(),
+                            f.getCreatedAt(),
+                            r.getId(),
+                            r.getName(),
+                            r.getType(),
+                            msgResponse
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private List<MessageResponse> toResponsesMultiRoom(List<Message> messages, UUID actorId) {
+        if (messages.isEmpty()) return List.of();
+        Map<UUID, List<Message>> byRoom = messages.stream()
+                .collect(Collectors.groupingBy(m -> m.getRoom().getId()));
+        Map<UUID, MessageResponse> mapped = new HashMap<>();
+        for (List<Message> roomMessages : byRoom.values()) {
+            List<MessageResponse> responses = toResponses(roomMessages, actorId);
+            for (MessageResponse res : responses) {
+                mapped.put(res.id(), res);
+            }
+        }
+        return messages.stream().map(m -> mapped.get(m.getId())).filter(Objects::nonNull).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReadReceiptResponse> getMessageReaders(UUID messageId, AuthenticatedUser actor) {
+        Message message = messageRepository.findById(messageId)
+                .orElseThrow(() -> ApiExceptions.notFound("Mensagem não encontrada"));
+        requireMember(message.getRoom(), actor);
+        if (!systemSettingService.readReceiptsEnabled()) {
+            return List.of();
+        }
+        return messageReadRepository.findByMessageIdWithUser(messageId).stream()
+                .map(ReadReceiptResponse::from)
+                .toList();
     }
 }

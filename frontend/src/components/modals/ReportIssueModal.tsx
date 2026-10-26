@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { api, ApiError } from '../../api'
+import { api, ApiError, formatUploadSize } from '../../api'
 import type { Message } from '../../api'
 import { useEscapeClose } from '../../hooks/useEscapeClose'
 
@@ -17,9 +17,26 @@ export function ReportIssueModal({
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    api.serverInfo().catch(() => undefined)
+  }, [])
+
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || [])
-    setFiles((prev) => [...prev, ...selectedFiles])
+    const maxUploadBytes = api.getMaxUploadBytes()
+    const validFiles: File[] = []
+    for (const file of selectedFiles) {
+      if (file.size > maxUploadBytes) {
+        notify(
+          `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+        )
+      } else {
+        validFiles.push(file)
+      }
+    }
+    if (validFiles.length > 0) {
+      setFiles((prev) => [...prev, ...validFiles])
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -127,9 +144,26 @@ export function RespondToReportModal({
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    api.serverInfo().catch(() => undefined)
+  }, [])
+
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || [])
-    setFiles((prev) => [...prev, ...selectedFiles])
+    const maxUploadBytes = api.getMaxUploadBytes()
+    const validFiles: File[] = []
+    for (const file of selectedFiles) {
+      if (file.size > maxUploadBytes) {
+        notify(
+          `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
+        )
+      } else {
+        validFiles.push(file)
+      }
+    }
+    if (validFiles.length > 0) {
+      setFiles((prev) => [...prev, ...validFiles])
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }

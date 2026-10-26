@@ -1,4 +1,4 @@
-import type { Room } from '../api'
+import type { Room } from '../api.ts'
 
 export const ROOM_ICON: Record<string, string> = {
   CHANNEL: '#',
@@ -37,4 +37,12 @@ export function roomSubtitle(room: Room): string {
 
 export function roomActivityTime(room: Room): number {
   return Date.parse(room.lastActivityAt ?? room.updatedAt ?? room.createdAt) || 0
+}
+
+export function initials(name: string): string {
+  const clean = name.trim()
+  if (!clean) return '?'
+  const parts = clean.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
 }

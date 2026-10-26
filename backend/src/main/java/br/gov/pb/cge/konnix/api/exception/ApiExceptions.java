@@ -103,9 +103,27 @@ public final class ApiExceptions {
         return new ApiException(HttpStatus.FORBIDDEN, "CANNOT_DELETE_MESSAGE", "Só é possível excluir a própria mensagem");
     }
 
+    public static ApiException messageContentRequired() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "MESSAGE_CONTENT_REQUIRED",
+                "A mensagem precisa de texto ou de um anexo");
+    }
+
     public static ApiException fileTooLarge(long maxBytes) {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
-                "Arquivo excede o limite de " + maxBytes + " bytes");
+                "Arquivo excede o limite permitido de " + formatSize(maxBytes) + " (" + maxBytes + " bytes)");
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes >= 1024L * 1024L * 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+        }
+        if (bytes >= 1024L * 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f MB", bytes / (1024.0 * 1024.0));
+        }
+        if (bytes >= 1024L) {
+            return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f KB", bytes / 1024.0);
+        }
+        return bytes + " B";
     }
 
     public static ApiException fileEmpty() {

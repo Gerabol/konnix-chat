@@ -1,3 +1,5 @@
+import { playNotificationSound } from './utils/notificationSound.ts'
+
 export type AppEnvironment = 'web' | 'pwa' | 'tauri'
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -14,12 +16,41 @@ export async function notifyDesktop(title: string, body: string, roomId?: string
     ? `konnix-msg-${messageId}`
     : (roomId ? `konnix-room-${roomId}` : `konnix-msg-${Date.now()}`)
 
+  playNotificationSound(messageId)
+
+  if (isTauri) {
+    try {
+      const { sendNotification } = await import('@tauri-apps/plugin-notification')
+      sendNotification({
+        title,
+        body,
+        extra: roomId ? { roomId } : undefined,
+      })
+      return
+    } catch {
+      /* fallback para Notification() */
+    }
+  }
+
   // Em navegadores mobile (ex: Android Chrome), `new Notification()` no contexto da janela é proibido
   // e lança TypeError. O caminho padrão e suportado é ServiceWorkerRegistration.showNotification().
   if (!isTauri && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.ready
       if (reg && 'showNotification' in reg) {
+        // Se houver subscrição Web Push ativa, concede 300ms de prioridade para o Service Worker (sw.js)
+        // exibir a notificação via Push sem colisão de tag. Caso o Push já tenha exibido (existing > 0),
+        // não sobrescrevemos para não cancelar o som/animação no macOS e Windows.
+        const hasPushSub = await reg.pushManager?.getSubscription().then((s) => !!s).catch(() => false)
+        if (hasPushSub) {
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        }
+        if ('getNotifications' in reg && typeof reg.getNotifications === 'function') {
+          const existing = await reg.getNotifications({ tag }).catch(() => [])
+          if (existing.length > 0) {
+            return
+          }
+        }
         await reg.showNotification(title, {
           body,
           tag,
@@ -40,6 +71,7 @@ export async function notifyDesktop(title: string, body: string, roomId?: string
       body,
       tag,
       icon: '/icons/icon-192.png',
+      silent: false,
     })
     notification.onclick = () => {
       window.focus()

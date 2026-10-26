@@ -45,6 +45,9 @@ public class Room {
     @Column(name = "read_only", nullable = false)
     private boolean readOnly = false;
 
+    @Column(name = "hidden", nullable = false)
+    private boolean hidden = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -113,6 +116,14 @@ public class Room {
 
     public void setReadOnly(boolean readOnly) {
         this.readOnly = readOnly;
+    }
+
+    public boolean isHidden() {
+        return hidden;
+    }
+
+    public void setHidden(boolean hidden) {
+        this.hidden = hidden;
     }
 
     public Instant getCreatedAt() {

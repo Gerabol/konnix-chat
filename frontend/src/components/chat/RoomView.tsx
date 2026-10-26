@@ -1,26 +1,38 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { api, ApiError, formatDay, roomAvatarPath, userAvatarPath } from '../../api'
-import type { Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
+import { api, ApiError, formatDay, formatFullTimestamp, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
+import type { FavoriteMessage, Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
-import type { DmPartner, TypingUser } from '../../types'
-import { resolvePaste } from '../../utils/clipboard'
+import { isAudioFile as isAudioFileLike } from '../../utils/attachmentKind'
+import { copyText, resolvePaste } from '../../utils/clipboard'
+import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
+import {
+  classifyGrowth,
+  isNearBottom,
+  NEAR_BOTTOM_THRESHOLD_PX,
+} from '../../utils/messageScroll'
+import type { GrowthSource } from '../../utils/messageScroll'
+import type { DmPartner, PendingUploadItem, TypingUser } from '../../types'
 import { getRoomIcon, ROOM_ICON, roomDisplayName, roomSubtitle } from '../../utils/room'
 import { isMobilePlatform } from '../../utils/pwa'
 import {
   IconArrowLeft,
   IconClip,
   IconCode,
+  IconHeart,
   IconPencil,
+  IconPin,
   IconPlus,
   IconSearch,
   IconSend,
   IconStop,
+  IconAudioWave,
   IconTrash,
   NoEntryIcon,
   PersonIcon,
 } from '../icons'
 import { ForwardMessageModal } from '../modals/ForwardMessageModal'
+import { ImageEditorModal } from '../modals/ImageEditorModal'
 import { AddMembersModal, MembersModal, RemoveMembersModal } from '../modals/MembersModal'
 import { CreatePollModal } from '../modals/PollModals'
 import { ReadReceiptsModal } from '../modals/ReadReceiptsModal'
@@ -28,15 +40,46 @@ import { RespondToReportModal } from '../modals/ReportIssueModal'
 import { RoomEditModal } from '../modals/RoomEditModal'
 import { AudioRecordButton, useAudioRecorder } from './AudioRecordButton'
 import { AvatarImage, initials } from './AvatarImage'
-import { ComposerActionBox, ComposerPendingAttachments } from './ComposerActionBox'
+import { ComposerActionBox, ComposerEditingAttachments, ComposerPendingAttachments } from './ComposerActionBox'
 import { EmojiButton } from './EmojiButton'
 import { MessageRow } from './MessageRow'
+import { RoomFavoritesPanel } from './RoomFavoritesPanel'
 import { RoomFilesPanel } from './RoomFilesPanel'
 import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndicator'
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
+import { resolveQuotedOriginName } from '../../utils/privateReply'
 
 const SEARCH_DEBOUNCE_MS = 400
+const DRAFT_SAVE_DEBOUNCE_MS = 400
 const LOAD_PREVIOUS_SCROLL_THRESHOLD = 96
+const POPOVER_MARGIN = 12
+const POPOVER_WIDTH = 560
+/** Altura desejada pelos cards: avatar + dados + lista rolável de salas em comum. */
+const PROFILE_CARD_BUDGET = 560
+const ROOM_INFO_CARD_BUDGET = 420
+
+/**
+ * Ancora um card flutuante logo abaixo do elemento clicado, mantendo-o inteiro
+ * dentro da área visível: em telas estreitas centraliza e no desktop trava o
+ * `top` para que sobre espaço suficiente, limitando o `left` à largura da janela.
+ */
+function popoverAnchor(target: EventTarget | null, budget: number) {
+  const rect = (target as HTMLElement | null)?.getBoundingClientRect()
+  const anchor = rect ?? { bottom: 24 + POPOVER_MARGIN, left: POPOVER_MARGIN }
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
+  const width = Math.min(POPOVER_WIDTH, vw - POPOVER_MARGIN * 2)
+  const minTop = POPOVER_MARGIN + safeTop
+  if (vw <= 760) {
+    return { top: Math.max(minTop, Math.min(anchor.bottom + 8, 24 + safeTop)), left: Math.round((vw - width) / 2) }
+  }
+  const maxTop = Math.max(minTop, vh - Math.min(budget, vh - POPOVER_MARGIN * 2) - POPOVER_MARGIN)
+  return {
+    top: Math.min(maxTop, Math.max(minTop, anchor.bottom + 8)),
+    left: Math.min(vw - width - POPOVER_MARGIN, Math.max(POPOVER_MARGIN, anchor.left)),
+  }
+}
 
 export interface RoomViewProps {
   room: Room
@@ -62,10 +105,22 @@ export interface RoomViewProps {
   onStartDm: (userId: string, partner?: Omit<DmPartner, 'userId'>) => void
   notify: (text: string, anchor?: 'content' | 'modal') => void
   readReceiptsEnabled: boolean
+  transcriptionEnabled: boolean
   onSearchResult: (message: Message) => void
   onPollUpdated: (message: Message) => void
   onRoomUpdated: (room: Room) => void
   onOpenRoom: (roomId: string) => void
+  onMarkUnread?: (roomId: string) => void
+  pendingUploads?: PendingUploadItem[]
+  onRetryUpload?: (tempId: string) => void
+  onCancelUpload?: (tempId: string) => void
+  initialTargetMessageId?: string | null
+  onClearTargetMessageId?: () => void
+  favoriteUpdate?: { roomId: string; messageId: string; favorite: boolean; timestamp: number } | null
+  initialQuotedMessage?: Message | null
+  onClearInitialQuotedMessage?: () => void
+  onReplyPrivate?: (message: Message, originRoom: Room) => void
+  onJumpToRoomMessage?: (roomId: string, messageId: string) => void
 }
 
 export function RoomView({
@@ -92,10 +147,22 @@ export function RoomView({
   onStartDm,
   notify,
   readReceiptsEnabled,
+  transcriptionEnabled,
   onSearchResult,
   onPollUpdated,
   onRoomUpdated,
   onOpenRoom,
+  onMarkUnread,
+  pendingUploads = [],
+  onRetryUpload,
+  onCancelUpload,
+  initialTargetMessageId,
+  onClearTargetMessageId,
+  favoriteUpdate,
+  initialQuotedMessage,
+  onClearInitialQuotedMessage,
+  onReplyPrivate,
+  onJumpToRoomMessage,
 }: RoomViewProps) {
   const isPendingDm = room.id.startsWith('pending:')
   const typingText = formatTypingText(typingUsers, room.type === 'DIRECT')
@@ -151,6 +218,13 @@ export function RoomView({
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([])
   const [pendingAttachmentUrls, setPendingAttachmentUrls] = useState<string[]>([])
+  const [editingImageState, setEditingImageState] = useState<{ file: File } | null>(null)
+  const latestDraftRef = useRef(draft)
+  const latestAttachmentsRef = useRef(pendingAttachments)
+  const draftRoomRef = useRef(room.id)
+  const draftUserRef = useRef(me.id)
+  const editingDraftRef = useRef(false)
+  const hydratedDraftScopeRef = useRef<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -189,6 +263,12 @@ export function RoomView({
   const [filesError, setFilesError] = useState<string | null>(null)
   const [filesQuery, setFilesQuery] = useState('')
   const [filesType, setFilesType] = useState('ALL')
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+  const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set())
+  const [favorites, setFavorites] = useState<FavoriteMessage[]>([])
+  const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [favoritesError, setFavoritesError] = useState<string | null>(null)
+  const [favoritesQuery, setFavoritesQuery] = useState('')
   const messageListRef = useRef<HTMLDivElement>(null)
   const pendingOlderScrollRef = useRef<{ oldScrollHeight: number; oldScrollTop: number } | null>(null)
   const scrollToBottomOnLoadRef = useRef(true)
@@ -215,7 +295,10 @@ export function RoomView({
   const isAdmin = me.roles.includes('ADMIN')
   const muted = readOnlyAccount || (room.readOnly && !isAdmin && !isRoomOwner) || !online
   const emptyCodeBlock = /^```\s*\n\s*\n?\s*```$/.test(draft.trim())
-  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0) && !emptyCodeBlock
+  // Em edição, uma mensagem com anexo pode ser salva sem legenda, já que o
+  // arquivo continua na mensagem.
+  const editingAttachments = editingMessage?.attachments ?? (editingMessage?.attachment ? [editingMessage.attachment] : [])
+  const canSubmit = (!!draft.trim() || pendingAttachments.length > 0 || editingAttachments.length > 0) && !emptyCodeBlock
   const isBugReportsRoom = room.name === 'bug-reports'
   const canWriteInRoom = !readOnlyAccount && (!room.readOnly || isAdmin || isRoomOwner)
   const canRespondToReport = isBugReportsRoom && isAdmin
@@ -255,23 +338,99 @@ export function RoomView({
     setRecordingSeconds(recording ? elapsedSeconds : 0)
   }, [])
 
-  const addPendingAttachments = useCallback((files: File[]) => {
-    if (files.length === 0 || editingMessage) return
-    setPendingAttachments((current) => {
-      const next = [...current]
+  const addPendingAttachments = useCallback(
+    (files: File[], openEditor = true) => {
+      if (files.length === 0 || editingMessage) return
+      const maxUploadBytes = api.getMaxUploadBytes()
+      const validFiles: File[] = []
       for (const file of files) {
-        if (next.length >= 10) break
-        if (
-          !next.some(
-            (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
+        if (file.size > maxUploadBytes) {
+          notify(
+            `O arquivo "${file.name}" (${formatUploadSize(file.size)}) excede o limite máximo permitido de ${formatUploadSize(maxUploadBytes)}`,
           )
-        ) {
-          next.push(file)
+        } else {
+          validFiles.push(file)
         }
       }
-      return next
+      if (validFiles.length === 0) return
+
+      const imageFile = openEditor ? validFiles.find((f) => f.type.startsWith('image/')) : null
+
+      setPendingAttachments((current) => {
+        const next = [...current]
+        for (const file of validFiles) {
+          if (next.length >= 10) break
+          if (
+            !next.some(
+              (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
+            )
+          ) {
+            next.push(file)
+          }
+        }
+        return next
+      })
+
+      if (imageFile) {
+        setEditingImageState((current) => current || { file: imageFile })
+      }
+    },
+    [editingMessage, notify],
+  )
+
+  const handleEditorClose = useCallback(() => {
+    setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
+  const handleEditorSaveDraft = useCallback((editedFile: File) => {
+    setPendingAttachments((current) => {
+      const original = editingImageState?.file
+      if (!original) return [...current, editedFile]
+      const index = current.findIndex(
+        (f) => f === original || (f.name === original.name && f.size === original.size),
+      )
+      if (index >= 0) {
+        const next = [...current]
+        next[index] = editedFile
+        return next
+      }
+      return [...current, editedFile]
     })
-  }, [editingMessage])
+    setEditingImageState(null)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [editingImageState])
+
+  const handleEditorSend = useCallback(
+    async (editedFile: File, caption: string) => {
+      stopTyping(true)
+      if (muted) return
+      forceScrollToBottomRef.current = true
+      const original = editingImageState?.file
+      const quoted = quotedMessage
+
+      setPendingAttachments((current) => {
+        if (!original) return current
+        return current.filter(
+          (f) => !(f === original || (f.name === original.name && f.size === original.size)),
+        )
+      })
+      setDraft('')
+      setQuotedMessage(null)
+      setEditingImageState(null)
+
+      const sent = await onSend(caption, quoted?.id, [editedFile])
+      if (!sent) {
+        forceScrollToBottomRef.current = false
+        setDraft(caption)
+        setQuotedMessage(quoted)
+        setPendingAttachments((current) => [...current, editedFile])
+      } else {
+        void clearRoomDraft(me.id, room.id)
+      }
+    },
+    [editingImageState, muted, onSend, quotedMessage, stopTyping, me.id, room.id],
+  )
 
   const audioRecorder = useAudioRecorder({
     resetKey: audioResetKey,
@@ -294,10 +453,6 @@ export function RoomView({
   }, [pendingAttachments])
 
   useEffect(() => {
-    setPendingAttachments([])
-  }, [room.id])
-
-  useEffect(() => {
     if (room.type === 'DIRECT') {
       setRoomMembers([])
       return
@@ -316,14 +471,57 @@ export function RoomView({
     }
   }, [room.id, room.type])
 
+  const validMentionUsernames = useMemo(() => {
+    const set = new Set<string>()
+    if (me && me.accountStatus !== 'DISABLED' && me.username) {
+      set.add(me.username.toLowerCase())
+    }
+    if (room.type === 'DIRECT') {
+      if (room.directPartner && room.directPartner.accountStatus !== 'DISABLED' && room.directPartner.username) {
+        set.add(room.directPartner.username.toLowerCase())
+      }
+    } else {
+      for (const member of roomMembers) {
+        if (member.active && member.accountStatus !== 'DISABLED' && member.username) {
+          set.add(member.username.toLowerCase())
+        }
+      }
+    }
+    return set
+  }, [room, roomMembers, me])
+
   const mentionOptions = useMemo(() => {
-    if (!mention || room.type === 'DIRECT') return []
+    if (!mention) return []
     const query = mention.query.toLowerCase()
+    if (room.type === 'DIRECT') {
+      if (
+        room.directPartner &&
+        room.directPartner.accountStatus !== 'DISABLED' &&
+        room.directPartner.userId !== me.id
+      ) {
+        const partnerName = `${room.directPartner.username} ${room.directPartner.name}`.toLowerCase()
+        if (partnerName.includes(query)) {
+          return [
+            {
+              id: room.directPartner.userId,
+              userId: room.directPartner.userId,
+              username: room.directPartner.username,
+              name: room.directPartner.name,
+              role: 'MEMBER',
+              joinedAt: '',
+              active: true,
+              accountStatus: room.directPartner.accountStatus,
+            },
+          ]
+        }
+      }
+      return []
+    }
     return roomMembers
-      .filter((member) => member.active && member.userId !== me.id)
+      .filter((member) => member.active && member.accountStatus !== 'DISABLED' && member.userId !== me.id)
       .filter((member) => `${member.username} ${member.name}`.toLowerCase().includes(query))
       .slice(0, 8)
-  }, [mention, room.type, roomMembers, me.id])
+  }, [mention, room, roomMembers, me.id])
 
   useLayoutEffect(() => {
     scrollToBottomOnLoadRef.current = true
@@ -401,20 +599,33 @@ export function RoomView({
       const boundMedia = new Set<HTMLElement>()
 
       const wasAtBottomBeforeGrowth = () => {
-        return container.scrollTop + container.clientHeight >= lastScrollHeight - 150
+        return container.scrollTop + container.clientHeight >= lastScrollHeight - NEAR_BOTTOM_THRESHOLD_PX
       }
 
-      const adjustIfNeeded = () => {
+      /**
+       * Mantém o usuário preso ao fim da conversa quando a lista cresce.
+       *
+       * `source` decide se o crescimento merece esse acompanhamento: conteúdo
+       * novo no fim (`tail`) e crescimento sem origem identificável
+       * (`desconhecido`) acompanham; expansão dentro de uma mensagem já existente
+       * (`message`, como abrir a transcrição de um áudio) não, para não arrancar o
+       * usuário do ponto que ele está lendo.
+       */
+      const adjustIfNeeded = (source: GrowthSource) => {
         if (!active || !container) return
         const newScrollHeight = container.scrollHeight
-        if (newScrollHeight > lastScrollHeight && wasAtBottomBeforeGrowth()) {
+        if (
+          newScrollHeight > lastScrollHeight &&
+          source !== 'message' &&
+          wasAtBottomBeforeGrowth()
+        ) {
           container.scrollTop = newScrollHeight
           wasNearBottomRef.current = true
         }
         lastScrollHeight = newScrollHeight
       }
 
-      const onMediaLoad = () => adjustIfNeeded()
+      const onMediaLoad = () => adjustIfNeeded('desconhecido')
 
       const bindMedia = (elements: HTMLElement[]) => {
         elements.forEach((el) => {
@@ -436,16 +647,18 @@ export function RoomView({
 
       const mutationObserver =
         typeof MutationObserver !== 'undefined'
-          ? new MutationObserver(() => {
+          ? new MutationObserver((records) => {
               if (!active) return
               scanAndBindMedia()
-              adjustIfNeeded()
+              adjustIfNeeded(classifyGrowth(records))
             })
           : null
       mutationObserver?.observe(container, { childList: true, subtree: true })
 
       const resizeObserver =
-        typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => adjustIfNeeded()) : null
+        typeof ResizeObserver !== 'undefined'
+          ? new ResizeObserver(() => adjustIfNeeded('desconhecido'))
+          : null
       resizeObserver?.observe(container)
       const content = container.querySelector('.message-list-content')
       if (content) resizeObserver?.observe(content)
@@ -487,9 +700,24 @@ export function RoomView({
   }, [loading, messages, room.id, onInitialPositioned])
 
   useEffect(() => {
+    latestDraftRef.current = draft
+    latestAttachmentsRef.current = pendingAttachments
+    editingDraftRef.current = editingMessage !== null
+  }, [draft, pendingAttachments, editingMessage])
+
+  useEffect(() => {
+    // Salva o rascunho da conversa que está sendo deixada antes de hidratar a próxima.
+    if ((draftRoomRef.current !== room.id || draftUserRef.current !== me.id) && !editingDraftRef.current) {
+      void saveRoomDraft(draftUserRef.current, draftRoomRef.current, latestDraftRef.current, latestAttachmentsRef.current)
+    }
+    draftRoomRef.current = room.id
+    draftUserRef.current = me.id
+    hydratedDraftScopeRef.current = null
     setDraft('')
+    setPendingAttachments([])
+    setEditingMessage(null)
     setComposerExpanded(false)
-    setQuotedMessage(null)
+    setQuotedMessage(initialQuotedMessage ?? null)
     setForwardMessage(null)
     setPinnedActionId(null)
     setHighlightedMessageId(null)
@@ -510,7 +738,87 @@ export function RoomView({
     setFilesQuery('')
     setFilesType('ALL')
     setRoomInfoOpen(false)
-  }, [room.id])
+
+    // O rascunho mora em IndexedDB, então a hidratação é assíncrona: só liberamos a
+    // persistência depois de aplicar o conteúdo, evitando sobrescrever o rascunho
+    // salvo da sala com o estado vazio do compositor.
+    let active = true
+    readRoomDraft(me.id, room.id).then((stored) => {
+      if (!active) return
+      hydratedDraftScopeRef.current = `${me.id}::${room.id}`
+      setDraft(stored.text)
+      setPendingAttachments(stored.attachments)
+    })
+    return () => {
+      active = false
+    }
+  }, [room.id, me.id])
+
+  useEffect(() => {
+    if (editingMessage) return
+    if (hydratedDraftScopeRef.current !== `${me.id}::${room.id}`) return
+    const timer = window.setTimeout(
+      () => void saveRoomDraft(me.id, room.id, draft, pendingAttachments),
+      DRAFT_SAVE_DEBOUNCE_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [draft, pendingAttachments, room.id, me.id, editingMessage])
+
+  useEffect(() => {
+    return () => {
+      if (editingDraftRef.current) return
+      void saveRoomDraft(me.id, room.id, latestDraftRef.current, latestAttachmentsRef.current)
+    }
+  }, [me.id, room.id])
+
+  useEffect(() => {
+    if (isPendingDm) {
+      setFavoriteMessageIds(new Set())
+      return
+    }
+    let active = true
+    api
+      .getRoomFavoriteMessageIds(room.id)
+      .then((ids) => {
+        if (active) setFavoriteMessageIds(new Set(ids))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [room.id, isPendingDm])
+
+  const loadFavorites = useCallback(async () => {
+    if (isPendingDm) return
+    setFavoritesLoading(true)
+    setFavoritesError(null)
+    try {
+      const data = await api.getFavoriteMessages(room.id)
+      setFavorites(data)
+    } catch (err) {
+      setFavoritesError(err instanceof ApiError ? err.message : 'Falha ao carregar favoritas')
+    } finally {
+      setFavoritesLoading(false)
+    }
+  }, [room.id, isPendingDm])
+
+  useEffect(() => {
+    if (!favoriteUpdate || favoriteUpdate.roomId !== room.id) return
+    setFavoriteMessageIds((prev) => {
+      const next = new Set(prev)
+      if (favoriteUpdate.favorite) {
+        next.add(favoriteUpdate.messageId)
+      } else {
+        next.delete(favoriteUpdate.messageId)
+      }
+      return next
+    })
+    if (!favoriteUpdate.favorite) {
+      setFavorites((prev) => prev.filter((f) => f.message.id !== favoriteUpdate.messageId))
+    } else if (favoritesOpen) {
+      void loadFavorites()
+    }
+  }, [favoriteUpdate, room.id, favoritesOpen, loadFavorites])
 
   const loadRoomFiles = useCallback(async () => {
     setFilesLoading(true)
@@ -528,10 +836,84 @@ export function RoomView({
   const toggleFiles = () => {
     setFilesOpen((open) => {
       const next = !open
-      if (next) void loadRoomFiles()
+      if (next) {
+        setFavoritesOpen(false)
+        void loadRoomFiles()
+      }
       return next
     })
   }
+
+  const toggleFavorites = () => {
+    setFavoritesOpen((open) => {
+      const next = !open
+      if (next) {
+        setFilesOpen(false)
+        setSearchOpen(false)
+        void loadFavorites()
+      }
+      return next
+    })
+  }
+
+  const handleToggleFavorite = useCallback(
+    async (msg: Message) => {
+      const isFav = favoriteMessageIds.has(msg.id)
+      setFavoriteMessageIds((prev) => {
+        const next = new Set(prev)
+        if (isFav) {
+          next.delete(msg.id)
+        } else {
+          next.add(msg.id)
+        }
+        return next
+      })
+      try {
+        if (isFav) {
+          await api.removeMessageFavorite(msg.id)
+          setFavorites((prev) => prev.filter((f) => f.message.id !== msg.id))
+          notify('Mensagem removida dos favoritos')
+        } else {
+          await api.toggleMessageFavorite(msg.id)
+          notify('Mensagem adicionada aos favoritos')
+          if (favoritesOpen) {
+            void loadFavorites()
+          }
+        }
+      } catch (err) {
+        setFavoriteMessageIds((prev) => {
+          const next = new Set(prev)
+          if (isFav) {
+            next.add(msg.id)
+          } else {
+            next.delete(msg.id)
+          }
+          return next
+        })
+        notify(err instanceof ApiError ? err.message : 'Erro ao atualizar favorito')
+      }
+    },
+    [favoriteMessageIds, notify, favoritesOpen, loadFavorites],
+  )
+
+  const handleRemoveFavoriteFromPanel = useCallback(
+    async (messageId: string) => {
+      setFavoriteMessageIds((prev) => {
+        const next = new Set(prev)
+        next.delete(messageId)
+        return next
+      })
+      setFavorites((prev) => prev.filter((f) => f.message.id !== messageId))
+      try {
+        await api.removeMessageFavorite(messageId)
+        notify('Mensagem removida dos favoritos')
+      } catch (err) {
+        notify(err instanceof ApiError ? err.message : 'Erro ao remover favorito')
+        void loadFavorites()
+      }
+    },
+    [notify, loadFavorites],
+  )
 
   useEffect(() => {
     if (searchOpen) requestAnimationFrame(() => searchInputRef.current?.focus())
@@ -547,6 +929,12 @@ export function RoomView({
     setHighlightedMessageId(messageId)
     window.setTimeout(() => setHighlightedMessageId(null), 2200)
   }, [notify])
+
+  useEffect(() => {
+    if (!initialTargetMessageId || !conversationReady) return
+    jumpToMessage(initialTargetMessageId)
+    onClearTargetMessageId?.()
+  }, [initialTargetMessageId, conversationReady, jumpToMessage, onClearTargetMessageId])
 
   const executeSearch = useCallback(
     async (rawQuery: string) => {
@@ -713,9 +1101,9 @@ export function RoomView({
 
   const submit = async () => {
     stopTyping(true)
-    if ((!draft.trim() && pendingAttachments.length === 0) || muted || composing) return
-    const sendingAttachments = pendingAttachments.length > 0
+    if (muted || composing) return
     if (editingMessage) {
+      if (!canSubmit) return
       try {
         const updated = await api.updateMessage(editingMessage.id, draft.trim())
         onMessageUpdated(updated)
@@ -728,6 +1116,8 @@ export function RoomView({
       }
       return
     }
+    if (!draft.trim() && pendingAttachments.length === 0) return
+    const sendingAttachments = pendingAttachments.length > 0
     forceScrollToBottomRef.current = true
     const content = draft
     const attachmentList = pendingAttachments
@@ -743,8 +1133,11 @@ export function RoomView({
       setDraft(content)
       setPendingAttachments(attachmentList)
       setQuotedMessage(quoted)
-    } else if (sendingAttachments) {
-      forceScrollToBottomRef.current = true
+    } else {
+      void clearRoomDraft(me.id, room.id)
+      if (sendingAttachments) {
+        forceScrollToBottomRef.current = true
+      }
     }
   }
 
@@ -767,23 +1160,7 @@ export function RoomView({
   }
 
   const showProfile = useCallback(async (userId: string, event?: ReactMouseEvent) => {
-    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
-    if (event) {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-      const vw = window.innerWidth
-      const width = Math.min(560, vw - 24)
-      if (vw <= 760) {
-        setProfilePosition({
-          top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
-          left: Math.max(12, Math.round((vw - width) / 2)),
-        })
-      } else {
-        setProfilePosition({
-          top: Math.min(window.innerHeight - 360, Math.max(12 + safeTop, rect.bottom + 8)),
-          left: Math.min(vw - width - 12, Math.max(12, rect.left)),
-        })
-      }
-    }
+    if (event) setProfilePosition(popoverAnchor(event.currentTarget, PROFILE_CARD_BUDGET))
     setProfileLoading(true)
     setProfileCommonRoomsLoading(true)
     const currentRoomIsCommon =
@@ -808,21 +1185,7 @@ export function RoomView({
   }, [room, roomMembers, notify])
 
   const showRoomInfo = (event: ReactMouseEvent) => {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const vw = window.innerWidth
-    const width = Math.min(560, vw - 24)
-    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0
-    if (vw <= 760) {
-      setRoomInfoPosition({
-        top: Math.max(12 + safeTop, Math.min(rect.bottom + 8, 24 + safeTop)),
-        left: Math.max(12, Math.round((vw - width) / 2)),
-      })
-    } else {
-      setRoomInfoPosition({
-        top: Math.min(window.innerHeight - 420, Math.max(12 + safeTop, rect.bottom + 8)),
-        left: Math.min(vw - width - 12, Math.max(12, rect.left)),
-      })
-    }
+    setRoomInfoPosition(popoverAnchor(event.currentTarget, ROOM_INFO_CARD_BUDGET))
     setProfile(null)
     void api.members(room.id).then(setRoomMembers).catch(() => undefined)
     setRoomInfoOpen(true)
@@ -928,6 +1291,7 @@ export function RoomView({
 
   const clearDraft = () => {
     setDraft('')
+    void clearRoomDraft(me.id, room.id)
     setPendingAttachments([])
     setEditingMessage(null)
     setComposerExpanded(false)
@@ -986,6 +1350,20 @@ export function RoomView({
     setForwardMessage(m)
   }, [])
 
+  const handleCopyMessage = useCallback(
+    (m: Message) => {
+      const attachments = m.attachments ?? (m.attachment ? [m.attachment] : [])
+      // Anexo sem legenda tem o nome do arquivo no lugar do texto; nesse caso o
+      // nome do arquivo é o que o usuário espera levar junto.
+      const text = m.content.trim() || attachments.map((item) => item.originalName).join('\n')
+      if (!text) return
+      void copyText(text).then((copied) =>
+        notify(copied ? 'Mensagem copiada' : 'Não foi possível copiar a mensagem'),
+      )
+    },
+    [notify],
+  )
+
   const handlePinAction = useCallback((msgId: string, pinned: boolean) => {
     setPinnedActionId(pinned ? msgId : null)
   }, [])
@@ -993,6 +1371,31 @@ export function RoomView({
   const handleShowReads = useCallback((msgId: string) => {
     setReadMessageId(msgId)
   }, [])
+
+  const handleReplyPrivate = useCallback(
+    (msg: Message) => {
+      onReplyPrivate?.(msg, room)
+    },
+    [onReplyPrivate, room],
+  )
+
+  const handleJumpToQuoted = useCallback(
+    (messageId: string, originRoomId?: string | null) => {
+      if (originRoomId && originRoomId !== room.id && onJumpToRoomMessage) {
+        onJumpToRoomMessage(originRoomId, messageId)
+      } else {
+        jumpToMessage(messageId)
+      }
+    },
+    [room.id, onJumpToRoomMessage, jumpToMessage],
+  )
+
+  useEffect(() => {
+    if (!initialQuotedMessage) return
+    setQuotedMessage(initialQuotedMessage)
+    onClearInitialQuotedMessage?.()
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [initialQuotedMessage, onClearInitialQuotedMessage])
 
   const handleRespond = useCallback((m: Message) => {
     setRespondMessage(m)
@@ -1056,7 +1459,7 @@ export function RoomView({
 
   return (
     <div
-      className={`room-view ${filesOpen ? 'files-open' : ''} ${isDragActive ? 'room-drag-active' : ''}`}
+      className={`room-view ${filesOpen ? 'files-open' : ''} ${favoritesOpen ? 'favorites-open' : ''} ${isDragActive ? 'room-drag-active' : ''}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1132,7 +1535,7 @@ export function RoomView({
                   <button type="button" key={result.id} onClick={() => openSearchResult(result)}>
                     <strong>{result.username}</strong>
                     <span>{result.content || result.attachment?.originalName || 'Anexo'}</span>
-                    <small>{new Date(result.createdAt).toLocaleString('pt-BR')}</small>
+                    <small>{formatFullTimestamp(result.createdAt)}</small>
                   </button>
                 ))}
               </div>
@@ -1284,6 +1687,17 @@ export function RoomView({
                 >
                   <IconClip size={18} />
                 </button>
+                <button
+                  type="button"
+                  className={`icon-btn room-favorites-trigger ${favoritesOpen ? 'active' : ''}`}
+                  disabled={isPendingDm}
+                  onClick={isPendingDm ? undefined : toggleFavorites}
+                  title="Mensagens favoritas"
+                  aria-label="Mensagens favoritas"
+                  aria-pressed={favoritesOpen}
+                >
+                  <IconHeart size={18} filled={favoritesOpen} />
+                </button>
               </div>
 
               <button
@@ -1400,6 +1814,30 @@ export function RoomView({
                       <IconClip size={16} />
                       <span>Arquivos da conversa</span>
                     </button>
+                    <button
+                      className="room-header-dropdown-item"
+                      disabled={isPendingDm}
+                      onClick={() => {
+                        if (isPendingDm) return
+                        setRoomHeaderMenuOpen(false)
+                        toggleFavorites()
+                      }}
+                    >
+                      <IconHeart size={16} />
+                      <span>Mensagens favoritas</span>
+                    </button>
+                    <button
+                      className="room-header-dropdown-item"
+                      disabled={isPendingDm}
+                      onClick={() => {
+                        if (isPendingDm) return
+                        setRoomHeaderMenuOpen(false)
+                        onMarkUnread?.(room.id)
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ fontSize: '1rem' }}>✉</span>
+                      <span>Marcar como não lida</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -1417,7 +1855,7 @@ export function RoomView({
             title="Ir para a mensagem fixada"
           >
             <span className="pinned-icon" aria-hidden="true">
-              📌
+              <IconPin size={15} />
             </span>
             <div className="pinned-text-wrap">
               <span className="pinned-label">
@@ -1461,7 +1899,11 @@ export function RoomView({
             wasNearBottomRef.current = true
             return
           }
-          const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
+          const nearBottom = isNearBottom({
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+            clientHeight: container.clientHeight,
+          })
           wasNearBottomRef.current = nearBottom
           if (container.scrollTop <= LOAD_PREVIOUS_SCROLL_THRESHOLD) {
             void loadPrevious()
@@ -1493,6 +1935,7 @@ export function RoomView({
                   msg={m}
                   isMine={m.userId === me.id}
                   currentUsername={me.username}
+                  currentUserId={me.id}
                   myAvatarVersion={myAvatarVersion}
                   avatarVersions={avatarVersions}
                   canWrite={!readOnlyAccount}
@@ -1500,23 +1943,126 @@ export function RoomView({
                   onEdit={startEditing}
                   onShowProfile={showProfile}
                   onQuote={handleQuote}
+                  onCopy={handleCopyMessage}
                   onForward={handleForward}
                   onRespond={canRespondToReport ? handleRespond : undefined}
                   onReaction={handleReactionMessage}
                   actionPinned={pinnedActionId === m.id}
                   onPinAction={handlePinAction}
                   highlighted={highlightedMessageId === m.id}
-                  onJumpToQuoted={jumpToMessage}
+                  onJumpToQuoted={handleJumpToQuoted}
                   readReceiptsEnabled={readReceiptsEnabled}
+                  transcriptionEnabled={transcriptionEnabled}
                   onShowReads={handleShowReads}
                   onVotePoll={handleVotePoll}
                   canPin={canManagePin}
                   isPinned={room.pinnedMessage?.id === m.id}
                   onTogglePin={handleTogglePin}
+                  validMentionUsernames={validMentionUsernames}
+                  isFavorite={favoriteMessageIds.has(m.id)}
+                  onToggleFavorite={handleToggleFavorite}
+                  roomType={room.type}
+                  onReplyPrivate={room.type !== 'DIRECT' && onReplyPrivate ? handleReplyPrivate : undefined}
                 />
               ))}
             </div>
           ))}
+          {pendingUploads.map((upload) => {
+            const isAudioFile = isAudioFileLike(upload.file)
+            const isImageFile = upload.file.type.startsWith('image/')
+            const icon = isAudioFile ? '🎵' : isImageFile ? '🖼' : '📎'
+            return (
+              <div
+                key={upload.tempId}
+                className={`message mine message-uploading ${upload.status === 'error' ? 'message-upload-failed' : ''}`}
+              >
+                <div className="message-avatar-button" aria-hidden="true">
+                  <AvatarImage
+                    path={`${userAvatarPath(me.id)}?v=${encodeURIComponent(myAvatarVersion)}`}
+                    className="msg-avatar"
+                    fallback={<span className="msg-avatar">{initials(me.username)}</span>}
+                    alt={me.username}
+                  />
+                </div>
+                <div className="message-body">
+                  <div className="message-meta">
+                    <span className="message-time" title={formatFullTimestamp(upload.createdAt)}>{formatTime(upload.createdAt)}</span>
+                    <span className="message-author-wrap">
+                      <span className="message-author">{me.username}</span>
+                    </span>
+                    <span className="upload-status-pill">
+                      {upload.status === 'error'
+                        ? '⚠ Falha no envio'
+                        : upload.status === 'processing'
+                        ? 'Processando…'
+                        : `Enviando ${upload.progress}%`}
+                    </span>
+                  </div>
+                  <div className={`attachment attachment-upload-box ${upload.status === 'error' ? 'attachment-error' : ''}`}>
+                    <span className={`attachment-icon ${isAudioFile ? 'audio' : 'generic'}`}>
+                      {isAudioFile ? <IconAudioWave size={18} /> : icon}
+                    </span>
+                    <span className="attachment-body">
+                      <strong>{isAudioFile ? 'Mensagem de voz' : upload.file.name}</strong>
+                      {upload.status !== 'error' ? (
+                        <>
+                          <small>
+                            {upload.status === 'processing'
+                              ? `100% (${formatUploadSize(upload.totalBytes)}) • Finalizando no servidor…`
+                              : `${upload.progress}% • ${formatUploadSize(upload.loadedBytes)} de ${formatUploadSize(upload.totalBytes)}`}
+                          </small>
+                          <div
+                            className="upload-progress-track"
+                            role="progressbar"
+                            aria-valuenow={upload.progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                          >
+                            <div
+                              className={`upload-progress-fill ${upload.status === 'processing' ? 'processing' : ''}`}
+                              style={{ width: `${Math.max(4, upload.progress)}%` }}
+                            />
+                          </div>
+                          <div className="upload-actions-row">
+                            <button
+                              type="button"
+                              className="attachment-cancel-btn"
+                              onClick={() => onCancelUpload?.(upload.tempId)}
+                            >
+                              Cancelar envio
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <small className="attachment-errmsg">
+                            {upload.errorMessage || 'Não foi possível concluir o envio deste arquivo.'}
+                          </small>
+                          <div className="upload-actions-row">
+                            <button
+                              type="button"
+                              className="attachment-retry"
+                              onClick={() => onRetryUpload?.(upload.tempId)}
+                            >
+                              🔄 Tentar novamente
+                            </button>
+                            <button
+                              type="button"
+                              className="attachment-cancel-btn"
+                              onClick={() => onCancelUpload?.(upload.tempId)}
+                            >
+                              ✕ Remover
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {upload.content && <div className="message-content">{upload.content}</div>}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -1528,15 +2074,27 @@ export function RoomView({
               <span>Você pode consultar esta conversa, mas não enviar mensagens.</span>
             </div>
           )}
-          <ComposerPendingAttachments
-            files={pendingAttachments}
-            urls={pendingAttachmentUrls}
-            onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-          />
+          {editingMessage ? (
+            <ComposerEditingAttachments attachments={editingAttachments} />
+          ) : (
+            <ComposerPendingAttachments
+              files={pendingAttachments}
+              urls={pendingAttachmentUrls}
+              onRemove={(index) => setPendingAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              onEdit={(index) => setEditingImageState({ file: pendingAttachments[index] })}
+            />
+          )}
           {quotedMessage && (
             <div className="quote-preview">
               <div>
-                <strong>Respondendo a {quotedMessage.username || 'usuário'}</strong>
+                <div className="quote-preview-header">
+                  <strong>Respondendo a {quotedMessage.username || 'usuário'}</strong>
+                  {resolveQuotedOriginName(quotedMessage, room.id, rooms) && (
+                    <span className="quote-preview-origin">
+                      em {resolveQuotedOriginName(quotedMessage, room.id, rooms)}
+                    </span>
+                  )}
+                </div>
                 <span>{quotedMessage.content || 'Anexo'}</span>
               </div>
               <button type="button" onClick={() => setQuotedMessage(null)} aria-label="Desvincular citação">
@@ -1851,6 +2409,20 @@ export function RoomView({
         />
       )}
 
+      {favoritesOpen && (
+        <RoomFavoritesPanel
+          favorites={favorites}
+          loading={favoritesLoading}
+          error={favoritesError}
+          query={favoritesQuery}
+          onQueryChange={setFavoritesQuery}
+          onClose={() => setFavoritesOpen(false)}
+          onRetry={() => void loadFavorites()}
+          onJumpToMessage={jumpToMessage}
+          onRemoveFavorite={handleRemoveFavoriteFromPanel}
+        />
+      )}
+
       {addOpen && (
         <AddMembersModal room={room} onClose={() => setAddOpen(false)} notify={modalNotify} />
       )}
@@ -1914,6 +2486,8 @@ export function RoomView({
         <ForwardMessageModal
           message={forwardMessage}
           rooms={rooms}
+          avatarVersions={avatarVersions}
+          currentUserId={me.id}
           onClose={() => setForwardMessage(null)}
           notify={modalNotify}
         />
@@ -1935,6 +2509,16 @@ export function RoomView({
             setPollOpen(false)
           }}
           notify={modalNotify}
+        />
+      )}
+      {editingImageState && (
+        <ImageEditorModal
+          file={editingImageState.file}
+          caption={draft}
+          onCaptionChange={setDraft}
+          onClose={handleEditorClose}
+          onSend={handleEditorSend}
+          onSaveDraft={handleEditorSaveDraft}
         />
       )}
       {isDragActive && (

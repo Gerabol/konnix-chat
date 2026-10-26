@@ -97,9 +97,9 @@ export function AddMembersModal({
 
   const currentIds = new Set(currentMembers.map((member) => member.userId))
   const query = search.trim().toLowerCase()
-  const available = users.filter((user) => user.accountStatus !== 'DISABLED' && !currentIds.has(user.id) && `${user.name} ${user.username}`.toLowerCase().includes(query))
-  const owners = currentMembers.filter((member) => member.role === 'OWNER')
-  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER')
+  const available = users.filter((user) => user.accountStatus !== 'DISABLED' && !currentIds.has(user.id) && (!query || `${user.name || ''} ${user.username}`.toLowerCase().includes(query)))
+  const owners = currentMembers.filter((member) => member.role === 'OWNER' && (!query || `${member.name || ''} ${member.username}`.toLowerCase().includes(query)))
+  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER' && (!query || `${member.name || ''} ${member.username}`.toLowerCase().includes(query)))
 
   const add = async () => {
     if (selected.length === 0 || busy) return
@@ -196,18 +196,26 @@ export function AddMembersModal({
 
 export function MembersModal({ room, onClose }: { room: Room; onClose: () => void }) {
   const [currentMembers, setCurrentMembers] = useState<RoomMember[]>([])
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     api.members(room.id).then(setCurrentMembers).catch(() => setCurrentMembers([]))
   }, [room.id])
 
-  const owners = currentMembers.filter((member) => member.role === 'OWNER')
-  const regularMembers = currentMembers.filter((member) => member.role !== 'OWNER')
+  const query = search.trim().toLowerCase()
+  const filtered = currentMembers.filter(
+    (member) =>
+      (!member.accountStatus || member.accountStatus !== 'DISABLED') &&
+      (!query || `${member.name || ''} ${member.username}`.toLowerCase().includes(query)),
+  )
+  const owners = filtered.filter((member) => member.role === 'OWNER')
+  const regularMembers = filtered.filter((member) => member.role !== 'OWNER')
 
   return (
     <Modal title={`Membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
       <div className="members-modal-body">
       <div className="modal-fields">
+        <input autoComplete="off" className="input" placeholder="Pesquisar membro" value={search} onChange={(event) => setSearch(event.target.value)} />
         <RoomPeopleSection title="Proprietários" tone="owner" members={owners} />
         <RoomPeopleSection title="Membros" tone="member" members={regularMembers} />
       </div>
@@ -231,6 +239,7 @@ export function RemoveMembersModal({
   notify: (text: string) => void
 }) {
   const [members, setMembers] = useState<RoomMember[]>([])
+  const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -259,35 +268,43 @@ export function RemoveMembersModal({
     }
   }
 
+  const query = search.trim().toLowerCase()
+  const filteredMembers = members.filter(
+    (m) => !query || `${m.name || ''} ${m.username}`.toLowerCase().includes(query),
+  )
+
   return (
     <Modal title={`Remover membros • ${roomDisplayName(room)}`} onClose={onClose} className="members-modal" overlayClassName="members-modal-overlay">
       <div className="members-modal-body">
-      <div className="picker-list small">
-        {members.length === 0 && <span className="nav-empty">Nenhum membro</span>}
-        {members.map((m) => (
-          <div key={m.userId} className="picker-item picker-row">
-            <AvatarImage
-              path={userAvatarPath(m.userId)}
-              className="mini-avatar"
-              fallback={<span className="mini-avatar">{initials(m.name || m.username)}</span>}
-              alt={m.name || m.username}
-            />
-            <span className="picker-item-text">
-              <strong>{m.name || m.username}</strong>
-              <small>@{m.username}</small>
-            </span>
-            <button
-              type="button"
-              className="remove-member-btn"
-              onClick={() => remove(m)}
-              disabled={busyId !== null}
-              title={`Remover ${m.name || m.username}`}
-            >
-              <IconTrash size={13} />
-              <span>{busyId === m.userId ? 'Removendo…' : 'Remover'}</span>
-            </button>
-          </div>
-        ))}
+      <div className="modal-fields">
+        <input autoComplete="off" className="input" placeholder="Pesquisar membro" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <div className="picker-list small">
+          {filteredMembers.length === 0 && <span className="nav-empty">Nenhum membro encontrado</span>}
+          {filteredMembers.map((m) => (
+            <div key={m.userId} className="picker-item picker-row">
+              <AvatarImage
+                path={userAvatarPath(m.userId)}
+                className="mini-avatar"
+                fallback={<span className="mini-avatar">{initials(m.name || m.username)}</span>}
+                alt={m.name || m.username}
+              />
+              <span className="picker-item-text">
+                <strong>{m.name || m.username}</strong>
+                <small>@{m.username}</small>
+              </span>
+              <button
+                type="button"
+                className="remove-member-btn"
+                onClick={() => remove(m)}
+                disabled={busyId !== null}
+                title={`Remover ${m.name || m.username}`}
+              >
+                <IconTrash size={13} />
+                <span>{busyId === m.userId ? 'Removendo…' : 'Remover'}</span>
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
       </div>
       <div className="modal-actions">

@@ -27,3 +27,16 @@ export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
+
+export type PendingUploadItem = {
+  tempId: string
+  roomId: string
+  file: File
+  content?: string
+  createdAt: string
+  progress: number
+  loadedBytes: number
+  totalBytes: number
+  status: 'uploading' | 'processing' | 'error'
+  errorMessage?: string
+}

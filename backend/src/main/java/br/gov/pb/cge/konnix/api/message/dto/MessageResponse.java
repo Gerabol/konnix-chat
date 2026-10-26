@@ -29,7 +29,16 @@ public record MessageResponse(
         List<String> roles,
         List<AttachmentMetadata> attachments) {
 
-    public record QuotedMessage(UUID id, String username, String content) {}
+    public record QuotedMessage(
+            UUID id,
+            String username,
+            String content,
+            UUID originRoomId,
+            String originRoomName) {
+        public QuotedMessage(UUID id, String username, String content) {
+            this(id, username, content, null, null);
+        }
+    }
 
     public MessageResponse(UUID id, UUID roomId, UUID userId, String username, String content,
                            String messageType, UUID parentMessageId, AttachmentMetadata attachment,
@@ -105,14 +114,28 @@ public record MessageResponse(
                 message.getUpdatedAt(),
                 message.getEditedAt(),
                 message.getDeletedAt(), readBy,
-                message.getParentMessage() == null ? null : new QuotedMessage(
-                        message.getParentMessage().getId(),
-                        message.getParentMessage().getUser() == null ? "Usuário" : message.getParentMessage().getUser().getUsername(),
-                        message.getParentMessage().getContent()),
+                buildQuotedMessage(message),
                  reactions,
                   message.getForwardedFromUser() == null ? null : message.getForwardedFromUser().getUsername(),
                   poll,
                   roles, metadata);
+    }
+
+    private static QuotedMessage buildQuotedMessage(Message message) {
+        if (message.getParentMessage() == null) {
+            return null;
+        }
+        Message parent = message.getParentMessage();
+        String parentUser = parent.getUser() == null ? "Usuário" : parent.getUser().getUsername();
+        UUID originRoomId = null;
+        String originRoomName = null;
+        if (parent.getRoom() != null && message.getRoom() != null && !parent.getRoom().getId().equals(message.getRoom().getId())) {
+            originRoomId = parent.getRoom().getId();
+            originRoomName = parent.getRoom().getDisplayName() != null && !parent.getRoom().getDisplayName().isBlank()
+                    ? parent.getRoom().getDisplayName()
+                    : parent.getRoom().getName();
+        }
+        return new QuotedMessage(parent.getId(), parentUser, parent.getContent(), originRoomId, originRoomName);
     }
 
     /**

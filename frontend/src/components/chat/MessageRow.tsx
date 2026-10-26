@@ -1,12 +1,15 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { formatTime, userAvatarPath } from '../../api'
+import { formatFullTimestamp, formatTime, userAvatarPath } from '../../api'
 import type { Message, MessageReaction } from '../../api'
+import { canReplyPrivate } from '../../utils/privateReply'
+import { canViewReads } from '../../utils/readReceipts'
 import { RoleBadge } from '../../RoleBadge'
 import { renderMarkdown, renderMessageContent } from '../../utils/markdown'
 import { ReactionUsersModal } from '../modals/ReadReceiptsModal'
 import { AttachmentView } from './AttachmentView'
 import { AvatarImage, initials } from './AvatarImage'
+import { IconHeart, IconPin } from '../icons'
 import { MessageActionBar } from './MessageActionBar'
 import { PollCard } from './PollCard'
 
@@ -14,6 +17,7 @@ export interface MessageRowProps {
   msg: Message
   isMine: boolean
   currentUsername: string
+  currentUserId: string
   myAvatarVersion: string
   avatarVersions: Record<string, string>
   canWrite: boolean
@@ -21,25 +25,38 @@ export interface MessageRowProps {
   onEdit: (message: Message) => void
   onShowProfile: (userId: string, event?: ReactMouseEvent) => void
   onQuote: (msg: Message) => void
+  onCopy?: (msg: Message) => void
   onForward: (msg: Message) => void
   onReaction: (msg: Message, emoji: string) => void
   onRespond?: (msg: Message) => void
   actionPinned: boolean
   onPinAction: (msgId: string, pinned: boolean) => void
   highlighted: boolean
-  onJumpToQuoted: (messageId: string) => void
+  onJumpToQuoted: (messageId: string, originRoomId?: string | null) => void
   readReceiptsEnabled: boolean
+  transcriptionEnabled: boolean
   onShowReads: (msgId: string) => void
   onVotePoll: (msg: Message, optionId: string) => void
   canPin?: boolean
   isPinned?: boolean
   onTogglePin?: (msg: Message) => void
+  isFavorite?: boolean
+  onToggleFavorite?: (msg: Message) => void
+  validMentionUsernames?: Set<string>
+  roomType?: string
+  onReplyPrivate?: (msg: Message) => void
+}
+
+/** Emoji da pastilha de reação sob o ponteiro, ou null se o alvo não for uma. */
+function reactionChipEmoji(target: EventTarget | null) {
+  return (target as HTMLElement | null)?.closest<HTMLElement>('.message-reaction')?.dataset.emoji ?? null
 }
 
 function MessageRowComponent({
   msg,
   isMine,
   currentUsername,
+  currentUserId,
   myAvatarVersion,
   avatarVersions,
   canWrite,
@@ -47,6 +64,7 @@ function MessageRowComponent({
   onEdit,
   onShowProfile,
   onQuote,
+  onCopy,
   onForward,
   onReaction,
   onRespond,
@@ -55,13 +73,63 @@ function MessageRowComponent({
   highlighted,
   onJumpToQuoted,
   readReceiptsEnabled,
+  transcriptionEnabled,
   onShowReads,
   onVotePoll,
   canPin,
   isPinned,
   onTogglePin,
+  isFavorite = false,
+  onToggleFavorite,
+  validMentionUsernames,
+  roomType,
+  onReplyPrivate,
 }: MessageRowProps) {
   const deleted = !!msg.deletedAt
+  const messageAttachments = msg.attachments ?? (msg.attachment ? [msg.attachment] : [])
+  const hasAttachments = messageAttachments.length > 0
+  // Renderiza as marcações em um único elemento para poder posicioná-las antes do
+  // nome nas mensagens próprias e depois do nome nas mensagens dos demais.
+  const messageTags =
+    msg.forwardedFromUsername || msg.editedAt ? (
+      <span className="message-tags">
+        {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
+        {msg.editedAt && <em className="message-edited">Editada</em>}
+      </span>
+    ) : null
+  // Os indicadores de favorito e de fixada são renderizados dentro da hora e
+  // posicionados fora do fluxo pelo CSS: assim nunca alargam a caixa da mensagem
+  // e ficam à direita da hora nas mensagens dos outros e à esquerda nas próprias
+  // (espelhado). O pin usa apenas o ícone, no mesmo escopo do favorito.
+  // Os indicadores de favorito e de fixada são renderizados num contêiner fora do
+  // fluxo, ao lado da hora: assim nunca alargam a caixa da mensagem e ficam à
+  // direita da hora nas mensagens dos outros e à esquerda nas próprias (espelhado).
+  // Por serem um flex em pacote, ocupam apenas o espaço dos ícones presentes, sem
+  // deixar buraco quando só um deles está ativo. O pin fica mais próximo da hora.
+  const indicators =
+    isFavorite || isPinned ? (
+      <span className="message-indicators">
+        {isPinned && (
+          <span className="message-pin-indicator" title="Mensagem fixada" aria-label="Mensagem fixada">
+            <IconPin size={12} />
+          </span>
+        )}
+        {isFavorite && (
+          <span className="message-favorite-indicator" title="Mensagem favorita" aria-label="Mensagem favorita">
+            <IconHeart size={12} filled />
+          </span>
+        )}
+      </span>
+    ) : null
+  const authorAvatarPath = msg.userId
+    ? `${userAvatarPath(msg.userId)}${
+        isMine
+          ? `?v=${encodeURIComponent(myAvatarVersion)}`
+          : avatarVersions[msg.userId]
+          ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}`
+          : ''
+      }`
+    : null
   const [actionDismissed, setActionDismissed] = useState(false)
   const [mouseHovered, setMouseHovered] = useState(false)
   const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string | null>(null)
@@ -69,6 +137,11 @@ function MessageRowComponent({
   const rowRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<number | null>(null)
   const longPressStart = useRef<{ x: number; y: number } | null>(null)
+  const longPressTriggered = useRef(false)
+  const longPressChip = useRef<string | null>(null)
+  // Último tipo de ponteiro usado na linha. O onContextMenu não expõe pointerType,
+  // então o gesto equivalente no celular precisa ser reconstruído a partir daqui.
+  const lastPointerType = useRef<string>('mouse')
   // If the layout shifts between pointerdown and click (e.g. the virtual
   // keyboard closes under a tap), the browser can drop the click entirely,
   // forcing a second tap. pointerup is never dropped, so activate on it for
@@ -92,9 +165,30 @@ function MessageRowComponent({
 
   const beginLongPress = (event: ReactPointerEvent) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    lastPointerType.current = event.pointerType
+    // No celular o texto do balão não é selecionável (ver .message-content no
+    // index.css), então segurar sobre ele abre a barra de ações como em qualquer
+    // outro ponto da mensagem. No desktop mouse o atalho continua valendo para o
+    // botão direito e para a seleção por arraste. Mesmo critério no onContextMenu.
+    if (
+      event.pointerType !== 'touch' &&
+      (event.target as HTMLElement | null)?.closest('.message-content')
+    ) {
+      cancelLongPress()
+      return
+    }
+    longPressTriggered.current = false
+    longPressChip.current = reactionChipEmoji(event.target)
     longPressStart.current = { x: event.clientX, y: event.clientY }
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
     longPressTimer.current = window.setTimeout(() => {
+      longPressTriggered.current = true
+      // Segurar sobre uma reação lista quem reagiu, em vez de alternar a minha.
+      const chip = longPressChip.current
+      if (chip) {
+        setReactionDetailsEmoji(chip)
+        return
+      }
       setActionDismissed(false)
       setLongPressed(true)
     }, 500)
@@ -102,6 +196,8 @@ function MessageRowComponent({
 
   const cancelLongPress = () => {
     longPressStart.current = null
+    longPressChip.current = null
+    longPressTriggered.current = false
     if (longPressTimer.current !== null) {
       window.clearTimeout(longPressTimer.current)
       longPressTimer.current = null
@@ -133,6 +229,19 @@ function MessageRowComponent({
     if (msg.userId) onShowProfile(msg.userId, event)
   }
 
+  // Agrupa a minha reação no mesmo emoji de quem já reagiu; um segundo toque
+  // no mesmo emoji remove a minha. O servidor alterna conforme o registro
+  // existente, então basta chamar o mesmo endpoint nos dois casos.
+  const toggleMyReaction = (emoji: string) => {
+    if (longPressTriggered.current || !canWrite) return
+    onReaction(msg, emoji)
+  }
+
+  const reactedByMe = (emoji: string) =>
+    (msg.reactions ?? []).some(
+      (reaction) => reaction.userId === currentUserId && reaction.emoji === emoji,
+    )
+
   if (msg.messageType === 'SYSTEM') {
     return (
       <div data-message-id={msg.id} className="system-line">
@@ -159,7 +268,17 @@ function MessageRowComponent({
       }}
       onContextMenu={(e) => {
         const target = e.target as HTMLElement | null
-        if (!deleted && canWrite && !target?.closest('.message-content')) {
+        const chip = reactionChipEmoji(e.target)
+        if (chip) {
+          e.preventDefault()
+          setReactionDetailsEmoji(chip)
+          return
+        }
+        if (
+          !deleted &&
+          canWrite &&
+          (lastPointerType.current === 'touch' || !target?.closest('.message-content'))
+        ) {
           e.preventDefault()
           setActionDismissed(false)
           setLongPressed(true)
@@ -176,17 +295,7 @@ function MessageRowComponent({
           aria-label={`Abrir contato de ${msg.username || 'usuário'}`}
         >
           <AvatarImage
-            path={
-              msg.userId
-                ? `${userAvatarPath(msg.userId)}${
-                    isMine
-                      ? `?v=${encodeURIComponent(myAvatarVersion)}`
-                      : avatarVersions[msg.userId]
-                      ? `?v=${encodeURIComponent(avatarVersions[msg.userId])}`
-                      : ''
-                  }`
-                : null
-            }
+            path={authorAvatarPath}
             className="msg-avatar"
             fallback={<span className="msg-avatar">{initials(msg.username || 'sistema')}</span>}
             alt={msg.username || 'sistema'}
@@ -194,15 +303,34 @@ function MessageRowComponent({
         </button>
       )}
       <div className="message-body">
-        {msg.forwardedFromUsername && <span className="forwarded-label">Encaminhada</span>}
         <div className="message-meta">
-          {isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
+          {/* Nas mensagens próprias a ordem visual é: favorito+fixada (dentro da
+              hora), hora, confirmação de leitura, tags/papéis e nome — por isso a
+              hora e a leitura vêm antes do bloco do autor no DOM. Nas mensagens dos
+              demais mantém-se a ordem original (autor e depois hora). */}
+          {isMine && (
+            <span className="message-time" title={formatFullTimestamp(msg.createdAt)}>
+              {indicators}
+              {formatTime(msg.createdAt)}
+            </span>
+          )}
+          {isMine && readReceiptsEnabled && !deleted && (
+            <button
+              type="button"
+              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
+              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
+              onClick={onActivateClick(() => onShowReads(msg.id))}
+            >
+              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
+            </button>
+          )}
           {deleted ? (
             <span className="message-author">Mensagem excluída</span>
           ) : (
-            <span className={`message-author-wrap ${msg.forwardedFromUsername ? 'forwarded-author' : ''}`}>
+            <span className="message-author-wrap">
               {isMine && (
                 <>
+                  {messageTags}
                   {msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}
                   {msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}
                 </>
@@ -219,22 +347,16 @@ function MessageRowComponent({
                 <>
                   {msg.roles?.includes('ADMIN') && <RoleBadge type="admin" />}
                   {msg.roles?.includes('OWNER') && <RoleBadge type="owner" />}
+                  {messageTags}
                 </>
               )}
             </span>
           )}
-          {!isMine && <span className="message-time">{formatTime(msg.createdAt)}</span>}
-          {isPinned && !deleted && <span className="message-pinned-badge" title="Mensagem fixada">📌 Fixada</span>}
-          {msg.editedAt && !deleted && <em className="message-edited">Editada</em>}
-          {isMine && readReceiptsEnabled && !deleted && (
-            <button
-              type="button"
-              className={`message-read-state ${msg.readBy?.length ? 'read' : 'unread'}`}
-              onPointerUp={onActivatePointerUp(() => onShowReads(msg.id))}
-              onClick={onActivateClick(() => onShowReads(msg.id))}
-            >
-              {msg.readBy?.length ? `✓✓ ${msg.readBy.length}` : '✓'}
-            </button>
+          {!isMine && (
+            <span className="message-time">
+              {indicators}
+              {formatTime(msg.createdAt)}
+            </span>
           )}
         </div>
         {!deleted && canWrite && (
@@ -242,8 +364,13 @@ function MessageRowComponent({
             pinned={actionPinned}
             onPin={(pinned) => onPinAction(msg.id, pinned)}
             onQuote={() => onQuote(msg)}
+            onCopy={onCopy ? () => onCopy(msg) : undefined}
             onForward={() => onForward(msg)}
-            onEdit={isMine && !msg.forwardedFromUsername && !!msg.content && !msg.attachment && !msg.poll ? () => onEdit(msg) : undefined}
+            onEdit={
+              isMine && !msg.forwardedFromUsername && !msg.poll && (!!msg.content || hasAttachments)
+                ? () => onEdit(msg)
+                : undefined
+            }
             onEmoji={(emoji) => {
               setActionDismissed(true)
               onReaction(msg, emoji)
@@ -252,6 +379,14 @@ function MessageRowComponent({
             canPin={canPin}
             isPinned={isPinned}
             onTogglePin={onTogglePin ? () => onTogglePin(msg) : undefined}
+            isFavorite={isFavorite}
+            onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(msg) : undefined}
+            onViewReads={canViewReads(readReceiptsEnabled, isMine) ? () => onShowReads(msg.id) : undefined}
+            onReplyPrivate={
+              onReplyPrivate && canReplyPrivate(roomType, isMine, !!msg.userId)
+                ? () => onReplyPrivate(msg)
+                : undefined
+            }
           />
         )}
         {!deleted && (
@@ -260,18 +395,28 @@ function MessageRowComponent({
               <button
                 type="button"
                 className="quoted-message"
-                onClick={() => onJumpToQuoted(msg.quotedMessage!.id)}
+                onClick={() => onJumpToQuoted(msg.quotedMessage!.id, msg.quotedMessage?.originRoomId)}
               >
-                <strong>{msg.quotedMessage.username}</strong>
+                <div className="quoted-message-header">
+                  <strong>{msg.quotedMessage.username}</strong>
+                  {msg.quotedMessage.originRoomName && (
+                    <span className="quoted-message-origin">em {msg.quotedMessage.originRoomName}</span>
+                  )}
+                </div>
                 <span>{msg.quotedMessage.content || 'Anexo'}</span>
               </button>
             )}
-            {(msg.attachments ?? (msg.attachment ? [msg.attachment] : [])).map((attachment) => (
-              <AttachmentView key={attachment.id} msg={{ ...msg, attachment }} />
+            {messageAttachments.map((attachment) => (
+              <AttachmentView
+                key={attachment.id}
+                msg={{ ...msg, attachment }}
+                authorAvatarPath={authorAvatarPath}
+                transcriptionEnabled={transcriptionEnabled}
+              />
             ))}
             {msg.poll && <PollCard poll={msg.poll} disabled={!canWrite} onVote={(optionId) => onVotePoll(msg, optionId)} />}
             {!msg.poll && msg.content && (
-              <div className="message-content">{renderMessageContent(msg.content, currentUsername)}</div>
+              <div className="message-content">{renderMessageContent(msg.content, currentUsername, validMentionUsernames)}</div>
             )}
             {msg.reactions && msg.reactions.length > 0 && (
               <div className="message-reactions">
@@ -283,18 +428,28 @@ function MessageRowComponent({
                     }),
                     {},
                   ),
-                ).map(([emoji, reactions]) => (
-                  <button
-                    type="button"
-                    className="message-reaction"
-                    key={emoji}
-                    title={reactions.map((reaction) => reaction.username).join(', ')}
-                    onPointerUp={onActivatePointerUp(() => setReactionDetailsEmoji(emoji))}
-                    onClick={onActivateClick(() => setReactionDetailsEmoji(emoji))}
-                  >
-                    {emoji} {reactions.length}
-                  </button>
-                ))}
+                ).map(([emoji, reactions]) => {
+                  const mine = reactedByMe(emoji)
+                  return (
+                    <button
+                      type="button"
+                      key={emoji}
+                      data-emoji={emoji}
+                      className={`message-reaction${mine ? ' mine' : ''}`}
+                      aria-pressed={mine}
+                      aria-label={`${mine ? 'Remover minha reação' : 'Reagir também com'} ${emoji}, ${reactions.length}`}
+                      title={`${reactions
+                        .map((reaction) =>
+                          reaction.userId === currentUserId ? `${reaction.username} (você)` : reaction.username,
+                        )
+                        .join(', ')} — segure para ver todos`}
+                      onPointerUp={onActivatePointerUp(() => toggleMyReaction(emoji))}
+                      onClick={onActivateClick(() => toggleMyReaction(emoji))}
+                    >
+                      {emoji} {reactions.length}
+                    </button>
+                  )
+                })}
               </div>
             )}
             {reactionDetailsEmoji && (

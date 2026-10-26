@@ -12,6 +12,7 @@ import br.gov.pb.cge.konnix.domain.room.RoomMember;
 import br.gov.pb.cge.konnix.domain.room.RoomMemberRepository;
 import br.gov.pb.cge.konnix.domain.room.RoomRepository;
 import br.gov.pb.cge.konnix.domain.message.Message;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
 import br.gov.pb.cge.konnix.domain.user.User;
@@ -45,15 +46,17 @@ public class RoomService {
     private final MessageService messageService;
     private final SystemSettingService systemSettingService;
     private final ChatEventPublisher chatEventPublisher;
+    private final MessageMentionRepository messageMentionRepository;
 
     public RoomService(RoomRepository roomRepository,
                        RoomMemberRepository roomMemberRepository,
                        MessageRepository messageRepository,
                        UserRepository userRepository,
-                        AuditService auditService,
-                        MessageService messageService,
-                        SystemSettingService systemSettingService,
-                        ChatEventPublisher chatEventPublisher) {
+                       AuditService auditService,
+                       MessageService messageService,
+                       SystemSettingService systemSettingService,
+                       ChatEventPublisher chatEventPublisher,
+                       MessageMentionRepository messageMentionRepository) {
         this.roomRepository = roomRepository;
         this.roomMemberRepository = roomMemberRepository;
         this.messageRepository = messageRepository;
@@ -62,6 +65,7 @@ public class RoomService {
         this.messageService = messageService;
         this.systemSettingService = systemSettingService;
         this.chatEventPublisher = chatEventPublisher;
+        this.messageMentionRepository = messageMentionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -81,6 +85,8 @@ public class RoomService {
                 ? messageRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
                     .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()))
                 : Map.of();
+        Map<UUID, Long> unreadMentionsByRoom = messageMentionRepository.countUnreadByRoomIds(roomIds, actor.id()).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()));
         List<Room> rooms = roomRepository.findAllById(roomIds);
         List<Message> pinnedMessages = rooms.stream()
                 .map(Room::getPinnedMessage)
@@ -89,6 +95,7 @@ public class RoomService {
         Map<UUID, MessageResponse> pinnedResponses = messageService.responsesForMessages(pinnedMessages, actor.id());
 
         return rooms.stream()
+                .filter(room -> !room.isHidden())
                 .filter(room -> !TYPE_DIRECT.equals(room.getType()) || lastMessageByRoom.containsKey(room.getId()))
                 .map(room -> RoomResponse.from(room,
                         partnerOf(room, actor.id(),
@@ -98,7 +105,9 @@ public class RoomService {
                         unreadByRoom.getOrDefault(room.getId(), 0L),
                         favoriteOf(actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
                         room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null))
+                                ? pinnedResponses.get(room.getPinnedMessage().getId()) : null,
+                        markedUnreadOf(actor.id(), membersByRoom.getOrDefault(room.getId(), List.of())),
+                        unreadMentionsByRoom.getOrDefault(room.getId(), 0L)))
                 .filter(response -> response.directPartner() == null
                         || !"DISABLED".equals(response.directPartner().accountStatus()))
                 .sorted(Comparator.comparing(RoomResponse::lastActivityAt,
@@ -111,14 +120,14 @@ public class RoomService {
             var actorRoomIds = roomMemberRepository.findByUserId(actor.id()).stream()
                 .filter(RoomMember::isActive)
                 .map(RoomMember::getRoom)
-                .filter(room -> !TYPE_DIRECT.equals(room.getType()))
+                .filter(room -> !TYPE_DIRECT.equals(room.getType()) && !room.isHidden())
                 .map(Room::getId)
                 .collect(Collectors.toSet());
             if (actorRoomIds.isEmpty()) return List.of();
             return roomMemberRepository.findByUserId(otherUserId).stream()
                 .filter(RoomMember::isActive)
                 .map(RoomMember::getRoom)
-                .filter(room -> actorRoomIds.contains(room.getId()) && !TYPE_DIRECT.equals(room.getType()))
+                .filter(room -> actorRoomIds.contains(room.getId()) && !TYPE_DIRECT.equals(room.getType()) && !room.isHidden())
                 .distinct()
                 .sorted(Comparator.comparing(Room::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(RoomResponse::from)
@@ -128,12 +137,18 @@ public class RoomService {
     @Transactional(readOnly = true)
     public RoomResponse get(UUID id, AuthenticatedUser actor) {
         Room room = roomOrThrow(id);
+        if (room.isHidden() && !actor.hasRole("ADMIN")) {
+            throw ApiExceptions.notFound("room/" + id);
+        }
         requireMember(room, actor);
         List<RoomMember> members = roomMemberRepository.findByRoomId(id);
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(id, actor.id());
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
                 favoriteOf(actor.id(), members),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                markedUnreadOf(actor.id(), members),
+                unreadMentions);
     }
 
     @Transactional
@@ -147,9 +162,31 @@ public class RoomService {
         membership.setFavorite(!membership.isFavorite());
         roomMemberRepository.save(membership);
         chatEventPublisher.publishFavoriteUpdated(actor.id(), roomId, membership.isFavorite());
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(roomId, actor.id());
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
                 room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
-                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null);
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                membership.isMarkedUnread(),
+                unreadMentions);
+    }
+
+    @Transactional
+    public RoomResponse markAsUnread(UUID roomId, AuthenticatedUser actor) {
+        Room room = roomOrThrow(roomId);
+        List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
+        RoomMember membership = members.stream()
+                .filter(member -> member.getUser().getId().equals(actor.id()) && member.isActive())
+                .findFirst()
+                .orElseThrow(ApiExceptions::notRoomMember);
+        membership.setMarkedUnread(true);
+        roomMemberRepository.save(membership);
+        chatEventPublisher.publishUnreadUpdated(actor.id(), roomId, true);
+        long unreadMentions = messageMentionRepository.countUnreadByRoomId(roomId, actor.id());
+        return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0, membership.isFavorite(),
+                room.getPinnedMessage() != null && room.getPinnedMessage().getDeletedAt() == null
+                        ? messageService.responseFor(room.getPinnedMessage(), actor.id()) : null,
+                true,
+                unreadMentions);
     }
 
     @Transactional
@@ -219,7 +256,7 @@ public class RoomService {
     public List<RoomMemberResponse> members(UUID roomId, AuthenticatedUser actor) {
         Room room = roomOrThrow(roomId);
         requireMember(room, actor);
-        return roomMemberRepository.findByRoomId(roomId).stream()
+        return roomMemberRepository.findActiveUsersByRoomId(roomId).stream()
                 .map(RoomMemberResponse::from)
                 .sorted(Comparator.comparing(RoomMemberResponse::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -235,7 +272,17 @@ public class RoomService {
     public List<RoomMemberResponse> adminMembers(UUID roomId) {
         Room room = roomOrThrow(roomId);
         requireAdminRoom(room);
-        return roomMemberRepository.findByRoomId(roomId).stream().map(RoomMemberResponse::from)
+        return roomMemberRepository.findByRoomId(roomId).stream()
+                .filter(m -> {
+                    var u = m.getUser();
+                    if (u == null) return false;
+                    String s = u.getAccountStatus();
+                    if (s == null || s.isBlank()) {
+                        return u.isActive();
+                    }
+                    return !"DISABLED".equals(s);
+                })
+                .map(RoomMemberResponse::from)
                 .sorted(Comparator.comparing(RoomMemberResponse::name, String.CASE_INSENSITIVE_ORDER)).toList();
     }
 
@@ -285,13 +332,30 @@ public class RoomService {
     public RoomResponse adminUpdate(UUID roomId, RoomUpdateRequest request, User actor, String ipAddress) {
         Room room = roomOrThrow(roomId);
         requireAdminRoom(room);
+
+        boolean targetReadOnly = request.readOnly() != null ? request.readOnly() : room.isReadOnly();
+        boolean targetHidden = request.hidden() != null ? request.hidden() : room.isHidden();
+
+        if (targetHidden && !targetReadOnly) {
+            throw ApiExceptions.conflict("ROOM_HIDDEN_REQUIRES_READ_ONLY", "Uma sala só pode ser ocultada se estiver em modo somente leitura");
+        }
+
         boolean readOnlyChanged = request.readOnly() != null && request.readOnly() != room.isReadOnly();
+        boolean hiddenChanged = request.hidden() != null && request.hidden() != room.isHidden();
+
         if (request.name() != null && !request.name().isBlank()) room.setName(request.name().trim());
         if (request.displayName() != null) room.setDisplayName(request.displayName().isBlank() ? null : request.displayName().trim());
         if (request.readOnly() != null) room.setReadOnly(request.readOnly());
+        if (!targetReadOnly) {
+            room.setHidden(false);
+        } else if (request.hidden() != null) {
+            room.setHidden(request.hidden());
+        }
+
         roomRepository.save(room);
         auditService.record("ROOM_UPDATED", actor, "room", roomId.toString(), ipAddress);
         if (readOnlyChanged) auditService.record("ROOM_READ_ONLY_CHANGED", actor, "room", roomId.toString(), ipAddress);
+        if (hiddenChanged) auditService.record("ROOM_HIDDEN_CHANGED", actor, "room", roomId.toString(), ipAddress);
         chatEventPublisher.publishRoomUpdated(roomId, RoomResponse.from(room));
         return RoomResponse.from(room);
     }
@@ -301,6 +365,13 @@ public class RoomService {
         Room room = roomOrThrow(roomId);
         requireAdminRoom(room);
         User target = userRepository.findById(request.userId()).orElseThrow(() -> ApiExceptions.notFound("user/" + request.userId()));
+        if (target.isDisabled()) {
+            throw ApiExceptions.userUnavailable();
+        }
+        String targetStatus = target.getAccountStatus();
+        if (targetStatus != null && !targetStatus.isBlank() && "DISABLED".equals(targetStatus)) {
+            throw ApiExceptions.userUnavailable();
+        }
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, target.getId())) throw ApiExceptions.alreadyMember();
         RoomMember member = addMembership(room, target, request.role() == null || request.role().isBlank() ? ROLE_MEMBER : request.role().trim());
         chatEventPublisher.publishRoomAdded(target.getId(), RoomResponse.from(room));
@@ -379,7 +450,7 @@ public class RoomService {
         chatEventPublisher.publishPinnedMessage(roomId, pinnedResponse);
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(actor.id(), members), pinnedResponse);
+                favoriteOf(actor.id(), members), pinnedResponse, markedUnreadOf(actor.id(), members));
     }
 
     @Transactional
@@ -395,7 +466,7 @@ public class RoomService {
         }
         List<RoomMember> members = roomMemberRepository.findByRoomId(roomId);
         return RoomResponse.from(room, partnerOf(room, actor.id(), members), null, 0,
-                favoriteOf(actor.id(), members), null);
+                favoriteOf(actor.id(), members), null, markedUnreadOf(actor.id(), members));
     }
 
     @Transactional
@@ -405,6 +476,15 @@ public class RoomService {
 
         User target = userRepository.findById(request.userId())
                 .orElseThrow(() -> ApiExceptions.notFound("user/" + request.userId()));
+
+        if (target.isDisabled()) {
+            throw ApiExceptions.userUnavailable();
+        }
+        String targetStatus = target.getAccountStatus();
+        if (targetStatus != null && !targetStatus.isBlank() && "DISABLED".equals(targetStatus)) {
+            throw ApiExceptions.userUnavailable();
+        }
+
         if (roomMemberRepository.existsByRoomIdAndUserId(roomId, target.getId())) {
             throw ApiExceptions.alreadyMember();
         }
@@ -504,6 +584,11 @@ public class RoomService {
     private boolean favoriteOf(UUID userId, List<RoomMember> members) {
         return members.stream()
                 .anyMatch(member -> member.getUser().getId().equals(userId) && member.isActive() && member.isFavorite());
+    }
+
+    private boolean markedUnreadOf(UUID userId, List<RoomMember> members) {
+        return members.stream()
+                .anyMatch(member -> member.getUser().getId().equals(userId) && member.isActive() && member.isMarkedUnread());
     }
 
     private Room roomOrThrow(UUID id) {

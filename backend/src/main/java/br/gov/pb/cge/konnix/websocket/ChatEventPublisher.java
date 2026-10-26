@@ -97,6 +97,28 @@ public class ChatEventPublisher {
         publishToUser(userId, "room.favorite.updated", roomId, data);
     }
 
+    public void publishMessageFavoriteUpdated(UUID userId, UUID roomId, UUID messageId, boolean favorite) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("messageId", messageId);
+        data.put("favorite", favorite);
+        publishToUser(userId, "message.favorite.updated", roomId, data);
+    }
+
+    public void publishUnreadUpdated(UUID userId, UUID roomId, boolean markedUnread) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("markedUnread", markedUnread);
+        publishToUser(userId, "room.unread.updated", roomId, data);
+    }
+
+    public void publishMentionsUpdated(UUID userId, UUID roomId, long unreadMentionsCount) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("roomId", roomId);
+        data.put("unreadMentionsCount", unreadMentionsCount);
+        publishToUser(userId, "room.mentions.updated", roomId, data);
+    }
+
     public void publishReaction(UUID roomId, br.gov.pb.cge.konnix.api.message.dto.MessageReactionResponse reaction,
                                 boolean removed) {
         Map<String, Object> data = new LinkedHashMap<>();
@@ -167,7 +189,10 @@ public class ChatEventPublisher {
                 return;
             }
 
-            roomMemberRepository.findByRoomId(roomId).stream()
+            // Usa consulta com join fetch do usuário: publishTyping é acionado pela thread do
+            // WebSocket (sem transação), então acessar member.getUser() de forma lazy lançaria
+            // LazyInitializationException e o evento seria descartado silenciosamente.
+            roomMemberRepository.findActiveUsersByRoomId(roomId).stream()
                     .map(member -> member.getUser().getId())
                     .distinct()
                     .forEach(userId -> sessionRegistry.sessionsOf(userId).forEach(session -> send(session, json)));
@@ -182,6 +207,10 @@ public class ChatEventPublisher {
             session.sendMessage(new TextMessage(json));
         } catch (IOException e) {
             log.debug("Falha ao enviar evento WebSocket para sessão {}", session.getId(), e);
+            try {
+                session.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 }

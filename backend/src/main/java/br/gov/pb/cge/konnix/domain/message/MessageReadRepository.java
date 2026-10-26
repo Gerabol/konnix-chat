@@ -16,4 +16,12 @@ public interface MessageReadRepository extends JpaRepository<MessageRead, UUID> 
             where mr.user.id = :userId and mr.message.id in :messageIds
             """)
     List<UUID> findReadMessageIds(@Param("userId") UUID userId, @Param("messageIds") List<UUID> messageIds);
+
+    @Query("""
+            select mr from MessageRead mr
+            join fetch mr.user u
+            where mr.message.id = :messageId
+            order by mr.readAt asc
+            """)
+    List<MessageRead> findByMessageIdWithUser(@Param("messageId") UUID messageId);
 }

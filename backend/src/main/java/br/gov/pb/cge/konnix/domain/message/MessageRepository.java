@@ -50,6 +50,19 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Object[]> countActivitySince(@Param("from") Instant from, @Param("zone") String zone);
 
     @Query(value = """
+            select cast(m.user_id as varchar) as user_id, u.username, u.name, count(*) as messages
+            from messages m
+            join users u on u.id = m.user_id
+            where m.deleted_at is null
+              and m.user_id is not null
+              and m.created_at >= :from
+            group by m.user_id, u.username, u.name
+            order by messages desc, lower(coalesce(u.name, u.username)) asc
+            limit :limit
+            """, nativeQuery = true)
+    List<Object[]> findTopMessageUsersSince(@Param("from") Instant from, @Param("limit") int limit);
+
+    @Query(value = """
             select to_char(date_trunc('month', created_at at time zone :zone), 'YYYY-MM') as month,
                    count(*) as messages,
                    count(distinct user_id) as active_users

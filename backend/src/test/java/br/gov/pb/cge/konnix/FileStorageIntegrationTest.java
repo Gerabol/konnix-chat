@@ -107,6 +107,32 @@ class FileStorageIntegrationTest {
     }
 
     @Test
+    void uploadDeVideoMp4EhMantidoComoAnexoDeVideo() throws Exception {
+        String roomId = createRoom(adminToken, "canal-video-mp4", "CHANNEL");
+
+        mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "apresentacao.mp4", "video/mp4", CONTEUDO))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachment.originalName").value("apresentacao.mp4"))
+                .andExpect(jsonPath("$.data.attachment.mimeType").value("video/mp4"))
+                .andExpect(jsonPath("$.data.attachment.size").value(CONTEUDO.length));
+    }
+
+    @Test
+    void uploadDeVideoWebmEhMantidoComoAnexoDeVideo() throws Exception {
+        String roomId = createRoom(adminToken, "canal-video-webm", "CHANNEL");
+
+        mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "gravacao-da-tela.webm", "video/webm", CONTEUDO))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachment.originalName").value("gravacao-da-tela.webm"))
+                .andExpect(jsonPath("$.data.attachment.mimeType").value("video/webm"))
+                .andExpect(jsonPath("$.data.attachment.size").value(CONTEUDO.length));
+    }
+
+    @Test
     void uploadSemAutenticacao() throws Exception {
         String roomId = createRoom(adminToken, "canal-nauth", "CHANNEL");
 
@@ -141,6 +167,51 @@ class FileStorageIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.error.code").value("FILE_TOO_LARGE"));
+    }
+
+    @Test
+    void alteracaoDinamicaDoLimiteNoPainelAdminPermiteUploadMaior() throws Exception {
+        String roomId = createRoom(adminToken, "canal-limite-dinamico", "CHANNEL");
+        byte[] big = new byte[4096];
+        for (int i = 0; i < big.length; i++) {
+            big[i] = (byte) 'z';
+        }
+
+        // 1. Com o limite inicial (1024 bytes), arquivo de 4096 bytes é bloqueado
+        mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "pesado.bin", "application/octet-stream", big))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.error.code").value("FILE_TOO_LARGE"));
+
+        // 2. Admin altera o limite máximo de upload para 10 MB (10485760 bytes)
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Konnix Chat\",\"maxUploadBytes\":10485760}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.maxUploadBytes").value(10485760));
+
+        // 3. Endpoint público server-info reflete imediatamente o novo limite
+        mockMvc.perform(get("/api/public/server-info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.maxUploadBytes").value(10485760));
+
+        try {
+            // 4. O mesmo arquivo de 4096 bytes agora é enviado com sucesso (200 OK)
+            mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                            .file(new MockMultipartFile("file", "pesado.bin", "application/octet-stream", big))
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.attachment.size").value(4096));
+        } finally {
+            // Restaura o limite inicial de 1024 bytes para não afetar outros testes
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/admin/settings")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"Konnix Chat\",\"maxUploadBytes\":1024}"))
+                    .andExpect(status().isOk());
+        }
     }
 
     @Test

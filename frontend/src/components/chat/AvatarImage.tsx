@@ -1,14 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../../api'
-
-export function initials(name: string): string {
-  const clean = name.trim()
-  if (!clean) return '?'
-  const parts = clean.split(/\s+/).filter(Boolean)
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
-}
+export { initials } from '../../utils/room'
 
 const avatarCache = new Map<string, string>()
 

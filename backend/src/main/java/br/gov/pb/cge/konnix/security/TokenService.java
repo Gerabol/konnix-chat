@@ -68,6 +68,9 @@ public class TokenService {
 
     @Transactional
     public Optional<User> revoke(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Optional.empty();
+        }
         return sessionRepository.findByTokenHash(hash(rawToken))
                 .filter(s -> s.getRevokedAt() == null)
                 .map(s -> {
@@ -78,6 +81,9 @@ public class TokenService {
     }
 
     public static String hash(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return "";
+        }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hashed = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));

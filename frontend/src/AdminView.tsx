@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from './api'
-import type { AccountStatus, AppSettings, AuditEntry, AuditOptions, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
+import type { AccountStatus, AppSettings, AttachmentTimeSeriesResponse, AuditEntry, AuditOptions, EngagementInsights, MessageTimeSeriesPeriod, MessageTimeSeriesResponse, MonitoringMetrics, Room, RoomMember, User } from './api'
 import { AvatarImage } from './components/chat/AvatarImage'
 import { PaletteIcon } from './components/icons'
 import { ThemeModal } from './components/modals/ThemeModal'
-import { applyTheme, cacheTheme } from './utils/theme'
+import { applyTheme, cacheTheme, normalizeTheme, THEME_OPTIONS } from './utils/theme'
+import { presenceLabel } from './utils/presence'
 import ApiDocsPanel from './ApiDocsPanel'
 import { validatePassword } from './passwordValidation'
 import { useEscapeClose } from './hooks/useEscapeClose'
@@ -721,8 +722,9 @@ function RoomsPanel({ notify }: { notify: (text: string) => void }) {
   const filteredRows = roomRows.filter(({ room }) => `${room.name} ${room.displayName}`.toLowerCase().includes(roomQuery.toLowerCase()))
   const roomTotalPages = Math.max(1, Math.ceil(filteredRows.length / roomPageSize))
   const visibleRooms = filteredRows.slice(roomPage * roomPageSize, roomPage * roomPageSize + roomPageSize)
-  const readOnlyCount = roomRows.filter(({ room }) => room.readOnly).length
-  return <section className="admin-panel"><div className="admin-panel-title"><div className="users-title-line"><h1>Canais e grupos</h1><div className="user-metrics"><span>Total de salas <strong>{roomRows.length}</strong></span><span className="metric-online">● {roomRows.length - readOnlyCount} normais</span><span className="metric-inactive">● {readOnlyCount} só leitura</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Nova sala</button></div><div className="admin-toolbar"><input autoComplete="off" className="input" value={roomQuery} placeholder="Pesquisar canal ou grupo" onChange={(event) => { setRoomPage(0); setRoomQuery(event.target.value) }} /></div><Pager page={roomPage} totalPages={roomTotalPages} onPage={setRoomPage} pageSize={roomPageSize} onPageSize={(size) => { setRoomPageSize(size); setRoomPage(0) }} /><div className="admin-table-wrap"><table className="admin-table admin-rooms-table"><thead><tr><th>Sala</th><th>Usuários</th><th>Status</th><th>Criação</th><th>Ações</th></tr></thead><tbody>{visibleRooms.map(({ room, members }) => <tr key={room.id}><td><div className="admin-user-cell"><AvatarImage path={`${apiRoomAvatar(room.id)}?v=${encodeURIComponent(room.updatedAt)}`} className="admin-room-avatar" fallback={<span className="admin-room-avatar">{room.type === 'CHANNEL' ? '#' : '🔒'}</span>} alt={room.displayName || room.name} /><span><strong>{room.displayName || room.name}</strong><small className="admin-subline">{room.type === 'CHANNEL' ? 'Canal (#)' : 'Grupo (🔒)'} · {room.name}</small></span></div></td><td>{members.length}</td><td><span className={`admin-status ${room.readOnly ? 'inactive' : 'active'}`}>{room.readOnly ? 'Só leitura' : 'Normal'}</span></td><td>{new Date(room.createdAt).toLocaleDateString('pt-BR')}</td><td><div className="admin-row-actions"><button className="icon-action" title="Editar sala" aria-label="Editar sala" onClick={() => setSelected(room)}>✎</button><button className="owner-action" onClick={() => setOwnersRoom({ room, members })}>Proprietários</button></div></td></tr>)}{visibleRooms.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhuma sala encontrada.</td></tr>}</tbody></table></div>{selected && <RoomEditor room={selected} onClose={() => setSelected(null)} onSaved={(room) => { setRoomRows((old) => old.map((row) => row.room.id === room.id ? { ...row, room } : row)); setSelected(null); notify('Sala atualizada') }} notify={notify} />}{ownersRoom && <OwnersModal room={ownersRoom.room} members={ownersRoom.members} onClose={() => setOwnersRoom(null)} onChanged={(members) => { setRoomRows((old) => old.map((row) => row.room.id === ownersRoom.room.id ? { ...row, members } : row)); setOwnersRoom({ ...ownersRoom, members }) }} notify={notify} />}{createOpen && <CreateChannelModal onClose={() => setCreateOpen(false)} onCreated={(room) => { setRoomRows((old) => [{ room, members: [] }, ...old]); setRoomPage(0); setCreateOpen(false); notify('Sala criada') }} notify={notify} />}</section>
+  const readOnlyCount = roomRows.filter(({ room }) => room.readOnly && !room.hidden).length
+  const hiddenCount = roomRows.filter(({ room }) => room.hidden).length
+  return <section className="admin-panel"><div className="admin-panel-title"><div className="users-title-line"><h1>Canais e grupos</h1><div className="user-metrics"><span>Total de salas <strong>{roomRows.length}</strong></span><span className="metric-online">● {roomRows.length - readOnlyCount - hiddenCount} normais</span><span className="metric-inactive">● {readOnlyCount} só leitura</span><span className="metric-inactive">● {hiddenCount} ocultas</span></div></div><button className="btn-primary" onClick={() => setCreateOpen(true)}>Nova sala</button></div><div className="admin-toolbar"><input autoComplete="off" className="input" value={roomQuery} placeholder="Pesquisar canal ou grupo" onChange={(event) => { setRoomPage(0); setRoomQuery(event.target.value) }} /></div><Pager page={roomPage} totalPages={roomTotalPages} onPage={setRoomPage} pageSize={roomPageSize} onPageSize={(size) => { setRoomPageSize(size); setRoomPage(0) }} /><div className="admin-table-wrap"><table className="admin-table admin-rooms-table"><thead><tr><th>Sala</th><th>Usuários</th><th>Status</th><th>Criação</th><th>Ações</th></tr></thead><tbody>{visibleRooms.map(({ room, members }) => <tr key={room.id}><td><div className="admin-user-cell"><AvatarImage path={`${apiRoomAvatar(room.id)}?v=${encodeURIComponent(room.updatedAt)}`} className="admin-room-avatar" fallback={<span className="admin-room-avatar">{room.type === 'CHANNEL' ? '#' : '🔒'}</span>} alt={room.displayName || room.name} /><span><strong>{room.displayName || room.name}</strong><small className="admin-subline">{room.type === 'CHANNEL' ? 'Canal (#)' : 'Grupo (🔒)'} · {room.name}</small></span></div></td><td>{members.length}</td><td><div style={{ display: 'inline-flex', gap: '0.35rem', flexWrap: 'wrap' }}>{room.readOnly ? <span className="admin-status read-only">Só leitura</span> : <span className="admin-status active">Normal</span>}{room.hidden && <span className="admin-status hidden">Oculta</span>}</div></td><td>{new Date(room.createdAt).toLocaleDateString('pt-BR')}</td><td><div className="admin-row-actions"><button className="icon-action" title="Editar sala" aria-label="Editar sala" onClick={() => setSelected(room)}>✎</button><button className="owner-action" onClick={() => setOwnersRoom({ room, members })}>Proprietários</button></div></td></tr>)}{visibleRooms.length === 0 && <tr><td colSpan={5} className="admin-empty">Nenhuma sala encontrada.</td></tr>}</tbody></table></div>{selected && <RoomEditor room={selected} onClose={() => setSelected(null)} onSaved={(room) => { setRoomRows((old) => old.map((row) => row.room.id === room.id ? { ...row, room } : row)); setSelected(null); notify('Sala atualizada') }} notify={notify} />}{ownersRoom && <OwnersModal room={ownersRoom.room} members={ownersRoom.members} onClose={() => setOwnersRoom(null)} onChanged={(members) => { setRoomRows((old) => old.map((row) => row.room.id === ownersRoom.room.id ? { ...row, members } : row)); setOwnersRoom({ ...ownersRoom, members }) }} notify={notify} />}{createOpen && <CreateChannelModal onClose={() => setCreateOpen(false)} onCreated={(room) => { setRoomRows((old) => [{ room, members: [] }, ...old]); setRoomPage(0); setCreateOpen(false); notify('Sala criada') }} notify={notify} />}</section>
 }
 
 function apiRoomAvatar(roomId: string) { return `/api/v1/rooms/${roomId}/avatar` }
@@ -750,13 +752,22 @@ function RoomEditor({ room, onClose, onSaved, notify }: { room: Room; onClose: (
   const [name, setName] = useState(room.name || '')
   const [displayName, setDisplayName] = useState(room.displayName || '')
   const [readOnly, setReadOnly] = useState(room.readOnly)
+  const [hidden, setHidden] = useState(room.hidden || false)
   const [members, setMembers] = useState<RoomMember[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [newMember, setNewMember] = useState('')
-  const save = async () => { try { onSaved(await api.adminUpdateRoom(room.id, { name, displayName, readOnly })) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao atualizar sala') } }
+
+  const handleReadOnlyChange = (checked: boolean) => {
+    setReadOnly(checked)
+    if (!checked) {
+      setHidden(false)
+    }
+  }
+
+  const save = async () => { try { onSaved(await api.adminUpdateRoom(room.id, { name, displayName, readOnly, hidden })) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao atualizar sala') } }
   useEffect(() => { api.adminMembers(room.id).then(setMembers).catch(() => setMembers([])) }, [room.id])
   useEffect(() => { api.adminUsers('', 0, 100).then((result) => setUsers(result.items)).catch(() => setUsers([])) }, [])
-  return <div className="admin-modal-overlay"><div className="admin-modal admin-room-modal"><div className="modal-head"><h3>Editar sala</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="modal-fields"><label className="admin-label">Nome técnico<input className="input" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-label">Nome de exibição<input className="input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label className="admin-check"><input type="checkbox" checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} /> Somente leitura</label><h4>Membros ({members.length})</h4><div className="admin-member-add"><select className="input" value={newMember} onChange={(event) => setNewMember(event.target.value)}><option value="">Adicionar membro...</option>{users.filter((user) => !members.some((member) => member.userId === user.id)).map((user) => <option key={user.id} value={user.id}>{user.name} (@{user.username})</option>)}</select><button className="btn-ghost" disabled={!newMember} onClick={async () => { try { const member = await api.adminAddMember(room.id, newMember); setMembers((old) => [...old, member]); setNewMember('') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao adicionar membro') } }}>Adicionar</button></div>{members.map((member) => <div className="admin-member" key={member.userId}><div className="admin-member-person"><AvatarImage path={`${userAvatarPath(member.userId)}?v=${encodeURIComponent(member.joinedAt)}`} className="admin-member-avatar" fallback={<span className="admin-member-avatar">{(member.name || member.username).slice(0, 1).toUpperCase()}</span>} alt={member.name || member.username} /><span>{member.name || member.username}<small className="admin-subline">@{member.username}</small></span></div><button className="btn-ghost" onClick={async () => { try { await api.adminRemoveMember(room.id, member.userId); setMembers((old) => old.filter((item) => item.userId !== member.userId)) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao remover membro') } }}>Remover</button></div>)}</div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Fechar</button><button className="btn-primary" onClick={save}>Salvar</button></div></div></div>
+  return <div className="admin-modal-overlay"><div className="admin-modal admin-room-modal"><div className="modal-head"><h3>Editar sala</h3><button className="modal-close" onClick={onClose}>×</button></div><div className="modal-fields"><label className="admin-label">Nome técnico<input className="input" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-label">Nome de exibição<input className="input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><div className="admin-room-options" style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', margin: '0.25rem 0' }}><label className="admin-check"><input type="checkbox" checked={readOnly} onChange={(event) => handleReadOnlyChange(event.target.checked)} /> Somente leitura</label><label className="admin-check" style={{ opacity: readOnly ? 1 : 0.5 }}><input type="checkbox" checked={hidden} disabled={!readOnly} onChange={(event) => setHidden(event.target.checked)} /> Ocultar</label></div><h4>Membros ({members.length})</h4><div className="admin-member-add"><select className="input" value={newMember} onChange={(event) => setNewMember(event.target.value)}><option value="">Adicionar membro...</option>{users.filter((user) => !members.some((member) => member.userId === user.id)).map((user) => <option key={user.id} value={user.id}>{user.name} (@{user.username})</option>)}</select><button className="btn-ghost" disabled={!newMember} onClick={async () => { try { const member = await api.adminAddMember(room.id, newMember); setMembers((old) => [...old, member]); setNewMember('') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao adicionar membro') } }}>Adicionar</button></div>{members.map((member) => <div className="admin-member" key={member.userId}><div className="admin-member-person"><AvatarImage path={`${userAvatarPath(member.userId)}?v=${encodeURIComponent(member.joinedAt)}`} className="admin-member-avatar" fallback={<span className="admin-member-avatar">{(member.name || member.username).slice(0, 1).toUpperCase()}</span>} alt={member.name || member.username} /><span>{member.name || member.username}<small className="admin-subline">@{member.username}</small></span></div><button className="btn-ghost" onClick={async () => { try { await api.adminRemoveMember(room.id, member.userId); setMembers((old) => old.filter((item) => item.userId !== member.userId)) } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao remover membro') } }}>Remover</button></div>)}</div><div className="modal-actions"><button className="btn-ghost" onClick={onClose}>Fechar</button><button className="btn-primary" onClick={save}>Salvar</button></div></div></div>
 }
 
 function AuditPanel() {
@@ -855,7 +866,13 @@ const MESSAGE_TIME_SERIES_OPTIONS: { value: MessageTimeSeriesPeriod; label: stri
 function MonitoringPanel() {
   const [metrics, setMetrics] = useState<MonitoringMetrics | null>(null)
   const [activeUsersDays, setActiveUsersDays] = useState<number>(7)
+  const [period, setPeriod] = useState<MessageTimeSeriesPeriod>('DAYS_7')
+  const [engagement, setEngagement] = useState<EngagementInsights | null>(null)
+  const [engagementLoading, setEngagementLoading] = useState(false)
+  const [engagementError, setEngagementError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [usersList, setUsersList] = useState<User[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
 
   useEffect(() => {
     api.adminMonitoringMetrics(activeUsersDays)
@@ -866,19 +883,70 @@ function MonitoringPanel() {
       .catch((reason) => setError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar as métricas'))
   }, [activeUsersDays])
 
+  useEffect(() => {
+    let active = true
+    setEngagementLoading(true)
+    api.adminEngagementInsights(period)
+      .then((data) => {
+        if (active) {
+          setEngagement(data)
+          setEngagementError(null)
+        }
+      })
+      .catch((reason) => {
+        if (active) setEngagementError(reason instanceof ApiError ? reason.message : 'Não foi possível carregar os indicadores de engajamento')
+      })
+      .finally(() => {
+        if (active) setEngagementLoading(false)
+      })
+    return () => { active = false }
+  }, [period])
+
+  useEffect(() => {
+    let active = true
+    setUsersLoading(true)
+    api.adminUsers('', 0, 1000)
+      .then((page) => {
+        if (active) {
+          setUsersList(page.items)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setUsersList([])
+        }
+      })
+      .finally(() => {
+        if (active) setUsersLoading(false)
+      })
+    return () => { active = false }
+  }, [])
+
   const megabytes = metrics ? (metrics.databaseSizeBytes / (1024 * 1024)).toFixed(1) : '0.0'
   const fileGigabytes = metrics ? (metrics.totalFileBytes / (1024 * 1024 * 1024)).toFixed(2) : '0.00'
+  const periodLabel = MESSAGE_TIME_SERIES_OPTIONS.find((opt) => opt.value === period)?.label ?? period
 
   return <section className="admin-panel">
     <div className="admin-panel-title"><div><h1>Visão geral</h1><p>Indicadores operacionais do Konnix Chat.</p></div></div>
     {error && <div className="admin-error">{error}</div>}
     {!error && !metrics && <div className="admin-loading">Carregando métricas...</div>}
     {metrics && <>
-      <MessagesTimeSeriesChart />
+      <div className="admin-toolbar" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn-primary" onClick={() => exportAdminOverviewPdf()}>Exportar visão em PDF</button>
+      </div>
+      <MessagesTimeSeriesChart period={period} onPeriodChange={setPeriod} />
+      <AttachmentsTimeSeriesChart period={period} onPeriodChange={setPeriod} />
+      {engagementError && <div className="admin-error">{engagementError}</div>}
+      <OnlineUsersListCard users={usersList} loading={usersLoading} />
+      <div className={`monitoring-charts-grid monitoring-charts-grid-wide ${engagementLoading ? 'activity-chart-loading' : ''}`}>
+        <UserThemesPieChart usage={engagement?.themeUsage ?? []} />
+        <TopMessageUsersChart users={engagement?.topUsers ?? []} periodLabel={periodLabel} />
+      </div>
       <div className="monitoring-charts-grid">
         <UserStatusPieChart active={metrics.activeUsers} readOnly={metrics.readOnlyUsers} disabled={metrics.disabledUsers} />
         <DailyActiveUsersChart activity={metrics.activity} days={activeUsersDays} onDaysChange={setActiveUsersDays} />
       </div>
+      <AbsentUsersCard users={engagement?.absentUsers ?? []} periodLabel={periodLabel} loading={engagementLoading} />
       <div className="monitoring-grid">
         <MetricCard label="Arquivos" value={metrics.totalFiles.toLocaleString('pt-BR')} detail={`${fileGigabytes} GB em anexos`} />
         <MetricCard label="Banco de dados" value={`${megabytes} MB`} detail="Tamanho atual no PostgreSQL" />
@@ -893,37 +961,57 @@ function MonitoringPanel() {
   </section>
 }
 
-function MessagesTimeSeriesChart() {
-  const [period, setPeriod] = useState<MessageTimeSeriesPeriod>('DAYS_7')
-  const [data, setData] = useState<MessageTimeSeriesResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+type TimeSeriesPointView = { dateKey: string; label: string; value: number }
+
+type TimeSeriesChartProps = {
+  title: string
+  description: string
+  unitShort: string
+  totalLabel: string
+  averageLabel: string
+  peakLabel: string
+  intervalsLabel: string
+  legendLabel: string
+  accentVar: string
+  gradientId: string
+  points: TimeSeriesPointView[]
+  granularity: MessageTimeSeriesResponse['granularity']
+  total: number
+  average: number
+  peak: number
+  peakPeriodLabel: string
+  period: MessageTimeSeriesPeriod
+  onPeriodChange: (period: MessageTimeSeriesPeriod) => void
+  loading: boolean
+  error: string | null
+}
+
+function TimeSeriesChart({
+  title,
+  description,
+  unitShort,
+  totalLabel,
+  averageLabel,
+  peakLabel,
+  intervalsLabel,
+  legendLabel,
+  accentVar,
+  gradientId,
+  points,
+  granularity,
+  total,
+  average,
+  peak,
+  peakPeriodLabel,
+  period,
+  onPeriodChange,
+  loading,
+  error,
+}: TimeSeriesChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
 
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    api.adminMessageTimeSeries(period)
-      .then((res) => {
-        if (active) {
-          setData(res)
-          setError(null)
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          setError(err instanceof ApiError ? err.message : 'Falha ao carregar série temporal de mensagens')
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => { active = false }
-  }, [period])
-
-  const points = data?.points ?? []
-  const maximum = Math.max(1, ...points.map((point) => point.messages))
-  const intervalUnit = data?.granularity === 'month' ? 'mês' : data?.granularity === 'year' ? 'ano' : 'dia'
+  const maximum = Math.max(1, ...points.map((point) => point.value))
+  const intervalUnit = granularity === 'month' ? 'mês' : granularity === 'year' ? 'ano' : 'dia'
   const periodOptionLabel = MESSAGE_TIME_SERIES_OPTIONS.find((opt) => opt.value === period)?.label ?? period
 
   // SVG coordinate configuration
@@ -939,7 +1027,7 @@ function MessagesTimeSeriesChart() {
   const coords = useMemo(() => {
     return points.map((pt, i) => {
       const x = padLeft + (points.length <= 1 ? chartW / 2 : (i / (points.length - 1)) * chartW)
-      const y = padTop + chartH - (pt.messages / maximum) * chartH
+      const y = padTop + chartH - (pt.value / maximum) * chartH
       return { x, y, pt, i }
     })
   }, [points, maximum, chartW, chartH, padLeft, padTop])
@@ -978,7 +1066,7 @@ function MessagesTimeSeriesChart() {
 
     // Zero-floor constraint: any point at 0 messages must have a flat tangent (slope = 0)
     for (let i = 0; i < n; i++) {
-      if (coords[i].pt.messages === 0) {
+      if (coords[i].pt.value === 0) {
         slopes[i] = 0
       }
     }
@@ -1010,7 +1098,7 @@ function MessagesTimeSeriesChart() {
       const p2 = coords[i + 1]
 
       // If both points have 0 messages, draw a flat straight line directly on the floor
-      if (p1.pt.messages === 0 && p2.pt.messages === 0) {
+      if (p1.pt.value === 0 && p2.pt.value === 0) {
         d += ` L ${p2.x.toFixed(1)} ${bottomY.toFixed(1)}`
         continue
       }
@@ -1060,15 +1148,15 @@ function MessagesTimeSeriesChart() {
     <article className="activity-card activity-card-main">
       <div className="activity-card-head">
         <div>
-          <h2>Série Temporal de Mensagens</h2>
-          <p>Evolução do envio de mensagens ao longo do tempo ({periodOptionLabel}).</p>
+          <h2>{title}</h2>
+          <p>{description} ({periodOptionLabel}).</p>
         </div>
         <div className="activity-period-wrap">
           <select
             className="activity-period-select"
             value={period}
             disabled={loading}
-            onChange={(event) => setPeriod(event.target.value as MessageTimeSeriesPeriod)}
+            onChange={(event) => onPeriodChange(event.target.value as MessageTimeSeriesPeriod)}
             aria-label="Intervalo de exibição da série temporal"
           >
             {MESSAGE_TIME_SERIES_OPTIONS.map((opt) => (
@@ -1078,26 +1166,24 @@ function MessagesTimeSeriesChart() {
         </div>
       </div>
 
-      {data && (
-        <div className="timeseries-summary-grid">
-          <div className="timeseries-stat-chip">
-            <span>Total no período</span>
-            <strong>{data.totalMessages.toLocaleString('pt-BR')}</strong>
-          </div>
-          <div className="timeseries-stat-chip">
-            <span>Média por {intervalUnit}</span>
-            <strong>{data.averageMessages.toLocaleString('pt-BR')}</strong>
-          </div>
-          <div className="timeseries-stat-chip">
-            <span>Pico ({data.peakPeriodLabel || '—'})</span>
-            <strong>{data.peakMessages.toLocaleString('pt-BR')}</strong>
-          </div>
-          <div className="timeseries-stat-chip">
-            <span>Intervalos avaliados</span>
-            <strong>{data.points.length.toLocaleString('pt-BR')}</strong>
-          </div>
+      <div className="timeseries-summary-grid">
+        <div className="timeseries-stat-chip">
+          <span>{totalLabel}</span>
+          <strong>{total.toLocaleString('pt-BR')}</strong>
         </div>
-      )}
+        <div className="timeseries-stat-chip">
+          <span>{averageLabel} por {intervalUnit}</span>
+          <strong>{average.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>{peakLabel} ({peakPeriodLabel || '—'})</span>
+          <strong>{peak.toLocaleString('pt-BR')}</strong>
+        </div>
+        <div className="timeseries-stat-chip">
+          <span>{intervalsLabel}</span>
+          <strong>{points.length.toLocaleString('pt-BR')}</strong>
+        </div>
+      </div>
 
       {error && <div className="admin-error">{error}</div>}
 
@@ -1108,10 +1194,10 @@ function MessagesTimeSeriesChart() {
           onMouseLeave={() => setHoveredIndex(null)}
         >
           <defs>
-            <linearGradient id="timeseries-area-gradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--konnix-primary)" stopOpacity="0.4" />
-              <stop offset="85%" stopColor="var(--konnix-primary)" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="var(--konnix-primary)" stopOpacity="0.0" />
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={accentVar} stopOpacity="0.4" />
+              <stop offset="85%" stopColor={accentVar} stopOpacity="0.05" />
+              <stop offset="100%" stopColor={accentVar} stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -1143,7 +1229,7 @@ function MessagesTimeSeriesChart() {
           {areaPath && (
             <path
               d={areaPath}
-              fill="url(#timeseries-area-gradient)"
+              fill={`url(#${gradientId})`}
               className="timeseries-area"
             />
           )}
@@ -1153,7 +1239,8 @@ function MessagesTimeSeriesChart() {
             <path
               d={linePath}
               fill="none"
-              stroke="var(--konnix-primary)"
+              stroke="none"
+              style={{ stroke: accentVar }}
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -1168,17 +1255,25 @@ function MessagesTimeSeriesChart() {
             return (
               <g key={pt.dateKey}>
                 {isHovered && (
-                  <circle cx={x} cy={y} r={baseR + 5} fill="var(--konnix-primary)" opacity="0.25" />
+                  <circle cx={x} cy={y} r={baseR + 5} fill={accentVar} opacity="0.25" />
                 )}
                 <circle
                   cx={x}
                   cy={y}
                   r={isHovered ? baseR + 2 : baseR}
                   fill="var(--konnix-surface)"
-                  stroke="var(--konnix-primary)"
+                  stroke={accentVar}
                   strokeWidth={isHovered ? 2.5 : 2}
                   className="timeseries-dot"
                 />
+                <text
+                  x={x}
+                  y={y - (isHovered ? baseR + 12 : baseR + 9)}
+                  textAnchor="middle"
+                  className="timeseries-value-label"
+                >
+                  {pt.value.toLocaleString('pt-BR')}
+                </text>
               </g>
             )
           })}
@@ -1207,7 +1302,7 @@ function MessagesTimeSeriesChart() {
                 y1={padTop}
                 x2={hoveredPoint.x}
                 y2={padTop + chartH}
-                stroke="var(--konnix-primary)"
+                stroke={accentVar}
                 strokeWidth="1"
                 strokeDasharray="3 3"
                 opacity="0.7"
@@ -1237,8 +1332,9 @@ function MessagesTimeSeriesChart() {
                   y="26"
                   textAnchor="middle"
                   className="timeseries-tooltip-val"
+                  style={{ fill: accentVar }}
                 >
-                  {hoveredPoint.pt.messages.toLocaleString('pt-BR')} msgs
+                  {hoveredPoint.pt.value.toLocaleString('pt-BR')} {unitShort}
                 </text>
               </g>
             </>
@@ -1271,10 +1367,106 @@ function MessagesTimeSeriesChart() {
       </div>
 
       <div className="activity-legend">
-        <span><i />Mensagens enviadas</span>
+        <span><i style={{ background: accentVar }} />{legendLabel}</span>
       </div>
     </article>
   )
+}
+
+function MessagesTimeSeriesChart({ period, onPeriodChange }: { period: MessageTimeSeriesPeriod; onPeriodChange: (period: MessageTimeSeriesPeriod) => void }) {
+  const [data, setData] = useState<MessageTimeSeriesResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    api.adminMessageTimeSeries(period)
+      .then((res) => {
+        if (active) {
+          setData(res)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof ApiError ? err.message : 'Falha ao carregar série temporal de mensagens')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [period])
+
+  return <TimeSeriesChart
+    title="Série Temporal de Mensagens"
+    description="Evolução do envio de mensagens ao longo do tempo"
+    unitShort="msgs"
+    totalLabel="Total no período"
+    averageLabel="Média"
+    peakLabel="Pico"
+    intervalsLabel="Intervalos avaliados"
+    legendLabel="Mensagens enviadas"
+    accentVar="var(--konnix-primary)"
+    gradientId="messages-area-gradient"
+    points={(data?.points ?? []).map((point) => ({ dateKey: point.dateKey, label: point.label, value: point.messages }))}
+    granularity={data?.granularity ?? 'day'}
+    total={data?.totalMessages ?? 0}
+    average={data?.averageMessages ?? 0}
+    peak={data?.peakMessages ?? 0}
+    peakPeriodLabel={data?.peakPeriodLabel ?? ''}
+    period={period}
+    onPeriodChange={onPeriodChange}
+    loading={loading}
+    error={error}
+  />
+}
+
+function AttachmentsTimeSeriesChart({ period, onPeriodChange }: { period: MessageTimeSeriesPeriod; onPeriodChange: (period: MessageTimeSeriesPeriod) => void }) {
+  const [data, setData] = useState<AttachmentTimeSeriesResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    api.adminAttachmentTimeSeries(period)
+      .then((res) => {
+        if (active) {
+          setData(res)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof ApiError ? err.message : 'Falha ao carregar série temporal de arquivos anexados')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [period])
+
+  return <TimeSeriesChart
+    title="Série Temporal de Arquivos Anexados"
+    description="Evolução de todos os arquivos enviados, incluindo áudios"
+    unitShort="arquivos"
+    totalLabel="Total no período"
+    averageLabel="Média"
+    peakLabel="Pico"
+    intervalsLabel="Intervalos avaliados"
+    legendLabel="Arquivos anexados"
+    accentVar="var(--konnix-accent)"
+    gradientId="attachments-area-gradient"
+    points={(data?.points ?? []).map((point) => ({ dateKey: point.dateKey, label: point.label, value: point.attachments }))}
+    granularity={data?.granularity ?? 'day'}
+    total={data?.totalAttachments ?? 0}
+    average={data?.averageAttachments ?? 0}
+    peak={data?.peakAttachments ?? 0}
+    peakPeriodLabel={data?.peakPeriodLabel ?? ''}
+    period={period}
+    onPeriodChange={onPeriodChange}
+    loading={loading}
+    error={error}
+  />
 }
 
 function UserStatusPieChart({ active, readOnly, disabled }: { active: number; readOnly: number; disabled: number }) {
@@ -1344,6 +1536,237 @@ function UserStatusPieChart({ active, readOnly, disabled }: { active: number; re
   </article>
 }
 
+function getThemeColor(theme: string): string {
+  const normalized = normalizeTheme(theme)
+  const colors: Record<string, string> = {
+    DEFAULT: 'var(--konnix-primary)',
+    DARK: '#9aa0a6',
+    BLACK_GRAY: '#6b7280',
+    PINK: '#ec4899',
+    GREEN: 'var(--konnix-ok)',
+    RED: '#ef4444',
+    GREEN_BLACK: '#22c55e',
+    PINK_BLACK: '#f472b6',
+    RED_BLACK: '#f87171',
+    DEFAULT_STRONG: 'color-mix(in srgb, var(--konnix-primary) 80%, var(--konnix-ink))',
+    GREEN_STRONG: '#16a34a',
+    PINK_STRONG: '#db2777',
+    RED_STRONG: '#dc2626',
+  }
+  return colors[normalized] ?? 'var(--konnix-accent)'
+}
+
+function themeLabel(theme: string): string {
+  const normalized = normalizeTheme(theme)
+  return THEME_OPTIONS.find((option) => option.id === normalized)?.label ?? theme
+}
+
+function UserThemesPieChart({ usage }: { usage: EngagementInsights['themeUsage'] }) {
+  const total = usage.reduce((sum, item) => sum + item.users, 0)
+  const r = 34
+  const c = 2 * Math.PI * r
+  const items = usage.filter((item) => item.users > 0).map((item) => ({
+    label: themeLabel(item.theme),
+    count: item.users,
+    color: getThemeColor(item.theme),
+  }))
+
+  let accumulated = 0
+  const slices = items.map((item) => {
+    const strokeLength = total > 0 ? (item.count / total) * c : 0
+    const offset = -accumulated
+    accumulated += strokeLength
+    return { ...item, strokeLength, offset }
+  })
+
+  return <article className="activity-card pie-chart-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Temas dos Usuários</h2>
+        <p>Apenas temas em uso ({total.toLocaleString('pt-BR')} usuários).</p>
+      </div>
+    </div>
+    {items.length === 0 && <div className="admin-empty" style={{ padding: '1.5rem 0', textAlign: 'center' }}>Nenhum tema registrado.</div>}
+    {items.length > 0 && <div className="pie-chart-body theme-pie-chart-body">
+      <div className="pie-chart-svg-wrap">
+        <svg viewBox="0 0 90 90" className="pie-chart-svg" role="img" aria-label="Distribuição de usuários por tema">
+          <circle cx="45" cy="45" r={r} fill="none" stroke="var(--konnix-border)" strokeWidth="10" />
+          {slices.map((slice) => (
+            <circle
+              key={slice.label}
+              cx="45"
+              cy="45"
+              r={r}
+              fill="none"
+              stroke={slice.color}
+              strokeWidth="12"
+              strokeDasharray={`${slice.strokeLength} ${c - slice.strokeLength}`}
+              strokeDashoffset={slice.offset}
+              transform="rotate(-90 45 45)"
+              className="pie-segment"
+            />
+          ))}
+          <text x="45" y="42" textAnchor="middle" className="pie-center-total">{total}</text>
+          <text x="45" y="55" textAnchor="middle" className="pie-center-label">Usuários</text>
+        </svg>
+      </div>
+      <div className="pie-chart-legend theme-pie-legend">
+        {items.map((item) => {
+          const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
+          return (
+            <div key={item.label} className="pie-legend-item">
+              <span className="pie-legend-dot" style={{ backgroundColor: item.color }} />
+              <div className="pie-legend-info">
+                <strong>{item.label}</strong>
+                <small>{item.count.toLocaleString('pt-BR')} <em>({percent}%)</em></small>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>}
+  </article>
+}
+
+function exportAdminOverviewPdf() {
+  const svgElements = Array.from(document.querySelectorAll('.activity-card svg'))
+  const clone = document.createElement('div')
+  clone.style.cssText = 'position:fixed;left:0;top:0;z-index:10000;background:#fff;padding:24px;width:1100px;max-height:100vh;overflow:auto;font-family:Inter,system-ui,sans-serif'
+  const title = document.createElement('h1')
+  title.textContent = 'Visão Geral - Konnix Chat'
+  title.style.cssText = 'margin:0 0 16px;font-size:18px;color:#111'
+  clone.appendChild(title)
+
+  svgElements.forEach((svg) => {
+    const card = svg.closest('.activity-card')
+    if (!card) return
+    const wrapper = document.createElement('section')
+    wrapper.style.cssText = 'margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;padding:12px;page-break-inside:avoid'
+    const head = card.querySelector('.activity-card-head h2')
+    if (head) {
+      const h = document.createElement('h2')
+      h.textContent = head.textContent || ''
+      h.style.cssText = 'margin:0 0 4px;font-size:14px;color:#111'
+      wrapper.appendChild(h)
+    }
+    const cloneSvg = svg.cloneNode(true) as SVGElement
+    cloneSvg.setAttribute('width', '1040')
+    cloneSvg.setAttribute('height', '240')
+    cloneSvg.style.cssText = 'width:100%;height:auto;display:block'
+    wrapper.appendChild(cloneSvg)
+    clone.appendChild(wrapper)
+  })
+
+  // Incluir tabelas de usuários online se existirem
+  const onlineTables = Array.from(document.querySelectorAll('.online-users-table, .admin-table.online-export'))
+  onlineTables.forEach((table) => {
+    const card = table.closest('.activity-card')
+    const wrapper = document.createElement('section')
+    wrapper.style.cssText = 'margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;padding:12px;page-break-inside:avoid'
+    if (card) {
+      const head = card.querySelector('.activity-card-head h2')
+      if (head) {
+        const h = document.createElement('h2')
+        h.textContent = head.textContent || ''
+        h.style.cssText = 'margin:0 0 4px;font-size:14px;color:#111'
+        wrapper.appendChild(h)
+      }
+    }
+    const cloneTable = table.cloneNode(true) as HTMLElement
+    cloneTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px'
+    wrapper.appendChild(cloneTable)
+    clone.appendChild(wrapper)
+  })
+
+  document.body.appendChild(clone)
+  const style = document.createElement('style')
+  style.textContent = `@media print{
+    body * { visibility: hidden !important; }
+    #konnix-pdf-export, #konnix-pdf-export * { visibility: visible !important; }
+    #konnix-pdf-export { position: absolute; left: 0; top: 0; width: 100%; background: #fff; }
+    #konnix-pdf-export table { width: 100%; border-collapse: collapse; }
+    #konnix-pdf-export th, #konnix-pdf-export td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; }
+  }`
+  document.head.appendChild(style)
+  clone.id = 'konnix-pdf-export'
+  setTimeout(() => {
+    window.print()
+    setTimeout(() => {
+      clone.remove()
+      style.remove()
+    }, 800)
+  }, 150)
+}
+
+function TopMessageUsersChart({ users, periodLabel }: { users: EngagementInsights['topUsers']; periodLabel: string }) {
+  const maximum = Math.max(1, ...users.map((user) => user.messages))
+
+  return <article className="activity-card top-users-card">
+    <div className="activity-card-head">
+      <div>
+        <h2>Top 5 Usuários que Mais Falaram</h2>
+        <p>Ranking de mensagens enviadas em {periodLabel.toLowerCase()}.</p>
+      </div>
+    </div>
+    {users.length === 0 && <div className="admin-empty" style={{ padding: '1.5rem 0', textAlign: 'center' }}>Nenhuma mensagem registrada no período.</div>}
+    {users.length > 0 && <div className="top-users-list">
+      {users.map((user, index) => (
+        <div className="top-user-row" key={user.userId}>
+          <span className="top-user-rank">{index + 1}</span>
+          <AvatarImage
+            path={userAvatarPath(user.userId)}
+            className="top-user-avatar"
+            fallback={<span className="top-user-avatar">{(user.name || user.username).slice(0, 1).toUpperCase()}</span>}
+            alt={user.name || user.username}
+          />
+          <div className="top-user-info">
+            <strong>{user.name || user.username}</strong>
+            <small>@{user.username}</small>
+          </div>
+          <div className="top-user-meter" aria-hidden="true">
+            <span style={{ width: `${Math.max(4, (user.messages / maximum) * 100)}%` }} />
+          </div>
+          <strong className="top-user-count">{user.messages.toLocaleString('pt-BR')}</strong>
+        </div>
+      ))}
+    </div>}
+  </article>
+}
+
+function AbsentUsersCard({ users, periodLabel, loading }: { users: EngagementInsights['absentUsers']; periodLabel: string; loading: boolean }) {
+  return <article className={`activity-card absent-users-card ${loading ? 'activity-chart-loading' : ''}`}>
+    <div className="activity-card-head">
+      <div>
+        <h2>Usuários Ativos Ausentes</h2>
+        <p>Contas ativas sem mensagens em {periodLabel.toLowerCase()} ({users.length.toLocaleString('pt-BR')} usuários).</p>
+      </div>
+    </div>
+    {!loading && users.length === 0 && <div className="admin-empty" style={{ padding: '1.5rem 0', textAlign: 'center' }}>Todos os usuários ativos participaram do período.</div>}
+    {users.length > 0 && <div className="absent-users-list">
+      {users.map((user) => (
+        <div className="absent-user-item" key={user.id}>
+          <AvatarImage
+            path={userAvatarPath(user.id)}
+            className="absent-user-avatar"
+            fallback={<span className="absent-user-avatar">{(user.name || user.username).slice(0, 1).toUpperCase()}</span>}
+            alt={user.name || user.username}
+          />
+          <div className="absent-user-info">
+            <strong>{user.name || user.username}</strong>
+            <small>@{user.username}{user.email ? ` · ${user.email}` : ''}</small>
+            <span className="absent-user-meta">
+              <span className={`absent-user-presence presence-${user.presenceStatus}`}>
+                <i className="presence-dot" aria-hidden="true" />{presenceLabel(user.presenceStatus)}
+              </span>
+              <span className="absent-user-theme">{themeLabel(user.theme)}</span>
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>}
+  </article>
+}
+
 function DailyActiveUsersChart({ activity, days, onDaysChange }: { activity: MonitoringMetrics['activity']; days: number; onDaysChange?: (days: number) => void }) {
   const maxActive = Math.max(1, ...activity.map((point) => point.activeUsers))
 
@@ -1405,13 +1828,36 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
 }
 
 function SettingsPanel({ notify }: { notify: (text: string) => void }) {
-  const [settings, setSettings] = useState<AppSettings>({ name: '', maxUploadBytes: 62914560 })
+  const [settings, setSettings] = useState<AppSettings>({ name: 'Konnix Chat', maxUploadBytes: 62914560 })
   const [readEnabled, setReadEnabled] = useState(true)
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(true)
   useEffect(() => { api.adminSettings().then(setSettings).catch(() => undefined) }, [])
   useEffect(() => { api.readReceiptSetting().then((setting) => setReadEnabled(setting.enabled)).catch(() => undefined) }, [])
-  const saveApp = async (input: AppSettings) => { try { setSettings(await api.adminUpdateSettings(input)); notify('Configuração salva') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao salvar configuração') } }
+  useEffect(() => { api.audioTranscriptionSetting().then((setting) => setTranscriptionEnabled(setting.enabled)).catch(() => undefined) }, [])
+  const saveApp = async (input: AppSettings) => {
+    try {
+      const payload: AppSettings = {
+        name: input.name.trim() || 'Konnix Chat',
+        maxUploadBytes: Math.max(1, Math.floor(Number(input.maxUploadBytes) || 0)),
+      }
+      const saved = await api.adminUpdateSettings(payload)
+      setSettings(saved)
+      notify(`Configuração salva (${formatBytes(saved.maxUploadBytes)})`)
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao salvar configuração')
+    }
+  }
   const toggleRead = async () => { try { const result = await api.setReadReceiptSetting(!readEnabled); setReadEnabled(result.enabled); notify('Confirmação de leitura atualizada') } catch (error) { notify(error instanceof ApiError ? error.message : 'Falha ao alterar confirmação de leitura') } }
-  return <section className="admin-panel"><div className="admin-panel-title"><div><h1>Configurações</h1><p>Cada configuração pode ser alterada de forma independente.</p></div></div><div className="settings-table-wrap"><table className="admin-table settings-table"><thead><tr><th>Configuração</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead><tbody><tr><td><strong>Nome da aplicação</strong><small className="admin-subline">Nome exibido no sistema</small></td><td><input className="input settings-value" value={settings.name} onChange={(event) => setSettings({ ...settings, name: event.target.value })} /></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Limite máximo de upload</strong><small className="admin-subline">Tamanho permitido para arquivos</small></td><td><div className="settings-upload-value"><input className="input settings-value" type="number" min={1} value={settings.maxUploadBytes} onChange={(event) => setSettings({ ...settings, maxUploadBytes: Number(event.target.value) })} /><small>{formatBytes(settings.maxUploadBytes)}</small></div></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Confirmação de leitura</strong><small className="admin-subline">Permite registrar e consultar quem leu mensagens</small></td><td><span className={`admin-status ${readEnabled ? 'active' : 'inactive'}`}>{readEnabled ? 'Ativa' : 'Desativada'}</span></td><td><span className={`admin-status ${readEnabled ? 'active' : 'inactive'}`}>{readEnabled ? 'Ativa' : 'Desativada'}</span></td><td><button className={`settings-toggle ${readEnabled ? 'on' : 'off'}`} onClick={toggleRead}>{readEnabled ? 'Desativar' : 'Ativar'}</button></td></tr></tbody></table></div></section>
+  const toggleTranscription = async () => {
+    try {
+      const result = await api.setAudioTranscriptionSetting(!transcriptionEnabled)
+      setTranscriptionEnabled(result.enabled)
+      notify(`Transcrição de áudio ${result.enabled ? 'ativada' : 'desativada'}`)
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : 'Falha ao alterar configuração de transcrição de áudio')
+    }
+  }
+  return <section className="admin-panel"><div className="admin-panel-title"><div><h1>Configurações</h1><p>Cada configuração pode ser alterada de forma independente.</p></div></div><div className="settings-table-wrap"><table className="admin-table settings-table"><thead><tr><th>Configuração</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead><tbody><tr><td><strong>Nome da aplicação</strong><small className="admin-subline">Nome exibido no sistema</small></td><td><input className="input settings-value" value={settings.name} onChange={(event) => setSettings({ ...settings, name: event.target.value })} /></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Limite máximo de upload</strong><small className="admin-subline">Tamanho permitido para arquivos</small></td><td><div className="settings-upload-value"><input className="input settings-value" type="number" min={1} value={settings.maxUploadBytes} onChange={(event) => setSettings({ ...settings, maxUploadBytes: Number(event.target.value) })} /><small>{formatBytes(settings.maxUploadBytes)}</small></div></td><td><span className="admin-status active">Ativa</span></td><td><button className="btn-primary" onClick={() => saveApp(settings)}>Salvar</button></td></tr><tr><td><strong>Confirmação de leitura</strong><small className="admin-subline">Permite registrar e consultar quem leu mensagens</small></td><td></td><td><span className={`admin-status ${readEnabled ? 'active' : 'inactive'}`}>{readEnabled ? 'Ativa' : 'Desativada'}</span></td><td><button className={`settings-toggle ${readEnabled ? 'on' : 'off'}`} onClick={toggleRead}>{readEnabled ? 'Desativar' : 'Ativar'}</button></td></tr><tr><td><strong>Transcrição de áudio (IA Whisper)</strong><small className="admin-subline">Permite aos usuários transcrever mensagens de áudio na interface</small></td><td></td><td><span className={`admin-status ${transcriptionEnabled ? 'active' : 'inactive'}`}>{transcriptionEnabled ? 'Ativa' : 'Desativada'}</span></td><td><button className={`settings-toggle ${transcriptionEnabled ? 'on' : 'off'}`} onClick={toggleTranscription}>{transcriptionEnabled ? 'Desativar' : 'Ativar'}</button></td></tr></tbody></table></div></section>
 }
 
 function Pager({ page, totalPages, onPage, pageSize, onPageSize }: { page: number; totalPages: number; onPage: (page: number) => void; pageSize?: number; onPageSize?: (size: number) => void }) {
@@ -1452,4 +1898,39 @@ function Pager({ page, totalPages, onPage, pageSize, onPageSize }: { page: numbe
       </div>
     </div>
   )
+}
+
+function OnlineUsersListCard({ users, loading }: { users: User[]; loading: boolean }) {
+  const online = useMemo(() => users
+    .filter((user) => user.active && user.accountStatus === 'ACTIVE' && user.presenceStatus !== 'offline')
+    .sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username)), [users])
+
+  return <article className={`activity-card ${loading ? 'activity-chart-loading' : ''}`}>
+    <div className="activity-card-head">
+      <div>
+        <h2>Usuários Online Agora</h2>
+        <p>Listagem conforme usuários ativos não offline ({online.length.toLocaleString('pt-BR')} usuários).</p>
+      </div>
+    </div>
+    {!loading && online.length === 0 && <div className="admin-empty" style={{ padding: '1.5rem 0', textAlign: 'center' }}>Nenhum usuário online no momento.</div>}
+    {online.length > 0 && <div className="online-users-grid">
+      {online.map((user) => (
+        <div className="online-user-card" key={user.id}>
+          <AvatarImage
+            path={userAvatarPath(user.id)}
+            className="online-user-avatar"
+            fallback={<span className="online-user-avatar">{(user.name || user.username).slice(0, 1).toUpperCase()}</span>}
+            alt={user.name || user.username}
+          />
+          <div className="online-user-info">
+            <strong>{user.name || user.username}</strong>
+            <small>@{user.username}</small>
+          </div>
+          <span className={`online-user-presence presence-${user.presenceStatus}`}>
+            <i className="presence-dot" aria-hidden="true" />{presenceLabel(user.presenceStatus)}
+          </span>
+        </div>
+      ))}
+    </div>}
+  </article>
 }

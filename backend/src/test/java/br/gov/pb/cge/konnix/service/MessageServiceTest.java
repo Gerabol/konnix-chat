@@ -1,11 +1,16 @@
 package br.gov.pb.cge.konnix.service;
 
+import br.gov.pb.cge.konnix.api.exception.ApiException;
 import br.gov.pb.cge.konnix.api.message.dto.CreateMessageRequest;
 import br.gov.pb.cge.konnix.api.message.dto.MessageResponse;
+import br.gov.pb.cge.konnix.api.message.dto.ReadReceiptResponse;
+import br.gov.pb.cge.konnix.api.message.dto.UpdateMessageRequest;
 import br.gov.pb.cge.konnix.domain.attachment.Attachment;
 import br.gov.pb.cge.konnix.domain.attachment.AttachmentRepository;
 import br.gov.pb.cge.konnix.domain.audit.AuditService;
 import br.gov.pb.cge.konnix.domain.message.Message;
+import br.gov.pb.cge.konnix.domain.message.MessageMentionRepository;
+import br.gov.pb.cge.konnix.domain.message.MessageRead;
 import br.gov.pb.cge.konnix.domain.message.MessageReadRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageReactionRepository;
 import br.gov.pb.cge.konnix.domain.message.MessageRepository;
@@ -63,6 +68,8 @@ class MessageServiceTest {
     @Mock
     private MessageReadRepository messageReadRepository;
     @Mock
+    private MessageMentionRepository messageMentionRepository;
+    @Mock
     private MessageReactionRepository reactionRepository;
     @Mock
     private PollRepository pollRepository;
@@ -96,6 +103,7 @@ class MessageServiceTest {
                 eventPublisher,
                 pushNotificationService,
                 messageReadRepository,
+                messageMentionRepository,
                 systemSettingService,
                 reactionRepository,
                 pollRepository,
@@ -468,4 +476,419 @@ class MessageServiceTest {
         verify(attachmentRepository).save(any(Attachment.class));
     }
 
+    private Message editableMessage(UUID authorId, String content) {
+        Room room = new Room();
+        room.setId(UUID.randomUUID());
+
+        User author = new User();
+        author.setId(authorId);
+        author.setUsername("ana");
+        author.setName("Ana");
+        author.setRoles(Set.of());
+
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+        message.setUser(author);
+        message.setContent(content);
+        message.setMessageType("USER");
+        return message;
+    }
+
+    private void stubResponseDependencies() {
+        when(attachmentRepository.findAllByMessageIdIn(any())).thenReturn(List.of());
+        when(reactionRepository.findByMessageIdIn(any())).thenReturn(List.of());
+        when(pollRepository.findByMessageId(any())).thenReturn(Optional.empty());
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(false);
+        when(roomMemberRepository.findByRoomIdAndUserId(any(), any())).thenReturn(Optional.empty());
+        when(messageRepository.save(any(Message.class))).thenAnswer(call -> call.getArgument(0));
+    }
+
+    @Test
+    void updatesCaptionOfMessageWithAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "print.png");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        stubResponseDependencies();
+
+        MessageResponse response = messageService.update(
+                message.getId(), new UpdateMessageRequest("Relatório do trimestre"), principal, null);
+
+        assertThat(response.content()).isEqualTo("Relatório do trimestre");
+        assertThat(message.getContent()).isEqualTo("Relatório do trimestre");
+        assertThat(message.getEditedAt()).isNotNull();
+    }
+
+    @Test
+    void allowsClearingCaptionWhenMessageHasAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "print.png");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.of(new Attachment()));
+        stubResponseDependencies();
+
+        MessageResponse response = messageService.update(message.getId(), new UpdateMessageRequest("   "), principal, null);
+
+        assertThat(response.content()).isEmpty();
+    }
+
+    @Test
+    void rejectsClearingTextOfMessageWithoutAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "Bom dia");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.update(message.getId(), new UpdateMessageRequest(""), principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("MESSAGE_CONTENT_REQUIRED");
+
+        assertThat(message.getContent()).isEqualTo("Bom dia");
+    }
+
+    @Test
+    void rejectsNullContentOnMessageWithoutAttachment() {
+        UUID actorId = UUID.randomUUID();
+        Message message = editableMessage(actorId, "Bom dia");
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        User actor = new User();
+        actor.setId(actorId);
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(attachmentRepository.findByMessageId(message.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.update(message.getId(), new UpdateMessageRequest(null), principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("MESSAGE_CONTENT_REQUIRED");
+    }
+
+    @Test
+    void getMessageReaders_whenValid_returnsReceipts() {
+        UUID actorId = UUID.randomUUID();
+        UUID reader1Id = UUID.randomUUID();
+        UUID reader2Id = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        User reader1 = new User();
+        reader1.setId(reader1Id);
+        reader1.setUsername("carlos");
+        reader1.setName("Carlos Eduardo");
+
+        User reader2 = new User();
+        reader2.setId(reader2Id);
+        reader2.setUsername("beatriz");
+        reader2.setName("Beatriz Lima");
+
+        MessageRead read1 = new MessageRead();
+        read1.setMessage(message);
+        read1.setUser(reader1);
+        read1.setReadAt(Instant.now().minusSeconds(120));
+
+        MessageRead read2 = new MessageRead();
+        read2.setMessage(message);
+        read2.setUser(reader2);
+        read2.setReadAt(Instant.now().minusSeconds(60));
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "autor", "Autor", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(true);
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(true);
+        when(messageReadRepository.findByMessageIdWithUser(message.getId())).thenReturn(List.of(read1, read2));
+
+        List<ReadReceiptResponse> result = messageService.getMessageReaders(message.getId(), actor);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).username()).isEqualTo("carlos");
+        assertThat(result.get(0).name()).isEqualTo("Carlos Eduardo");
+        assertThat(result.get(1).username()).isEqualTo("beatriz");
+        assertThat(result.get(1).name()).isEqualTo("Beatriz Lima");
+    }
+
+    @Test
+    void getMessageReaders_whenNotMember_throwsForbidden() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "estranho", "Estranho", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(false);
+
+        assertThatThrownBy(() -> messageService.getMessageReaders(message.getId(), actor))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("NOT_ROOM_MEMBER");
+    }
+
+    @Test
+    void getMessageReaders_whenMessageNotFound_throwsNotFound() {
+        UUID messageId = UUID.randomUUID();
+        AuthenticatedUser actor = new AuthenticatedUser(UUID.randomUUID(), "actor", "Actor", Set.of("USER"));
+
+        when(messageRepository.findById(messageId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.getMessageReaders(messageId, actor))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void getMessageReaders_whenReadReceiptsDisabled_returnsEmptyList() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+
+        Room room = new Room();
+        room.setId(roomId);
+        Message message = new Message();
+        message.setId(UUID.randomUUID());
+        message.setRoom(room);
+
+        AuthenticatedUser actor = new AuthenticatedUser(actorId, "actor", "Actor", Set.of("USER"));
+
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomId, actorId)).thenReturn(true);
+        when(systemSettingService.readReceiptsEnabled()).thenReturn(false);
+
+        List<ReadReceiptResponse> result = messageService.getMessageReaders(message.getId(), actor);
+
+        assertThat(result).isEmpty();
+        verify(messageReadRepository, never()).findByMessageIdWithUser(any());
+    }
+
+    @Test
+    void allowsPrivateReplyInDirectRoomToGroupMessage() {
+        UUID actorId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+        actor.setUsername("ana");
+
+        User partner = new User();
+        partner.setId(partnerId);
+        partner.setUsername("bruno");
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+        groupRoom.setName("dev-team");
+        groupRoom.setDisplayName("Equipe de Desenvolvimento");
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+        parentMessage.setUser(partner);
+        parentMessage.setContent("Alguém viu a issue #123?");
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        RoomMember actorMember = new RoomMember();
+        actorMember.setUser(actor);
+        actorMember.setJoinedAt(Instant.now());
+
+        RoomMember partnerMember = new RoomMember();
+        partnerMember.setUser(partner);
+        partnerMember.setJoinedAt(Instant.now());
+
+        when(roomMemberRepository.findByRoomId(directRoomId)).thenReturn(List.of(actorMember, partnerMember));
+        when(roomMemberRepository.findByRoomIdAndUserId(groupRoomId, partnerId)).thenReturn(Optional.of(partnerMember));
+        when(attachmentRepository.findAllByMessageIdIn(any())).thenReturn(List.of());
+        when(messageRepository.save(any(Message.class))).thenAnswer(call -> {
+            Message saved = call.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(UUID.randomUUID());
+            }
+            return saved;
+        });
+
+        MessageResponse response = messageService.create(directRoomId,
+                new CreateMessageRequest("Respondendo no particular sobre isso", parentMessageId, null),
+                principal, "127.0.0.1");
+
+        assertThat(response).isNotNull();
+        assertThat(response.parentMessageId()).isEqualTo(parentMessageId);
+        assertThat(response.quotedMessage()).isNotNull();
+        assertThat(response.quotedMessage().id()).isEqualTo(parentMessageId);
+        assertThat(response.quotedMessage().username()).isEqualTo("bruno");
+        assertThat(response.quotedMessage().originRoomId()).isEqualTo(groupRoomId);
+        assertThat(response.quotedMessage().originRoomName()).isEqualTo("Equipe de Desenvolvimento");
+    }
+
+    @Test
+    void rejectsPrivateReplyIfActorNotMemberOfGroup() {
+        UUID actorId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(false);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        assertThatThrownBy(() -> messageService.create(directRoomId,
+                new CreateMessageRequest("Tentando responder sem ser membro", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("NOT_ROOM_MEMBER");
+    }
+
+    @Test
+    void rejectsPrivateReplyIfDirectPartnerNotMemberOfGroup() {
+        UUID actorId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        UUID directRoomId = UUID.randomUUID();
+        UUID groupRoomId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        User partner = new User();
+        partner.setId(partnerId);
+
+        User thirdUser = new User();
+        thirdUser.setId(UUID.randomUUID());
+
+        Room directRoom = new Room();
+        directRoom.setId(directRoomId);
+        directRoom.setType("DIRECT");
+
+        Room groupRoom = new Room();
+        groupRoom.setId(groupRoomId);
+        groupRoom.setType(RoomService.TYPE_PRIVATE_GROUP);
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(groupRoom);
+        parentMessage.setUser(thirdUser);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(directRoomId)).thenReturn(Optional.of(directRoom));
+        when(roomMemberRepository.existsByRoomIdAndUserId(directRoomId, actorId)).thenReturn(true);
+        when(roomMemberRepository.existsByRoomIdAndUserId(groupRoomId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(directRoom, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        RoomMember actorMember = new RoomMember();
+        actorMember.setUser(actor);
+        RoomMember partnerMember = new RoomMember();
+        partnerMember.setUser(partner);
+
+        when(roomMemberRepository.findByRoomId(directRoomId)).thenReturn(List.of(actorMember, partnerMember));
+        when(roomMemberRepository.findByRoomIdAndUserId(groupRoomId, partnerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.create(directRoomId,
+                new CreateMessageRequest("Tentando vazar info de grupo secreto", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("PARENT_ROOM_MISMATCH");
+    }
+
+    @Test
+    void rejectsCrossRoomReplyBetweenTwoNonDirectRooms() {
+        UUID actorId = UUID.randomUUID();
+        UUID roomAId = UUID.randomUUID();
+        UUID roomBId = UUID.randomUUID();
+        UUID parentMessageId = UUID.randomUUID();
+
+        User actor = new User();
+        actor.setId(actorId);
+
+        Room roomA = new Room();
+        roomA.setId(roomAId);
+        roomA.setType("CHANNEL");
+
+        Room roomB = new Room();
+        roomB.setId(roomBId);
+        roomB.setType("CHANNEL");
+
+        Message parentMessage = new Message();
+        parentMessage.setId(parentMessageId);
+        parentMessage.setRoom(roomA);
+
+        AuthenticatedUser principal = new AuthenticatedUser(actorId, "ana", "Ana", Set.of("USER"));
+
+        when(userRepository.findById(actorId)).thenReturn(Optional.of(actor));
+        when(roomRepository.findById(roomBId)).thenReturn(Optional.of(roomB));
+        when(roomMemberRepository.existsByRoomIdAndUserId(roomBId, actorId)).thenReturn(true);
+        when(roomAccessService.canWriteToRoom(roomB, actorId, false)).thenReturn(true);
+        when(messageRepository.findById(parentMessageId)).thenReturn(Optional.of(parentMessage));
+
+        assertThatThrownBy(() -> messageService.create(roomBId,
+                new CreateMessageRequest("Citação inválida entre canais", parentMessageId, null),
+                principal, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo("PARENT_ROOM_MISMATCH");
+    }
 }
