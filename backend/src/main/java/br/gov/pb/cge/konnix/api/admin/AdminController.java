@@ -174,6 +174,20 @@ public class AdminController {
         return ApiResponse.ok(monitoringService.messageTimeSeries(selectedPeriod));
     }
 
+    @GetMapping("/monitoring/attachments-timeseries")
+    public ApiResponse<AttachmentTimeSeriesResponse> attachmentTimeSeries(
+            @RequestParam(defaultValue = "DAYS_7") String period) {
+        MessageTimeSeriesPeriod selectedPeriod = MessageTimeSeriesPeriod.fromString(period);
+        return ApiResponse.ok(monitoringService.attachmentTimeSeries(selectedPeriod));
+    }
+
+    @GetMapping("/monitoring/engagement")
+    public ApiResponse<EngagementInsightsResponse> engagementInsights(
+            @RequestParam(defaultValue = "DAYS_7") String period) {
+        MessageTimeSeriesPeriod selectedPeriod = MessageTimeSeriesPeriod.fromString(period);
+        return ApiResponse.ok(monitoringService.engagementInsights(selectedPeriod));
+    }
+
     @GetMapping("/settings")
     public ApiResponse<AppSettingsResponse> settings() { return ApiResponse.ok(settingService.appSettings(defaultMaxUpload, defaultAppName)); }
 

@@ -3,6 +3,7 @@ import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMo
 import { api, ApiError, formatDay, formatFullTimestamp, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { FavoriteMessage, Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
+import { isAudioFile as isAudioFileLike } from '../../utils/attachmentKind'
 import { copyText, resolvePaste } from '../../utils/clipboard'
 import { clearRoomDraft, readRoomDraft, saveRoomDraft } from '../../utils/drafts'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
@@ -2003,9 +2004,7 @@ export function RoomView({
             </div>
           ))}
           {pendingUploads.map((upload) => {
-            const isAudioFile =
-              upload.file.type.startsWith('audio/') ||
-              /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm)$/i.test(upload.file.name)
+            const isAudioFile = isAudioFileLike(upload.file)
             const isImageFile = upload.file.type.startsWith('image/')
             const icon = isAudioFile ? '🎵' : isImageFile ? '🖼' : '📎'
             return (

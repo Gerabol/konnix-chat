@@ -108,6 +108,32 @@ class FileStorageIntegrationTest {
     }
 
     @Test
+    void uploadDeVideoMp4EhMantidoComoAnexoDeVideo() throws Exception {
+        String roomId = createRoom(adminToken, "canal-video-mp4", "CHANNEL");
+
+        mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "apresentacao.mp4", "video/mp4", CONTEUDO))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachment.originalName").value("apresentacao.mp4"))
+                .andExpect(jsonPath("$.data.attachment.mimeType").value("video/mp4"))
+                .andExpect(jsonPath("$.data.attachment.size").value(CONTEUDO.length));
+    }
+
+    @Test
+    void uploadDeVideoWebmEhMantidoComoAnexoDeVideo() throws Exception {
+        String roomId = createRoom(adminToken, "canal-video-webm", "CHANNEL");
+
+        mockMvc.perform(multipart("/api/v1/rooms/{id}/files", roomId)
+                        .file(new MockMultipartFile("file", "gravacao-da-tela.webm", "video/webm", CONTEUDO))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachment.originalName").value("gravacao-da-tela.webm"))
+                .andExpect(jsonPath("$.data.attachment.mimeType").value("video/webm"))
+                .andExpect(jsonPath("$.data.attachment.size").value(CONTEUDO.length));
+    }
+
+    @Test
     void uploadSemAutenticacao() throws Exception {
         String roomId = createRoom(adminToken, "canal-nauth", "CHANNEL");
 

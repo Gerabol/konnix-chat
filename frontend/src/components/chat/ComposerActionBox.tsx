@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatBytes } from '../../api'
 import type { Attachment, Room } from '../../api'
+import { isAudioAttachment, isAudioFile } from '../../utils/attachmentKind'
 import { IconAudioWave, IconClip, IconCode, IconMic, IconPencil, IconPlus, IconStop, IconTrash, IconX } from '../icons'
 
 export function ComposerPendingAttachments({
@@ -19,7 +20,7 @@ export function ComposerPendingAttachments({
   return (
     <div className={`composer-pending-attachments ${hasImage ? 'has-image' : ''}`} data-composer-pending-attachments aria-label="Anexos pendentes">
       {files.map((file, index) => {
-        const isAudio = file.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm)$/i.test(file.name)
+        const isAudio = isAudioFile(file)
         const image = file.type.startsWith('image/') && urls[index]
         return image ? (
           <div className="composer-pending-attachment composer-pending-image" key={`${file.name}-${file.lastModified}-${index}`}>
@@ -70,9 +71,7 @@ export function ComposerEditingAttachments({ attachments }: { attachments: Attac
   return (
     <div className="composer-pending-attachments" aria-label="Anexos da mensagem em edição">
       {attachments.map((attachment) => {
-        const isAudio =
-          attachment.mimeType?.startsWith('audio/') ||
-          /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm)$/i.test(attachment.originalName)
+        const isAudio = isAudioAttachment(attachment)
         return (
           <div className={`composer-pending-attachment composer-pending-file ${isAudio ? 'composer-pending-audio' : ''}`} key={attachment.id}>
             <span className={`composer-pending-icon ${isAudio ? 'audio' : 'generic'}`} aria-hidden="true">
