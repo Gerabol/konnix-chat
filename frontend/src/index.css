@@ -9447,20 +9447,16 @@ img.room-header-avatar {
   justify-content: center;
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 20px calc(14px + var(--safe-bottom, 0px));
+  padding: 10px 16px calc(14px + var(--safe-bottom, 0px));
   background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
   z-index: 20;
 }
 
 .media-carousel-thumb-strip {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow-x: auto;
+  width: 100%;
   max-width: 100%;
-  width: fit-content;
-  margin: 0 auto;
-  padding: 6px 10px;
+  overflow-x: auto;
   box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
@@ -9474,6 +9470,16 @@ img.room-header-avatar {
 .media-carousel-thumb-strip::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.25);
   border-radius: 3px;
+}
+
+.media-carousel-thumb-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto;
+  padding: 6px 16px;
+  min-width: min-content;
+  box-sizing: border-box;
 }
 
 .media-carousel-thumb {
@@ -9574,6 +9580,10 @@ img.room-header-avatar {
   }
   .media-carousel-footer {
     padding: 8px 10px calc(12px + var(--safe-bottom, 0px));
+  }
+  .media-carousel-thumb-track {
+    gap: 8px;
+    padding: 4px 8px;
   }
   .media-carousel-thumb {
     flex: 0 0 58px;

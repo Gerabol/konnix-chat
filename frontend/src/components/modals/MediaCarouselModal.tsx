@@ -515,27 +515,29 @@ export function MediaCarouselModal({
         {items.length > 1 && (
           <footer className="media-carousel-footer">
             <div className="media-carousel-thumb-strip" ref={thumbStripRef}>
-              {items.map((item, index) => {
-                const isActive = index === currentIndex
-                return (
-                  <button
-                    key={item.id}
-                    ref={isActive ? activeThumbRef : null}
-                    type="button"
-                    className={`media-carousel-thumb ${isActive ? 'active' : ''}`}
-                    onClick={() => {
-                      if (videoRef.current) videoRef.current.pause()
-                      setHasNavigated(true)
-                      setCurrentIndex(index)
-                    }}
-                    title={`${item.originalName} (${item.type === 'video' ? 'Vídeo' : 'Imagem'})`}
-                    aria-label={`Visualizar ${item.originalName}`}
-                    aria-current={isActive ? 'true' : undefined}
-                  >
-                    <ThumbnailItem item={item} isActive={isActive} />
-                  </button>
-                )
-              })}
+              <div className="media-carousel-thumb-track">
+                {items.map((item, index) => {
+                  const isActive = index === currentIndex
+                  return (
+                    <button
+                      key={item.id}
+                      ref={isActive ? activeThumbRef : null}
+                      type="button"
+                      className={`media-carousel-thumb ${isActive ? 'active' : ''}`}
+                      onClick={() => {
+                        if (videoRef.current) videoRef.current.pause()
+                        setHasNavigated(true)
+                        setCurrentIndex(index)
+                      }}
+                      title={`${item.originalName} (${item.type === 'video' ? 'Vídeo' : 'Imagem'})`}
+                      aria-label={`Visualizar ${item.originalName}`}
+                      aria-current={isActive ? 'true' : undefined}
+                    >
+                      <ThumbnailItem item={item} isActive={isActive} />
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </footer>
         )}
