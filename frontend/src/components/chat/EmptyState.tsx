@@ -1,17 +1,35 @@
 import { IconMessage } from '../icons'
-import { AboutDetails } from '../modals/AboutModal'
+import { SuiteCard } from './SuiteCard'
+import { NexusCard } from './NexusCard'
 
-export function EmptyState({ onOpenSidebar }: { onOpenSidebar: () => void }) {
+export interface EmptyStateProps {
+  onOpenSidebar?: () => void
+}
+
+export function EmptyState({ onOpenSidebar }: EmptyStateProps) {
   return (
-    <div className="empty-state">
-      <img src="/icons/icon-192.png" alt="Konnix" className="empty-logo" />
-      <h2>Konnix Chat</h2>
-      <p>Comunicação corporativa segura e em tempo real.</p>
-      <button type="button" className="btn-primary empty-chat-action" onClick={onOpenSidebar}>
-        <IconMessage size={18} />
-        <span>Conversar</span>
-      </button>
-      <AboutDetails className="empty-about-details" />
+    <div className="kx-empty-state-wrap">
+      <div className="kx-empty-state-center">
+        {onOpenSidebar && (
+          <button
+            type="button"
+            className="btn-primary empty-chat-action"
+            onClick={onOpenSidebar}
+            aria-label="Abrir conversas"
+          >
+            <IconMessage size={18} />
+            <span>Conversar</span>
+          </button>
+        )}
+        <div className="kx-empty-state-stack">
+          <SuiteCard />
+          <NexusCard />
+        </div>
+      </div>
+
+      <footer className="kx-empty-state-footer">
+        Konnix © 2026 · Geraldo Valencia &amp; Colaboradores
+      </footer>
     </div>
   )
 }
