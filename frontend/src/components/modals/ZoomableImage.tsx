@@ -31,6 +31,7 @@ type Gesture =
       startTransform: ZoomTransform
       startedAt: number
       moved: boolean
+      startedOnImage: boolean
     }
   | {
       kind: 'pinch'
@@ -38,6 +39,7 @@ type Gesture =
       startMidpoint: ZoomPoint
       startDistance: number
       startTransform: ZoomTransform
+      center: ZoomPoint
       minScale: number
     }
 
@@ -54,6 +56,7 @@ type ZoomableImageProps = {
   stageClassName?: string
   imageClassName?: string
   onScaleChange?: (scale: number) => void
+  onBackgroundTap?: () => void
   ref?: Ref<ZoomableImageHandle>
 }
 
@@ -84,9 +87,12 @@ function contentCenter(el: HTMLElement): ZoomPoint {
   }
 }
 
-function pointFromClient(el: HTMLElement, clientX: number, clientY: number): ZoomPoint {
-  const center = contentCenter(el)
+function pointFromCenter(center: ZoomPoint, clientX: number, clientY: number): ZoomPoint {
   return { x: clientX - center.x, y: clientY - center.y }
+}
+
+function pointFromClient(el: HTMLElement, clientX: number, clientY: number): ZoomPoint {
+  return pointFromCenter(contentCenter(el), clientX, clientY)
 }
 
 function distance(a: ZoomPoint, b: ZoomPoint): number {
@@ -113,6 +119,7 @@ export function ZoomableImage({
   stageClassName,
   imageClassName,
   onScaleChange,
+  onBackgroundTap,
   ref,
 }: ZoomableImageProps): ReactElement {
   const stageRef = useRef<HTMLDivElement>(null)
@@ -225,10 +232,9 @@ export function ZoomableImage({
   useImperativeHandle(ref, () => ({ zoomIn, zoomOut, reset, panBy }), [zoomIn, zoomOut, reset, panBy])
 
   const handleTap = useCallback(
-    (clientX: number, clientY: number, time: number) => {
+    (start: Tap, end: Tap) => {
       const el = stageRef.current
-      const tap: Tap = { x: clientX, y: clientY, time }
-      if (isDoubleTap(lastTapRef.current, tap, DOUBLE_TAP_MAX_GAP_MS, DOUBLE_TAP_MAX_DISTANCE_PX)) {
+      if (isDoubleTap(lastTapRef.current, start, DOUBLE_TAP_MAX_GAP_MS, DOUBLE_TAP_MAX_DISTANCE_PX)) {
         lastTapRef.current = null
         const current = transformRef.current
         if (Math.abs(current.scale - 1) <= 0.001) {
@@ -238,7 +244,7 @@ export function ZoomableImage({
           applyTransform(
             zoomAroundPoint(
               current,
-              pointFromClient(el, clientX, clientY),
+              pointFromClient(el, start.x, start.y),
               DOUBLE_TAP_ZOOM_SCALE,
               currentBase,
               currentViewport,
@@ -249,7 +255,8 @@ export function ZoomableImage({
         }
         return
       }
-      lastTapRef.current = tap
+      // The gap for the next double tap starts when this tap ends.
+      lastTapRef.current = end
     },
     [applyTransform],
   )
@@ -261,13 +268,15 @@ export function ZoomableImage({
     const first = entries[0]
     const second = entries[1]
     const startMidpointClient = midpoint(first[1], second[1])
+    const center = contentCenter(el)
     const current = transformRef.current
     gestureRef.current = {
       kind: 'pinch',
       pointerIds: [first[0], second[0]],
-      startMidpoint: pointFromClient(el, startMidpointClient.x, startMidpointClient.y),
+      startMidpoint: pointFromCenter(center, startMidpointClient.x, startMidpointClient.y),
       startDistance: distance(first[1], second[1]),
       startTransform: current,
+      center,
       minScale: Math.min(1, current.scale),
     }
     lastTapRef.current = null
@@ -279,6 +288,8 @@ export function ZoomableImage({
     if (pointersRef.current.size >= 2) return
 
     const point = { x: event.clientX, y: event.clientY }
+    const startedOnImage = event.target === imageRef.current
+    if (!startedOnImage) lastTapRef.current = null
     pointersRef.current.set(event.pointerId, point)
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -294,6 +305,7 @@ export function ZoomableImage({
         startTransform: transformRef.current,
         startedAt: performance.now(),
         moved: false,
+        startedOnImage,
       }
       return
     }
@@ -334,18 +346,17 @@ export function ZoomableImage({
     }
 
     if (gesture.kind === 'pinch' && gesture.pointerIds.includes(event.pointerId)) {
-      const el = stageRef.current
       const currentBase = baseRef.current
       const currentViewport = viewportRef.current
       const first = pointersRef.current.get(gesture.pointerIds[0])
       const second = pointersRef.current.get(gesture.pointerIds[1])
-      if (!el || !currentBase || !currentViewport || !first || !second) return
+      if (!currentBase || !currentViewport || !first || !second) return
       const midpointClient = midpoint(first, second)
       applyTransform(
         pinchTransform({
           start: gesture.startTransform,
           startMidpoint: gesture.startMidpoint,
-          currentMidpoint: pointFromClient(el, midpointClient.x, midpointClient.y),
+          currentMidpoint: pointFromCenter(gesture.center, midpointClient.x, midpointClient.y),
           startDistance: gesture.startDistance,
           currentDistance: distance(first, second),
           minScale: gesture.minScale,
@@ -361,31 +372,35 @@ export function ZoomableImage({
     if (!pointersRef.current.has(event.pointerId)) return
     pointersRef.current.delete(event.pointerId)
 
-    const gesture = gestureRef.current
-    if (gesture.kind === 'press' && gesture.pointerId === event.pointerId) {
-      if (!cancelled) {
-        const end: Tap = { x: event.clientX, y: event.clientY, time: performance.now() }
-        const start: Tap = { ...gesture.startClient, time: gesture.startedAt }
-        if (!gesture.moved && isTap(start, end, TAP_MAX_MOVEMENT_PX, TAP_MAX_DURATION_MS)) {
-          handleTap(event.clientX, event.clientY, end.time)
-        } else {
-          lastTapRef.current = null
-        }
-      } else {
-        lastTapRef.current = null
-      }
+    if (cancelled) {
+      pointersRef.current.clear()
       gestureRef.current = { kind: 'none' }
+      lastTapRef.current = null
       setGesturing(false)
       return
     }
 
-    if (gesture.kind === 'pinch' && gesture.pointerIds.includes(event.pointerId)) {
-      if (cancelled) {
-        gestureRef.current = { kind: 'none' }
+    const gesture = gestureRef.current
+    if (gesture.kind === 'press' && gesture.pointerId === event.pointerId) {
+      const end: Tap = { x: event.clientX, y: event.clientY, time: performance.now() }
+      const start: Tap = { ...gesture.startClient, time: gesture.startedAt }
+      const tapped = !gesture.moved && isTap(start, end, TAP_MAX_MOVEMENT_PX, TAP_MAX_DURATION_MS)
+      gestureRef.current = { kind: 'none' }
+      setGesturing(false)
+      if (!tapped) {
         lastTapRef.current = null
-        setGesturing(false)
         return
       }
+      if (gesture.startedOnImage) {
+        handleTap(start, end)
+      } else {
+        lastTapRef.current = null
+        onBackgroundTap?.()
+      }
+      return
+    }
+
+    if (gesture.kind === 'pinch' && gesture.pointerIds.includes(event.pointerId)) {
       const remaining = [...pointersRef.current.entries()]
       if (remaining.length === 1) {
         const [pointerId, point] = remaining[0]
@@ -396,6 +411,7 @@ export function ZoomableImage({
           startTransform: transformRef.current,
           startedAt: performance.now(),
           moved: true,
+          startedOnImage: false,
         }
         return
       }
@@ -447,6 +463,7 @@ export function ZoomableImage({
       onPointerMove={onPointerMove}
       onPointerUp={(event) => finishPointer(event, false)}
       onPointerCancel={(event) => finishPointer(event, true)}
+      onLostPointerCapture={(event) => finishPointer(event, true)}
     >
       <img
         ref={imageRef}
