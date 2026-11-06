@@ -1,0 +1,211 @@
+========================================================================
+RELATÓRIO DE ANÁLISE E CONVERSÃO DE SALA
+Konnix Chat - conversa Naiara / Sybelle / Tarsylla
+Data do relatório: 04/11/2026
+========================================================================
+
+1. PERGUNTA ORIGINAL
+------------------------------------------------------------------------
+"No nosso Konnix Chat existe uma conversa estranha entre Naiara, Tarsylla
+e Sybelle que se comporta como um usuário ao invés de um grupo. Tenho a
+impressão que foi resultado da importação do formato de conversas de
+discussão do RocketChat para o Konnix. O identificador da auditoria
+interna na conversa que conseguimos recuperar seria
+ec27936f-7905-4606-a879-ff9a5. Pode rastrear o que seja?"
+
+Complemento posterior:
+"No Konnix, em Canais e grupos, não conseguimos ver esses casos. Pode
+converter em Grupo como são os grupos atuais. Pode renomear com o termo
+'Grupo de ' e em seguida concatenar o nome atual do grupo. Eu considero
+isso grupo e não uma conversa um para um."
+
+
+2. ANÁLISE
+------------------------------------------------------------------------
+2.1. O identificador informado era de uma mensagem, não da sala
+O ID ec27936f-7905-4606-a879-ff9a5c7f0d8a (complementado) corresponde
+a uma mensagem de autoria de Sybelle, criada em 04/11/2026 às 17:36 UTC.
+O conteúdo da mensagem era justamente o relato do problema:
+"isso é um grupo antigo do rocket, que esta se comportando como usuário
+de Naiara duplicado".
+
+A auditoria interna confirma:
+- Ação: MESSAGE_CREATED
+- Recurso: message
+- resource_id: ec27936f-7905-4606-a879-ff9a5c7f0d8a
+
+2.2. Sala afetada
+- ID no Konnix: dab171ac-2f70-4b85-939a-7619124151f4
+- ID legado no Rocket: 6926fd8306c62aac5147b569
+- Tipo antes da correção: DIRECT
+- Criada no Rocket em: 26/11/2025
+- Membros: Naiara Araújo, Sybelle Frutuoso e Társylla Ruanna
+- Conteúdo no momento da correção: 47 mensagens, 5 anexos e 92
+  registros de leitura.
+
+2.3. Origem no Rocket.Chat
+O documento original em rocketchat_room era:
+
+  {
+    _id: "6926fd8306c62aac5147b569",
+    t: "d",
+    usernames: ["Naiara", "Sybelle", "Tarsylla"],
+    uids: [ ... 3 identificadores ... ],
+    usersCount: 3
+  }
+
+Portanto, não se tratava de uma "discussion" do Rocket. Discussões
+normalmente usam tipo "p" e possuem campos como prid/parentRoom. A sala
+era um DM multiusuário (conversa direta com três participantes), que o
+Rocket representa com t = "d" e usersCount = 3.
+
+A origem possuía 626 salas do tipo "d"; apenas essa tinha mais de dois
+usuários.
+
+2.4. Causa do comportamento como usuário
+O importador converte o tipo da sala apenas pelo campo "t":
+- c -> CHANNEL
+- p -> PRIVATE_GROUP
+- d -> DIRECT
+
+O migrador não lia usersCount/usernames e não validava que um DIRECT
+tivesse exatamente dois membros (RoomMigrator.mapType).
+
+No Konnix, o modelo de DIRECT assume conversa 1:1:
+- RoomService.partnerOf escolhe o primeiro membro que não é o usuário
+  atual e devolve um único directPartner.
+- O frontend exibe nome, avatar e subtítulo do directPartner e não
+  carrega a lista de membros quando o tipo é DIRECT.
+
+Assim, cada participante via a sala como uma conversa individual com
+apenas uma das outras pessoas. Para alguns, a sala aparecia como
+"Naiara"; para outros, como "Sybelle" ou "Tarsylla", gerando a sensação
+de usuário duplicado.
+
+2.5. Risco adicional identificado
+A consulta que reaproveita conversas diretas existentes
+(RoomMemberRepository.findDirectRoomIds) verificava apenas se os dois
+usuários eram membros da sala, sem exigir que houvesse exatamente dois
+participantes. Com isso, ao iniciar uma conversa 1:1, o Konnix poderia
+reaproveitar essa sala de três pessoas, expondo a terceira participante
+a mensagens enviadas como se fossem privadas.
+
+Os recibos de leitura confirmaram a participação e leitura por parte
+das três integrantes.
+
+
+3. RESOLUÇÃO APLICADA
+------------------------------------------------------------------------
+3.1. Decisão
+A sala foi convertida de DIRECT para PRIVATE_GROUP, alinhando-a aos
+demais grupos do Konnix e fazendo com que passe a aparecer em
+"Canais e grupos".
+
+Como a sala veio do Rocket sem nome próprio (name e display_name
+nulos), o nome foi derivado dos três participantes, seguindo o padrão
+solicitado "Grupo de " + nome do grupo:
+- name: Grupo de Naiara, Sybelle e Tarsylla
+- display_name: Grupo de Naiara, Sybelle e Tarsylla
+
+3.2. Alteração executada
+A atualização foi feita em transação, com validação do ID, do tipo
+anterior, da origem e do ID legado:
+
+  UPDATE rooms
+     SET type = 'PRIVATE_GROUP',
+         name = 'Grupo de Naiara, Sybelle e Tarsylla',
+         display_name = 'Grupo de Naiara, Sybelle e Tarsylla',
+         updated_at = now()
+   WHERE id = 'dab171ac-2f70-4b85-939a-7619124151f4'
+     AND type = 'DIRECT'
+     AND legacy_source = 'rocket'
+     AND legacy_id = '6926fd8306c62aac5147b569';
+
+3.3. Estado antes e depois
+ANTES:
+- Tipo: DIRECT
+- Nome: (vazio)
+- Display name: (vazio)
+- Membros: 3
+- Mensagens: 47
+- Anexos: 5
+- Leituras: 92
+
+DEPOIS:
+- Tipo: PRIVATE_GROUP
+- Nome: Grupo de Naiara, Sybelle e Tarsylla
+- Display name: Grupo de Naiara, Sybelle e Tarsylla
+- Membros: 3
+- Mensagens: 47
+- Anexos: 5
+- Leituras: 92
+- hidden: false
+- read_only: false
+- legacy_source: rocket (preservado)
+- legacy_id: 6926fd8306c62aac5147b569 (preservado)
+
+3.4. Validações realizadas
+- Nenhum membro foi removido ou adicionado.
+- Nenhuma mensagem, anexo ou recibo de leitura foi apagado.
+- O vínculo de rastreabilidade com o Rocket foi mantido.
+- A consulta de salas DIRECT com mais de dois membros passou a
+  retornar zero registros.
+- A sala passou a ser elegível para listagem em "Canais e grupos"
+  (o painel administrativo lista CHANNEL e PRIVATE_GROUP).
+
+3.5. Observações operacionais
+- Os papéis dos três membros permaneceram como MEMBER. A gestão do
+  grupo continua disponível para administradores (ADMIN).
+- Usuários com a sessão aberta podem precisar recarregar a página para
+  que a nova lista de salas e o novo tipo sejam refletidos na interface.
+- A alteração foi exclusivamente de dados. Nenhum código foi alterado
+  nesta etapa.
+
+
+4. PENDÊNCIAS E RECOMENDAÇÕES
+------------------------------------------------------------------------
+Para evitar que novos casos ocorram em importações futuras, recomenda-se:
+
+1. No migrador Rocket -> Konnix:
+   - Ler usersCount/usernames na projeção de rooms.
+   - Mapear t = "d" com mais de dois usuários para PRIVATE_GROUP.
+   - Gerar nome/display_name a partir dos participantes quando a sala
+     não tiver nome.
+   - Adicionar teste de regressão para DM multiusuário.
+
+2. No backend do Konnix:
+   - Exigir exatamente dois membros em findDirectRoomIds, impedindo o
+     reaproveitamento de salas com três ou mais pessoas como 1:1.
+   - Adicionar defesa em partnerOf para não escolher parceiro
+     arbitrário caso exista um DIRECT inválido.
+
+3. No banco:
+   - Avaliar uma verificação periódica de salas DIRECT com quantidade
+     de membros diferente de 2, como salvaguarda de integridade.
+
+Essas medidas não foram aplicadas neste momento porque a solicitação
+era corrigir o caso específico e documentá-lo. O dado existente já está
+corrigido e não há outros registros DIRECT com mais de dois membros no
+ambiente no momento desta verificação.
+
+
+5. REFERÊNCIAS DE CÓDIGO
+------------------------------------------------------------------------
+- migrator/src/main/java/br/gov/pb/cge/konnix/migrator/migrate/RoomMigrator.java
+  (mapType: d -> DIRECT, sem validação de quantidade de membros)
+- migrator/src/main/java/br/gov/pb/cge/konnix/migrator/mongo/RocketSource.java
+  (projeção de rooms sem usersCount/usernames)
+- backend/src/main/java/br/gov/pb/cge/konnix/service/RoomService.java
+  (partnerOf e createDirect)
+- backend/src/main/java/br/gov/pb/cge/konnix/domain/room/RoomMemberRepository.java
+  (findDirectRoomIds)
+- backend/src/main/java/br/gov/pb/cge/konnix/api/room/dto/RoomResponse.java
+  (directPartner único)
+- frontend/src/utils/room.ts
+  (roomDisplayName/roomSubtitle para DIRECT)
+- frontend/src/components/chat/RoomView.tsx e Sidebar.tsx
+  (exibição do directPartner e ocultação de membros em DIRECT)
+
+========================================================================
+FIM DO RELATÓRIO
+========================================================================

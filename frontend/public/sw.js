@@ -112,14 +112,6 @@ self.addEventListener('push', (event) => {
   const roomId = payload.data?.roomId;
   const messageId = payload.data?.messageId;
 
-  console.log('[SW Push] Evento push recebido:', {
-    title: payload.title,
-    hasData: !!event.data,
-    roomId: roomId || null,
-    messageId: messageId || null,
-    timestamp: new Date().toISOString(),
-  });
-
   event.waitUntil(
     (async () => {
       try {
@@ -183,9 +175,7 @@ self.addEventListener('push', (event) => {
           notificationOptions.vibrate = [200, 100, 200];
         }
 
-        console.log('[SW Push] Chamando registration.showNotification para tag:', notificationTag, { alreadyDisplayed });
         await self.registration.showNotification(effectiveTitle, notificationOptions);
-        console.log('[SW Push] registration.showNotification concluído com sucesso.');
 
         // Atualiza o app badge no PWA mobile se suportado
         if ('setAppBadge' in self.navigator && typeof self.navigator.setAppBadge === 'function') {
@@ -210,7 +200,6 @@ self.addEventListener('push', (event) => {
             renotify: true,
             data: { url: '/' },
           });
-          console.log('[SW Push] Notificação de fallback exibida com sucesso.');
         } catch (fallbackErr) {
           console.error('[SW Push] Falha crítica no showNotification de fallback:', fallbackErr);
         }
@@ -261,7 +250,6 @@ self.addEventListener('notificationclick', (event) => {
 
 // Renovação automática de subscrição push caso o browser rotacione o token
 self.addEventListener('pushsubscriptionchange', (event) => {
-  console.log('[SW Push] Evento pushsubscriptionchange disparado pelo navegador.');
   event.waitUntil(
     (async () => {
       try {
@@ -283,11 +271,10 @@ self.addEventListener('pushsubscriptionchange', (event) => {
         const keyBytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) keyBytes[i] = binary.charCodeAt(i);
 
-        const newSub = await self.registration.pushManager.subscribe({
+        await self.registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: keyBytes,
         });
-        console.log('[SW Push] PushManager re-subscrito com sucesso:', newSub.endpoint);
       } catch (err) {
         console.warn('[SW Push] Falha no pushsubscriptionchange:', err);
       }
@@ -300,4 +287,3 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
-

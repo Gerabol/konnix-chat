@@ -60,20 +60,14 @@ public class PushNotificationService {
         executor.execute(() -> {
             try {
                 var subscriptions = subscriptionRepository.findByRoomId(roomId);
-                log.info("Processando envio de Web Push para sala {} ({} subscrições encontradas)", roomId, subscriptions.size());
-
-                int sent = 0;
-                int skipped = 0;
                 Map<UUID, Long> unreadByUser = new HashMap<>();
 
                 for (PushSubscription subscription : subscriptions) {
                     if (senderId.equals(subscription.getUser().getId())) {
-                        skipped++;
                         continue;
                     }
                     String presence = subscription.getUser().getPresenceStatus();
                     if (presence != null && Set.of("busy", "vacation").contains(presence)) {
-                        skipped++;
                         continue;
                     }
 
@@ -81,23 +75,18 @@ public class PushNotificationService {
                     long unreadCount = unreadByUser.computeIfAbsent(recipientId, this::unreadCountFor);
 
                     String payload = buildPayload(message.id(), roomId, roomDisplayName, author, unreadCount);
-                    String maskedEndpoint = maskEndpoint(subscription.getEndpoint());
                     try {
                         pushSender.send(subscription, payload);
-                        sent++;
-                        log.info("Push entregue ao gateway com sucesso para {}", maskedEndpoint);
                     } catch (HttpResponseException e) {
                         if (e.getStatusCode() == 404 || e.getStatusCode() == 410) {
-                            log.info("Subscription expirada/inválida removida do banco (HTTP {}): {}", e.getStatusCode(), maskedEndpoint);
                             subscriptionRepository.delete(subscription);
                         } else {
-                            log.warn("Push recusado pelo gateway (status {}) para {}", e.getStatusCode(), maskedEndpoint);
+                            log.warn("Push recusado pelo gateway (HTTP {})", e.getStatusCode());
                         }
                     } catch (Exception e) {
-                        log.warn("Falha ao enviar push para {}: {}", maskedEndpoint, e.getMessage());
+                        log.warn("Falha ao enviar push ao gateway (tipo: {})", e.getClass().getSimpleName());
                     }
                 }
-                log.info("Concluído envio de Web Push da sala {}: {} enviados, {} ignorados", roomId, sent, skipped);
             } catch (Exception e) {
                 log.warn("Falha ao processar notificações push da sala {}", roomId, e);
             }
@@ -115,12 +104,6 @@ public class PushNotificationService {
             log.debug("Não foi possível calcular unreadCount para o usuário {}", userId, e);
             return 1L;
         }
-    }
-
-    private static String maskEndpoint(String endpoint) {
-        if (endpoint == null) return "null";
-        if (endpoint.length() <= 40) return endpoint;
-        return endpoint.substring(0, 30) + "..." + endpoint.substring(endpoint.length() - 8);
     }
 
     public String buildPayload(UUID messageId, UUID roomId, String roomDisplayName, String author) {

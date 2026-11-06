@@ -185,13 +185,11 @@ export async function syncPushSubscription(): Promise<PushSyncResult> {
   }
 
   if (syncInProgress) {
-    console.log('[Push Client] Sincronização já em andamento, aguardando conclusão...')
     return syncInProgress
   }
 
   syncInProgress = (async (): Promise<PushSyncResult> => {
     try {
-      console.log('[Push Client] Iniciando validação da subscrição Web Push...')
       const reg = await navigator.serviceWorker.ready
       const keyData = await api.pushPublicKey()
       if (!keyData?.publicKey) {
@@ -201,7 +199,6 @@ export async function syncPushSubscription(): Promise<PushSyncResult> {
 
       const serverKeyBytes = urlBase64ToUint8Array(keyData.publicKey)
       let sub = await reg.pushManager.getSubscription()
-      console.log('[Push Client] Subscrição atual no navegador:', sub ? sub.endpoint : 'nenhuma')
 
       if (sub) {
         const currentRawKey = sub.options.applicationServerKey
@@ -214,15 +211,11 @@ export async function syncPushSubscription(): Promise<PushSyncResult> {
         }
 
         if (!keyMatches) {
-          console.log('[Push Client] Chave VAPID alterada. Renovando subscrição push...')
           await sub.unsubscribe().catch(() => undefined)
           sub = await subscribeWithRetry(reg, serverKeyBytes)
-          console.log('[Push Client] Nova subscrição criada:', sub.endpoint)
         }
       } else {
-        console.log('[Push Client] Nenhuma subscrição ativa encontrada. Inscrevendo no PushManager...')
         sub = await subscribeWithRetry(reg, serverKeyBytes)
-        console.log('[Push Client] Subscrição criada:', sub.endpoint)
       }
 
       if (sub) {
@@ -231,7 +224,6 @@ export async function syncPushSubscription(): Promise<PushSyncResult> {
           p256dh: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('p256dh') ?? new ArrayBuffer(0))),
           auth: uint8ArrayToBase64Url(new Uint8Array(sub.getKey('auth') ?? new ArrayBuffer(0))),
         })
-        console.log('[Push Client] Subscrição salva com sucesso no backend:', sub.endpoint)
         try {
           localStorage.setItem('konnix-system-notifications', 'true')
         } catch {
@@ -281,7 +273,6 @@ export async function unsubscribePush(): Promise<void> {
 if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.type === 'konnix:push-subscription-change') {
-      console.log('[Push Client] Recebido aviso de push-subscription-change do Service Worker. Sincronizando...')
       void syncPushSubscription().catch(() => undefined)
     }
   })

@@ -8,17 +8,12 @@ import nl.martijndwars.webpush.Subscription;
 import nl.martijndwars.webpush.Urgency;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpResponseException;
-import org.apache.http.util.EntityUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.security.GeneralSecurityException;
 
 @Component
 public class WebPushSender implements PushSender {
-
-    private static final Logger log = LoggerFactory.getLogger(WebPushSender.class);
 
     private final PushService pushService;
 
@@ -41,42 +36,14 @@ public class WebPushSender implements PushSender {
         HttpResponse response = pushService.send(new Notification(keys, payload, Urgency.HIGH), Encoding.AES128GCM);
         int statusCode = response.getStatusLine().getStatusCode();
 
-        String gateway = identifyGateway(subscription.getEndpoint());
-        String maskedEndpoint = maskEndpoint(subscription.getEndpoint());
         if (statusCode == 201) {
-            log.info("Push gateway ({}) respondeu HTTP 201 Created para endpoint {}", gateway, maskedEndpoint);
             return;
         }
 
-        String reason = "";
-        if (response.getEntity() != null) {
-            try {
-                reason = EntityUtils.toString(response.getEntity());
-            } catch (Exception ignored) {
-            }
-        }
-
         if (statusCode == 404 || statusCode == 410) {
-            log.info("Push gateway ({}) recusou endpoint expirado/inexistente (HTTP {}): {}", gateway, statusCode, maskedEndpoint);
-            throw new HttpResponseException(statusCode, "Push endpoint expired (" + statusCode + "): " + reason);
+            throw new HttpResponseException(statusCode, "Push endpoint expired (" + statusCode + ")");
         }
 
-        log.warn("Falha no envio de push via {} (HTTP {}): {} para {}", gateway, statusCode, reason, maskedEndpoint);
-        throw new HttpResponseException(statusCode, "Push gateway error (" + statusCode + "): " + reason);
-    }
-
-    private static String identifyGateway(String endpoint) {
-        if (endpoint == null) return "Unknown";
-        if (endpoint.contains("apple.com")) return "Apple APNs";
-        if (endpoint.contains("google") || endpoint.contains("fcm")) return "Google FCM";
-        if (endpoint.contains("mozilla") || endpoint.contains("autopush")) return "Mozilla Autopush";
-        if (endpoint.contains("windows.com") || endpoint.contains("microsoft")) return "Microsoft WNS";
-        return "WebPush";
-    }
-
-    private static String maskEndpoint(String endpoint) {
-        if (endpoint == null) return "null";
-        if (endpoint.length() <= 40) return endpoint;
-        return endpoint.substring(0, 30) + "..." + endpoint.substring(endpoint.length() - 8);
+        throw new HttpResponseException(statusCode, "Push gateway error (" + statusCode + ")");
     }
 }
