@@ -3,28 +3,11 @@ import { api, ApiError, formatBytes } from '../../api'
 import { useEscapeClose } from '../../hooks/useEscapeClose'
 import { saveDownloadedBlob } from '../../platform'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
-import {
-  FIT_ZOOM_INDEX,
-  clampZoomIndex,
-  displaySize,
-  toggleZoom,
-  zoomIn,
-  zoomOut,
-} from '../../utils/imageZoom'
 import type { MediaItem } from '../../utils/mediaCarousel'
 import { getNextMediaIndex, getPrevMediaIndex } from '../../utils/mediaCarousel'
 import { IconChevronLeft, IconChevronRight, IconDownload } from '../icons'
-
-type Box = { width: number; height: number }
-
-function stageContentBox(el: HTMLElement): Box {
-  const style = window.getComputedStyle(el)
-  const px = (value: string) => Number.parseFloat(value) || 0
-  return {
-    width: el.clientWidth - px(style.paddingLeft) - px(style.paddingRight),
-    height: el.clientHeight - px(style.paddingTop) - px(style.paddingBottom),
-  }
-}
+import { ZoomableImage } from './ZoomableImage'
+import type { ZoomableImageHandle } from './ZoomableImage'
 
 function formatMediaDate(iso?: string): string {
   if (!iso) return ''
@@ -120,15 +103,11 @@ export function MediaCarouselModal({
   const currentItem = items[currentIndex] ?? null
   const shouldAutoPlay = isInitialDirectVideo.current && !hasNavigated && currentItem?.id === initialMediaId
 
-  const stageRef = useRef<HTMLDivElement>(null)
+  const zoomRef = useRef<ZoomableImageHandle>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const activeThumbRef = useRef<HTMLButtonElement>(null)
   const thumbStripRef = useRef<HTMLDivElement>(null)
-
-  const [natural, setNatural] = useState<Box | null>(null)
-  const [stage, setStage] = useState<Box | null>(null)
-  const [zoomIndex, setZoomIndex] = useState(FIT_ZOOM_INDEX)
 
   const [mediaUrl, setMediaUrl] = useState<string | null>(
     currentItem ? attachmentBlobCache.get(currentItem.id) ?? null : null,
@@ -182,25 +161,9 @@ export function MediaCarouselModal({
     }
   }, [currentIndex])
 
-  // Medição do palco de zoom
-  useEffect(() => {
-    const el = stageRef.current
-    if (!el) return
-    const measure = () => setStage(stageContentBox(el))
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [currentIndex])
-
-  const setZoom = useCallback((next: number) => setZoomIndex(clampZoomIndex(next)), [])
-
   // Carrega ou busca blob da mídia ativa
   useEffect(() => {
     if (!currentItem) return
-
-    setZoomIndex(FIT_ZOOM_INDEX)
-    setNatural(null)
 
     const cached = attachmentBlobCache.get(currentItem.id)
     if (cached) {
@@ -279,17 +242,17 @@ export function MediaCarouselModal({
       if (currentItem?.type === 'image') {
         if (event.key === '+' || event.key === '=') {
           event.preventDefault()
-          setZoom(zoomIn(zoomIndex))
+          zoomRef.current?.zoomIn()
           return
         }
         if (event.key === '-' || event.key === '_') {
           event.preventDefault()
-          setZoom(zoomOut(zoomIndex))
+          zoomRef.current?.zoomOut()
           return
         }
         if (event.key === '0') {
           event.preventDefault()
-          setZoom(FIT_ZOOM_INDEX)
+          zoomRef.current?.reset()
           return
         }
       }
@@ -297,30 +260,7 @@ export function MediaCarouselModal({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [currentItem, handleNext, handlePrev, setZoom, zoomIndex])
-
-  // Centraliza imagem com zoom
-  const size =
-    natural && stage && currentItem?.type === 'image'
-      ? displaySize(natural.width, natural.height, stage.width, stage.height, zoomIndex)
-      : null
-
-  useLayoutEffect(() => {
-    const el = stageRef.current
-    if (!el) return
-    el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2)
-    el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) / 2)
-  }, [zoomIndex, size?.width, size?.height])
-
-  const onWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      if (!event.ctrlKey && !event.metaKey) return
-      if (currentItem?.type !== 'image') return
-      event.preventDefault()
-      setZoom(event.deltaY < 0 ? zoomIn(zoomIndex) : zoomOut(zoomIndex))
-    },
-    [currentItem, zoomIndex, setZoom],
-  )
+  }, [currentItem, handleNext, handlePrev])
 
   const handleDownload = async () => {
     if (!currentItem) return
@@ -418,81 +358,67 @@ export function MediaCarouselModal({
             </button>
           )}
 
-          <div className="media-carousel-stage" ref={stageRef} onWheel={onWheel}>
-            {loading && (
-              <div className="media-carousel-loading">
-                <span className="media-carousel-spinner" aria-hidden="true" />
-                <p>Carregando {currentItem.type === 'video' ? 'vídeo' : 'imagem'}…</p>
-              </div>
-            )}
+          {!loading && !error && mediaUrl && currentItem.type === 'image' ? (
+            <ZoomableImage
+              key={currentItem.id}
+              ref={zoomRef}
+              src={mediaUrl}
+              alt={currentItem.originalName}
+              stageClassName="media-carousel-stage"
+              imageClassName="media-carousel-img"
+            />
+          ) : (
+            <div className="media-carousel-stage">
+              {loading && (
+                <div className="media-carousel-loading">
+                  <span className="media-carousel-spinner" aria-hidden="true" />
+                  <p>Carregando {currentItem.type === 'video' ? 'vídeo' : 'imagem'}…</p>
+                </div>
+              )}
 
-            {error && (
-              <div className="media-carousel-error">
-                <p>⚠ {error}</p>
-                <button
-                  type="button"
-                  className="kx-button kx-button-secondary"
-                  onClick={() => {
-                    setLoading(true)
-                    setError(null)
-                    api.downloadFile(currentItem.id)
-                      .then((blob) => {
-                        const url = URL.createObjectURL(blob)
-                        attachmentBlobCache.set(currentItem.id, url)
-                        setMediaUrl(url)
-                        setLoading(false)
-                      })
-                      .catch(() => {
-                        setError('Falha ao tentar carregar novamente')
-                        setLoading(false)
-                      })
-                  }}
-                >
-                  Tentar novamente
-                </button>
-              </div>
-            )}
+              {error && (
+                <div className="media-carousel-error">
+                  <p>⚠ {error}</p>
+                  <button
+                    type="button"
+                    className="kx-button kx-button-secondary"
+                    onClick={() => {
+                      setLoading(true)
+                      setError(null)
+                      api.downloadFile(currentItem.id)
+                        .then((blob) => {
+                          const url = URL.createObjectURL(blob)
+                          attachmentBlobCache.set(currentItem.id, url)
+                          setMediaUrl(url)
+                          setLoading(false)
+                        })
+                        .catch(() => {
+                          setError('Falha ao tentar carregar novamente')
+                          setLoading(false)
+                        })
+                    }}
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
 
-            {!loading && !error && mediaUrl && currentItem.type === 'image' && (
-              <img
-                src={mediaUrl}
-                alt={currentItem.originalName}
-                className="media-carousel-img"
-                draggable={false}
-                style={
-                  size
-                    ? {
-                        width: `${size.width}px`,
-                        height: `${size.height}px`,
-                        maxWidth: 'none',
-                        maxHeight: 'none',
-                        flexShrink: 0,
-                      }
-                    : undefined
-                }
-                onLoad={(event) => {
-                  const { naturalWidth, naturalHeight } = event.currentTarget
-                  setNatural({ width: naturalWidth, height: naturalHeight })
-                }}
-                onDoubleClick={() => setZoom(toggleZoom(zoomIndex))}
-              />
-            )}
-
-            {!loading && !error && mediaUrl && currentItem.type === 'video' && (
-              <div className="media-carousel-video-wrapper">
-                <video
-                  ref={videoRef}
-                  key={currentItem.id}
-                  src={mediaUrl}
-                  controls
-                  autoPlay={shouldAutoPlay}
-                  preload="metadata"
-                  playsInline
-                  className="media-carousel-video"
-                />
-              </div>
-            )}
-          </div>
+              {!loading && !error && mediaUrl && currentItem.type === 'video' && (
+                <div className="media-carousel-video-wrapper">
+                  <video
+                    ref={videoRef}
+                    key={currentItem.id}
+                    src={mediaUrl}
+                    controls
+                    autoPlay={shouldAutoPlay}
+                    preload="metadata"
+                    playsInline
+                    className="media-carousel-video"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {items.length > 1 && (
             <button

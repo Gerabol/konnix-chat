@@ -2,14 +2,26 @@ import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
 
 import {
+  DOUBLE_TAP_ZOOM_SCALE,
   FIT_ZOOM_INDEX,
+  MAX_ZOOM_SCALE,
+  MIN_ZOOM_SCALE,
   ZOOM_STEPS,
   canZoomIn,
   canZoomOut,
+  clampScale,
+  clampTransform,
   clampZoomIndex,
   displaySize,
   fitScale,
+  fitTransform,
+  isDoubleTap,
+  isTap,
+  nextZoomScale,
+  pinchTransform,
+  scalePercent,
   toggleZoom,
+  zoomAroundPoint,
   zoomIn,
   zoomOut,
   zoomPercent,
@@ -105,4 +117,113 @@ test('displaySize strictly preserves aspect ratio across all zoom steps', () => 
     // Tolerance for 1px rounding
     assert.ok(Math.abs(ratio - expectedRatio) < 0.02, `Aspect ratio deviated at step ${i}: got ${ratio}, expected ${expectedRatio}`)
   }
+})
+
+test('continuous zoom helpers clamp and round the scale', () => {
+  assert.equal(MIN_ZOOM_SCALE, 0.5)
+  assert.equal(MAX_ZOOM_SCALE, 4)
+  assert.equal(DOUBLE_TAP_ZOOM_SCALE, 2)
+  assert.equal(clampScale(0.25), MIN_ZOOM_SCALE)
+  assert.equal(clampScale(9), MAX_ZOOM_SCALE)
+  assert.equal(clampScale(2.37), 2.37)
+  assert.equal(clampScale(Number.NaN), 1)
+  assert.equal(scalePercent(1), 100)
+  assert.equal(scalePercent(1.634), 163)
+  assert.equal(scalePercent(Number.NaN), 100)
+  assert.deepEqual(fitTransform(), { scale: 1, x: 0, y: 0 })
+})
+
+test('nextZoomScale walks the existing steps from a continuous scale', () => {
+  assert.equal(nextZoomScale(1, 1), 1.25)
+  assert.equal(nextZoomScale(1, -1), 0.75)
+  assert.equal(nextZoomScale(1.63, 1), 2)
+  assert.equal(nextZoomScale(1.63, -1), 1.5)
+  assert.equal(nextZoomScale(4, 1), 4)
+  assert.equal(nextZoomScale(0.5, -1), 0.5)
+})
+
+test('zoomAroundPoint keeps the touched content anchored', () => {
+  const base = { width: 800, height: 600 }
+  const viewport = { width: 800, height: 600 }
+  assert.deepEqual(
+    zoomAroundPoint({ scale: 1, x: 0, y: 0 }, { x: 100, y: 50 }, 2, base, viewport),
+    { scale: 2, x: -100, y: -50 },
+  )
+  assert.deepEqual(
+    zoomAroundPoint({ scale: 1, x: 0, y: 0 }, { x: 0, y: 0 }, 2, base, viewport),
+    { scale: 2, x: 0, y: 0 },
+  )
+})
+
+test('clampTransform never exposes empty space around a zoomed image', () => {
+  const base = { width: 1000, height: 500 }
+  const viewport = { width: 1000, height: 800 }
+  assert.deepEqual(
+    clampTransform({ scale: 2, x: 500, y: 500 }, base, viewport),
+    { scale: 2, x: 500, y: 100 },
+  )
+  assert.deepEqual(
+    clampTransform({ scale: 1, x: 20, y: 20 }, base, viewport),
+    { scale: 1, x: 0, y: 0 },
+  )
+  assert.deepEqual(
+    clampTransform({ scale: 2, x: 500, y: 500 }, { width: 400, height: 200 }, viewport),
+    { scale: 2, x: 0, y: 0 },
+  )
+})
+
+test('pinchTransform zooms around the midpoint and follows both fingers', () => {
+  const base = { width: 800, height: 600 }
+  const viewport = { width: 800, height: 600 }
+  const common = {
+    start: { scale: 1, x: 0, y: 0 },
+    startMidpoint: { x: 0, y: 0 },
+    startDistance: 100,
+    currentDistance: 200,
+    minScale: 1,
+    maxScale: 4,
+    base,
+    viewport,
+  }
+  assert.deepEqual(
+    pinchTransform({ ...common, currentMidpoint: { x: 0, y: 0 } }),
+    { scale: 2, x: 0, y: 0 },
+  )
+  assert.deepEqual(
+    pinchTransform({ ...common, currentMidpoint: { x: 50, y: 25 } }),
+    { scale: 2, x: 50, y: 25 },
+  )
+  assert.deepEqual(
+    pinchTransform({ ...common, currentMidpoint: { x: 900, y: 900 } }),
+    { scale: 2, x: 400, y: 300 },
+  )
+})
+
+test('pinchTransform respects scale bounds and invalid distances', () => {
+  const common = {
+    start: { scale: 1, x: 0, y: 0 },
+    startMidpoint: { x: 0, y: 0 },
+    currentMidpoint: { x: 0, y: 0 },
+    minScale: 1,
+    maxScale: 4,
+    base: { width: 800, height: 600 },
+    viewport: { width: 800, height: 600 },
+  }
+  assert.equal(pinchTransform({ ...common, startDistance: 200, currentDistance: 100 }).scale, 1)
+  assert.equal(pinchTransform({ ...common, startDistance: 100, currentDistance: 1000 }).scale, 4)
+  assert.deepEqual(
+    pinchTransform({ ...common, startDistance: 0, currentDistance: 100 }),
+    { scale: 1, x: 0, y: 0 },
+  )
+})
+
+test('isTap and isDoubleTap use movement, duration and gap thresholds', () => {
+  const first = { x: 100, y: 100, time: 0 }
+  assert.equal(isTap(first, { x: 104, y: 103, time: 200 }), true)
+  assert.equal(isTap(first, { x: 120, y: 100, time: 200 }), false)
+  assert.equal(isTap(first, { x: 100, y: 100, time: 300 }), false)
+  assert.equal(isDoubleTap(first, { x: 108, y: 105, time: 240 }), true)
+  assert.equal(isDoubleTap(first, { x: 130, y: 100, time: 240 }), false)
+  assert.equal(isDoubleTap(first, { x: 100, y: 100, time: 400 }), false)
+  assert.equal(isDoubleTap(null, first), false)
 })

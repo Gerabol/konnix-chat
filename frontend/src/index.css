@@ -3690,7 +3690,13 @@ button:disabled {
   -webkit-touch-callout: none;
 }
 
-.message:hover {
+@media (hover: hover) {
+  .message:hover {
+    background: rgba(91, 76, 240, 0.04);
+  }
+}
+
+.message.mouse-hovered {
   background: rgba(91, 76, 240, 0.04);
 }
 
@@ -3783,9 +3789,11 @@ button:disabled {
 .message-read-state.read { color: #20a565; }
 
 .message-actions { position: absolute; top: 0.1rem; left: 50%; right: auto; z-index: 3; display: none; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--konnix-border); border-radius: 10px; background: var(--konnix-surface); box-shadow: 0 4px 12px rgba(32, 34, 48, 0.1); transform: translateX(-50%); }
-.message:hover .message-actions { display: inline-flex; }
+@media (hover: hover) {
+  .message:hover .message-actions { display: inline-flex; }
+  .message.action-dismissed:hover .message-actions { display: none; }
+}
 .message.action-pinned .message-actions { display: inline-flex; }
-.message.action-dismissed:hover .message-actions { display: none; }
 .message.long-pressed .message-actions { display: inline-flex; }
 @media (hover: none) { .message:hover:not(.long-pressed) .message-actions { display: none; } }
 .touch-device .message:hover:not(.long-pressed) .message-actions { display: none; }
@@ -4025,8 +4033,10 @@ button:disabled {
   left: 0.5rem;
 }
 
-.message:hover .message-delete {
-  opacity: 1;
+@media (hover: hover) {
+  .message:hover .message-delete {
+    opacity: 1;
+  }
 }
 
 .attachment {
@@ -5813,7 +5823,7 @@ img.room-header-avatar {
   position: absolute;
   inset: 0;
   display: flex;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   padding: calc(48px + var(--safe-top, 0px)) 16px calc(64px + var(--safe-bottom, 0px));
 }
@@ -9651,5 +9661,38 @@ img.room-header-avatar {
   .media-carousel-thumb {
     flex: 0 0 58px;
     height: 40px;
+  }
+}
+
+/* ---- Superfície compartilhada de zoom por toque ---- */
+.lightbox-stage.zoom-surface,
+.media-carousel-stage.zoom-surface {
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.zoom-surface > img {
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform 180ms ease-out;
+}
+
+.zoom-surface.is-gesturing > img {
+  transition: none;
+  cursor: grabbing;
+}
+
+.zoom-surface.is-zoomed > img {
+  cursor: grab;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoom-surface > img {
+    transition: none;
   }
 }

@@ -80,7 +80,7 @@ export interface PlatformBridge {
 - Rolagem inteligente com preservação de posição durante leitura de histórico paginado por cursor (`?before=&limit=`).
 - Banner fixo de mensagem destacada (pin) com rolagem imediata ao ponto de fixação.
 - Player de áudio com reprodução acelerada (1x, 1.5x, 2x) e barra de progresso interativa.
-- Visualizador de imagens em tela cheia com zoom e download direto.
+- Visualizador de imagens em tela cheia com zoom por duplo toque/pinça, arrasto para navegar e download direto.
 - Ações rápidas flutuantes na mensagem: Responder, Reagir com emoji, Fixar/Desfixar, Editar, Encaminhar e Excluir.
 
 ### 4.3. Navegação Lateral e Diretório

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { api, ApiError, formatBytes, userAvatarPath } from '../../api'
 import type { Attachment, Message } from '../../api'
 import { ImageLightbox } from '../modals/ImageLightbox'
@@ -55,6 +56,48 @@ export function AttachmentView({
   const [state, setState] = useState<{ status: 'loading' } | { status: 'ready'; url: string } | { status: 'error'; error: string }>(
     cachedUrl ? { status: 'ready', url: cachedUrl } : { status: 'loading' },
   )
+  const pointerStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const activationGuardRef = useRef(false)
+
+  const handleImageOpen = useCallback(() => {
+    if (!att) return
+    if (onOpenMedia) {
+      onOpenMedia(att.id)
+    } else {
+      setLightboxOpen(true)
+    }
+  }, [att, onOpenMedia])
+
+  const onImagePointerDown = useCallback((e: ReactPointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, time: performance.now() }
+  }, [])
+
+  const onImagePointerUp = useCallback((e: ReactPointerEvent) => {
+    if (e.pointerType === 'mouse') return
+    const start = pointerStartRef.current
+    pointerStartRef.current = null
+    if (!start) return
+    const dx = Math.abs(e.clientX - start.x)
+    const dy = Math.abs(e.clientY - start.y)
+    const dt = performance.now() - start.time
+    if (dx <= 12 && dy <= 12 && dt <= 350) {
+      activationGuardRef.current = true
+      handleImageOpen()
+    }
+  }, [handleImageOpen])
+
+  const onImagePointerCancel = useCallback(() => {
+    pointerStartRef.current = null
+  }, [])
+
+  const onImageClick = useCallback(() => {
+    if (activationGuardRef.current) {
+      activationGuardRef.current = false
+      return
+    }
+    handleImageOpen()
+  }, [handleImageOpen])
 
   const load = useCallback(async () => {
     if (!att) return
@@ -118,20 +161,16 @@ export function AttachmentView({
   }
 
   if (isImage) {
-    const handleImageClick = () => {
-      if (onOpenMedia) {
-        onOpenMedia(att.id)
-      } else {
-        setLightboxOpen(true)
-      }
-    }
-
+    // Touch-friendly activation using pointer events
     return (
       <div className="attachment-image">
         <button
           type="button"
           className="attachment-img-btn"
-          onClick={handleImageClick}
+          onPointerDown={onImagePointerDown}
+          onPointerUp={onImagePointerUp}
+          onPointerCancel={onImagePointerCancel}
+          onClick={onImageClick}
           title="Clique para ampliar"
           aria-label={`Ampliar imagem ${att.originalName}`}
         >
