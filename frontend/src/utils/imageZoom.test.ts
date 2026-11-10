@@ -20,6 +20,7 @@ import {
   nextZoomScale,
   pinchTransform,
   scalePercent,
+  shouldToggleTapZoom,
   toggleZoom,
   zoomAroundPoint,
   zoomIn,
@@ -27,6 +28,15 @@ import {
   zoomPercent,
   zoomValue,
 } from './imageZoom.ts'
+
+test('mouse toggles zoom on one click while touch still requires a double tap', () => {
+  const first = { x: 10, y: 10, time: 100 }
+  const second = { x: 12, y: 10, time: 200 }
+  assert.equal(shouldToggleTapZoom('mouse', null, first, 300, 24), true)
+  assert.equal(shouldToggleTapZoom('touch', null, first, 300, 24), false)
+  assert.equal(shouldToggleTapZoom('touch', first, second, 300, 24), true)
+  assert.equal(shouldToggleTapZoom('touch', first, { ...second, time: 500 }, 300, 24), false)
+})
 
 test('ZOOM_STEPS keeps "fit" available and ordered', () => {
   assert.equal(FIT_ZOOM_INDEX, 2)

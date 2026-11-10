@@ -199,3 +199,8 @@ export function isDoubleTap(previous: Tap | null, current: Tap, maxGapMs = 300, 
   const gap = current.time - previous.time
   return gap >= 0 && gap <= maxGapMs && Math.hypot(current.x - previous.x, current.y - previous.y) <= maxDistance
 }
+
+/** Mouse clicks toggle immediately; touch and pen retain the double-tap gesture. */
+export function shouldToggleTapZoom(pointerType: string, previous: Tap | null, current: Tap, maxGapMs: number, maxDistance: number): boolean {
+  return pointerType === 'mouse' || isDoubleTap(previous, current, maxGapMs, maxDistance)
+}

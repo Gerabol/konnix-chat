@@ -8,10 +8,10 @@ import {
   clampTransform,
   displaySize,
   fitTransform,
-  isDoubleTap,
   isTap,
   nextZoomScale,
   pinchTransform,
+  shouldToggleTapZoom,
   zoomAroundPoint,
 } from '../../utils/imageZoom'
 import type { DisplaySize, Tap, ZoomPoint, ZoomTransform } from '../../utils/imageZoom'
@@ -237,9 +237,9 @@ export function ZoomableImage({
   useImperativeHandle(ref, () => ({ zoomIn, zoomOut, reset, panBy }), [zoomIn, zoomOut, reset, panBy])
 
   const handleTap = useCallback(
-    (start: Tap, end: Tap) => {
+    (start: Tap, end: Tap, pointerType: string) => {
       const el = stageRef.current
-      if (isDoubleTap(lastTapRef.current, start, DOUBLE_TAP_MAX_GAP_MS, DOUBLE_TAP_MAX_DISTANCE_PX)) {
+      if (shouldToggleTapZoom(pointerType, lastTapRef.current, start, DOUBLE_TAP_MAX_GAP_MS, DOUBLE_TAP_MAX_DISTANCE_PX)) {
         lastTapRef.current = null
         const current = transformRef.current
         if (Math.abs(current.scale - 1) <= 0.001) {
@@ -397,7 +397,7 @@ export function ZoomableImage({
         return
       }
       if (gesture.startedOnImage) {
-        handleTap(start, end)
+        handleTap(start, end, event.pointerType)
       } else {
         lastTapRef.current = null
         onBackgroundTap?.()
@@ -432,8 +432,7 @@ export function ZoomableImage({
       const currentBase = baseRef.current
       const currentViewport = viewportRef.current
       const current = transformRef.current
-      const zoomModifier = event.ctrlKey || event.metaKey
-      if (zoomModifier) {
+      if (event.deltaY !== 0) {
         event.preventDefault()
         if (!currentBase || !currentViewport) return
         const nextScale = nextZoomScale(current.scale, event.deltaY < 0 ? 1 : -1)
@@ -442,7 +441,7 @@ export function ZoomableImage({
         )
         return
       }
-      if (current.scale <= 1 || !currentBase || !currentViewport) return
+      if (current.scale <= 1 || !currentBase || !currentViewport || event.deltaX === 0) return
       event.preventDefault()
       applyTransform(
         clampTransform(
