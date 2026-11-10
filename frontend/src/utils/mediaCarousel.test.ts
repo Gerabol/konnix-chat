@@ -6,12 +6,21 @@ import {
   getMediaType,
   getNextMediaIndex,
   getPrevMediaIndex,
+  getVisibleMediaIndices,
   isImageMime,
   isMediaAttachment,
   isVideoMime,
 } from './mediaCarousel.ts'
 
 describe('mediaCarousel utils', () => {
+  test('shows only the current media and up to two preceding items', () => {
+    assert.deepStrictEqual(getVisibleMediaIndices(0, 10), [0])
+    assert.deepStrictEqual(getVisibleMediaIndices(1, 10), [0, 1])
+    assert.deepStrictEqual(getVisibleMediaIndices(5, 10), [3, 4, 5])
+    assert.deepStrictEqual(getVisibleMediaIndices(9, 10), [7, 8, 9])
+    assert.deepStrictEqual(getVisibleMediaIndices(0, 0), [])
+    assert.deepStrictEqual(getVisibleMediaIndices(-1, 10), [])
+  })
   describe('isImageMime & isVideoMime', () => {
     test('identifies images by mime and extension', () => {
       assert.strictEqual(isImageMime('image/png', 'foto.png'), true)

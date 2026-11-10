@@ -4,7 +4,7 @@ import { useEscapeClose } from '../../hooks/useEscapeClose'
 import { saveDownloadedBlob } from '../../platform'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import type { MediaItem } from '../../utils/mediaCarousel'
-import { getNextMediaIndex, getPrevMediaIndex } from '../../utils/mediaCarousel'
+import { getNextMediaIndex, getPrevMediaIndex, getVisibleMediaIndices } from '../../utils/mediaCarousel'
 import { IconChevronLeft, IconChevronRight, IconDownload } from '../icons'
 import { ZoomableImage } from './ZoomableImage'
 import type { ZoomableImageHandle } from './ZoomableImage'
@@ -37,9 +37,15 @@ function ThumbnailItem({ item, isActive }: { item: MediaItem; isActive: boolean 
     let active = true
     api.downloadFile(item.id)
       .then((blob) => {
+        if (!active) return
+        const existing = attachmentBlobCache.get(item.id)
+        if (existing) {
+          setUrl(existing)
+          return
+        }
         const objectUrl = URL.createObjectURL(blob)
         attachmentBlobCache.set(item.id, objectUrl)
-        if (active) setUrl(objectUrl)
+        setUrl(objectUrl)
       })
       .catch(() => {
         if (active) setUrl(null)
@@ -94,7 +100,9 @@ export function MediaCarouselModal({
     0,
     items.findIndex((item) => item.id === initialMediaId),
   )
-  const [currentIndex, setCurrentIndex] = useState(initialIndex >= 0 ? initialIndex : 0)
+  const [currentMediaId, setCurrentMediaId] = useState(items[initialIndex]?.id ?? initialMediaId)
+  const selectedIndex = items.findIndex((item) => item.id === currentMediaId)
+  const currentIndex = selectedIndex >= 0 ? selectedIndex : Math.min(initialIndex, items.length - 1)
   const [hasNavigated, setHasNavigated] = useState(false)
   const isInitialDirectVideo = useRef(
     items[initialIndex]?.type === 'video' && items[initialIndex]?.id === initialMediaId,
@@ -114,9 +122,25 @@ export function MediaCarouselModal({
   )
   const [loading, setLoading] = useState<boolean>(!mediaUrl)
   const [error, setError] = useState<string | null>(null)
+  const [displayedMediaId, setDisplayedMediaId] = useState<string | null>(null)
+  const [readyMediaId, setReadyMediaId] = useState<string | null>(null)
+  const [loadedMediaId, setLoadedMediaId] = useState<string | null>(currentItem && mediaUrl ? currentItem.id : null)
   const [isOverflowing, setIsOverflowing] = useState(items.length > 4)
 
   useEscapeClose(onClose)
+
+  // Aguarda a pintura da mídia principal antes de iniciar downloads das miniaturas.
+  useEffect(() => {
+    if (!currentItem || readyMediaId !== currentItem.id) return
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => setDisplayedMediaId(currentItem.id))
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [currentItem?.id, readyMediaId])
 
   // Se a lista de mídias for esvaziada (todas as fotos foram apagadas), fecha o modal
   useEffect(() => {
@@ -124,14 +148,8 @@ export function MediaCarouselModal({
       onClose()
       return
     }
-    // Ajustar o índice caso exceda o limite após deleções
-    setCurrentIndex((prev) => {
-      if (prev >= items.length) {
-        return Math.max(0, items.length - 1)
-      }
-      return prev
-    })
-  }, [items, onClose])
+    if (selectedIndex < 0) setCurrentMediaId(items[currentIndex].id)
+  }, [items, onClose, selectedIndex, currentIndex])
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -148,7 +166,7 @@ export function MediaCarouselModal({
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null
     observer?.observe(strip)
     return () => observer?.disconnect()
-  }, [items.length])
+  }, [items.length, currentIndex])
 
   // Auto-scroll da miniatura ativa na barra inferior
   useEffect(() => {
@@ -168,6 +186,7 @@ export function MediaCarouselModal({
     const cached = attachmentBlobCache.get(currentItem.id)
     if (cached) {
       setMediaUrl(cached)
+      setLoadedMediaId(currentItem.id)
       setLoading(false)
       setError(null)
       return
@@ -180,9 +199,13 @@ export function MediaCarouselModal({
     api.downloadFile(currentItem.id)
       .then((blob) => {
         if (!active) return
-        const url = URL.createObjectURL(blob)
-        attachmentBlobCache.set(currentItem.id, url)
+        let url = attachmentBlobCache.get(currentItem.id)
+        if (!url) {
+          url = URL.createObjectURL(blob)
+          attachmentBlobCache.set(currentItem.id, url)
+        }
         setMediaUrl(url)
+        setLoadedMediaId(currentItem.id)
         setLoading(false)
       })
       .catch((err) => {
@@ -206,16 +229,22 @@ export function MediaCarouselModal({
   }, [currentIndex])
 
   const handlePrev = useCallback(() => {
+    if (currentIndex <= 0) return
     if (videoRef.current) videoRef.current.pause()
     setHasNavigated(true)
-    setCurrentIndex((prev) => getPrevMediaIndex(prev))
-  }, [])
+    setDisplayedMediaId(null)
+    setReadyMediaId(null)
+    setCurrentMediaId(items[getPrevMediaIndex(currentIndex)].id)
+  }, [items, currentIndex])
 
   const handleNext = useCallback(() => {
+    if (currentIndex < 0 || currentIndex >= items.length - 1) return
     if (videoRef.current) videoRef.current.pause()
     setHasNavigated(true)
-    setCurrentIndex((prev) => getNextMediaIndex(prev, items.length))
-  }, [items.length])
+    setDisplayedMediaId(null)
+    setReadyMediaId(null)
+    setCurrentMediaId(items[getNextMediaIndex(currentIndex, items.length)].id)
+  }, [items, currentIndex])
 
   // Teclado: Setas <- e -> para navegar, Esc para fechar, + e - para zoom
   useEffect(() => {
@@ -358,7 +387,7 @@ export function MediaCarouselModal({
             </button>
           )}
 
-          {!loading && !error && mediaUrl && currentItem.type === 'image' ? (
+          {!loading && !error && mediaUrl && loadedMediaId === currentItem.id && currentItem.type === 'image' ? (
             <ZoomableImage
               key={currentItem.id}
               ref={zoomRef}
@@ -366,10 +395,11 @@ export function MediaCarouselModal({
               alt={currentItem.originalName}
               stageClassName="media-carousel-stage"
               imageClassName="media-carousel-img"
+              onImageLoad={() => setReadyMediaId(currentItem.id)}
             />
           ) : (
             <div className="media-carousel-stage">
-              {loading && (
+              {(loading || loadedMediaId !== currentItem.id) && !error && (
                 <div className="media-carousel-loading">
                   <span className="media-carousel-spinner" aria-hidden="true" />
                   <p>Carregando {currentItem.type === 'video' ? 'vídeo' : 'imagem'}…</p>
@@ -390,6 +420,7 @@ export function MediaCarouselModal({
                           const url = URL.createObjectURL(blob)
                           attachmentBlobCache.set(currentItem.id, url)
                           setMediaUrl(url)
+                          setLoadedMediaId(currentItem.id)
                           setLoading(false)
                         })
                         .catch(() => {
@@ -403,7 +434,7 @@ export function MediaCarouselModal({
                 </div>
               )}
 
-              {!loading && !error && mediaUrl && currentItem.type === 'video' && (
+              {!loading && !error && mediaUrl && loadedMediaId === currentItem.id && currentItem.type === 'video' && (
                 <div className="media-carousel-video-wrapper">
                   <video
                     ref={videoRef}
@@ -414,6 +445,7 @@ export function MediaCarouselModal({
                     preload="metadata"
                     playsInline
                     className="media-carousel-video"
+                    onLoadedData={() => setReadyMediaId(currentItem.id)}
                   />
                 </div>
               )}
@@ -442,7 +474,8 @@ export function MediaCarouselModal({
               ref={thumbStripRef}
             >
               <div className="media-carousel-thumb-track">
-                {items.map((item, index) => {
+                {getVisibleMediaIndices(currentIndex, items.length).map((index) => {
+                  const item = items[index]
                   const isActive = index === currentIndex
                   return (
                     <button
@@ -453,13 +486,23 @@ export function MediaCarouselModal({
                       onClick={() => {
                         if (videoRef.current) videoRef.current.pause()
                         setHasNavigated(true)
-                        setCurrentIndex(index)
+                        if (!isActive) {
+                          setDisplayedMediaId(null)
+                          setReadyMediaId(null)
+                          setCurrentMediaId(item.id)
+                        }
                       }}
                       title={`${item.originalName} (${item.type === 'video' ? 'Vídeo' : 'Imagem'})`}
                       aria-label={`Visualizar ${item.originalName}`}
                       aria-current={isActive ? 'true' : undefined}
                     >
-                      <ThumbnailItem item={item} isActive={isActive} />
+                      {displayedMediaId === currentItem.id ? (
+                        <ThumbnailItem item={item} isActive={isActive} />
+                      ) : (
+                        <div className={`media-carousel-thumb-loading ${isActive ? 'active' : ''}`}>
+                          <span>{item.type === 'video' ? '🎬' : '🖼'}</span>
+                        </div>
+                      )}
                     </button>
                   )
                 })}

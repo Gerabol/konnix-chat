@@ -57,6 +57,7 @@ type ZoomableImageProps = {
   imageClassName?: string
   onScaleChange?: (scale: number) => void
   onBackgroundTap?: () => void
+  onImageLoad?: () => void
   ref?: Ref<ZoomableImageHandle>
 }
 
@@ -120,6 +121,7 @@ export function ZoomableImage({
   imageClassName,
   onScaleChange,
   onBackgroundTap,
+  onImageLoad,
   ref,
 }: ZoomableImageProps): ReactElement {
   const stageRef = useRef<HTMLDivElement>(null)
@@ -133,6 +135,8 @@ export function ZoomableImage({
   const baseRef = useRef<DisplaySize | null>(null)
   const viewportRef = useRef<DisplaySize | null>(null)
   const onScaleChangeRef = useRef(onScaleChange)
+  const onImageLoadRef = useRef(onImageLoad)
+  onImageLoadRef.current = onImageLoad
   const gestureRef = useRef<Gesture>({ kind: 'none' })
   const pointersRef = useRef<Map<number, ZoomPoint>>(new Map())
   const lastTapRef = useRef<Tap | null>(null)
@@ -179,6 +183,7 @@ export function ZoomableImage({
     const image = imageRef.current
     if (image?.complete && image.naturalWidth > 0) {
       setNatural({ width: image.naturalWidth, height: image.naturalHeight })
+      onImageLoadRef.current?.()
     }
   }, [src])
 
@@ -486,6 +491,7 @@ export function ZoomableImage({
         onLoad={(event) => {
           const { naturalWidth, naturalHeight } = event.currentTarget
           setNatural({ width: naturalWidth, height: naturalHeight })
+          onImageLoadRef.current?.()
         }}
       />
     </div>

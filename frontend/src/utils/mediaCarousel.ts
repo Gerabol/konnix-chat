@@ -116,6 +116,13 @@ export function getNextMediaIndex(currentIndex: number, total: number): number {
   return currentIndex < total - 1 ? currentIndex + 1 : currentIndex
 }
 
+/** Mídia atual e até duas anteriores, mantendo os índices da lista completa. */
+export function getVisibleMediaIndices(currentIndex: number, total: number): number[] {
+  if (currentIndex < 0 || currentIndex >= total) return []
+  const start = Math.max(0, currentIndex - 2)
+  return Array.from({ length: currentIndex - start + 1 }, (_, index) => start + index)
+}
+
 export function getPrevMediaIndex(currentIndex: number): number {
   return currentIndex > 0 ? currentIndex - 1 : 0
 }
