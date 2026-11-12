@@ -27,10 +27,8 @@ export function readerDisplayName(reader: ReadReceipt): string {
 
 /**
  * Determina se a ação "Visualizar leitura" deve ser exibida no menu de opções.
- * Disponível apenas quando o recurso está habilitado e para mensagens de outros usuários,
- * já que mensagens próprias já possuem o botão dedicado de confirmação de leitura.
+ * Disponível para mensagens próprias e de outros usuários quando o recurso está habilitado.
  */
-export function canViewReads(readReceiptsEnabled: boolean, isMine: boolean): boolean {
-  return readReceiptsEnabled && !isMine
+export function canViewReads(readReceiptsEnabled: boolean): boolean {
+  return readReceiptsEnabled
 }
-

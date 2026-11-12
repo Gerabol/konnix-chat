@@ -69,17 +69,12 @@ describe('readReceipts utils', () => {
   })
 
   describe('canViewReads', () => {
-    it('retorna true quando recibos estão ativos e a mensagem pertence a outro usuário', () => {
-      assert.equal(canViewReads(true, false), true)
-    })
-
-    it('retorna false para mensagem própria (já possui botão verde dedicado)', () => {
-      assert.equal(canViewReads(true, true), false)
+    it('retorna true quando recibos estão ativos, independentemente do autor', () => {
+      assert.equal(canViewReads(true), true)
     })
 
     it('retorna false quando recibos de leitura estão desativados globalmente', () => {
-      assert.equal(canViewReads(false, false), false)
-      assert.equal(canViewReads(false, true), false)
+      assert.equal(canViewReads(false), false)
     })
   })
 })
