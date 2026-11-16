@@ -7,7 +7,12 @@ import { isTauri, notifyDesktop, updateAppBadge } from '../../platform'
 import type { DmPartner, PendingUploadItem, Session, TypingUser } from '../../types'
 import { attachmentBlobCache } from '../../utils/attachmentCache'
 import { isMobilePlatform } from '../../utils/pwa'
-import { formatNotificationSnippet, playNotificationSound, unlockNotificationSound } from '../../utils/notificationSound'
+import {
+  formatNotificationSnippet,
+  playNotificationSound,
+  shouldPlayMessageNotificationSound,
+  unlockNotificationSound,
+} from '../../utils/notificationSound'
 import { syncPushSubscription } from '../../utils/push'
 import { MANUAL_PRESENCE_KEY, readManualPresence } from '../../utils/presence'
 import { roomActivityTime, roomDisplayName } from '../../utils/room'
@@ -515,7 +520,8 @@ export function ChatView({
                 return { ...prev, [msg.roomId]: roomTyping }
               })
             }
-            const appInBackground = document.visibilityState !== 'visible' || !document.hasFocus()
+            const isTabVisible = document.visibilityState === 'visible'
+            const isWindowFocused = document.hasFocus()
             const isActiveRoom = msg.roomId === activeRoomIdRef.current
             const isIncomingRelevant = msg.messageType !== 'SYSTEM' && msg.userId !== me.id
             const shouldUnread = isIncomingRelevant && !isActiveRoom
@@ -542,7 +548,7 @@ export function ChatView({
             })
             if (msg.roomId === activeRoomIdRef.current) {
               setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]))
-              if (isIncomingRelevant && !appInBackground) {
+              if (isIncomingRelevant && isTabVisible) {
                 api.markRoomRead(msg.roomId).catch(() => undefined)
               }
             }
@@ -564,7 +570,17 @@ export function ChatView({
               const suppressNotification =
                 (currentPresence === 'busy' || currentPresence === 'mission') && !isDirect && !isMentioned
 
-              if (appInBackground && !suppressNotification) {
+              const shouldSound = shouldPlayMessageNotificationSound({
+                roomId: msg.roomId,
+                activeRoomId: activeRoomIdRef.current,
+                isTabVisible,
+                isTauri,
+                isWindowFocused,
+              })
+
+              const isHiddenOrUnfocused = !isTabVisible || (isTauri && !isWindowFocused)
+
+              if (isHiddenOrUnfocused && !suppressNotification) {
                 let enabled = false
                 let explicitlyDisabled = false
                 try {
@@ -579,7 +595,7 @@ export function ChatView({
                 } catch {
                   /* preferência opcional */
                 }
-                if (!explicitlyDisabled) {
+                if (shouldSound && !explicitlyDisabled) {
                   playNotificationSound(msg.id)
                 }
                 if (enabled) {
@@ -590,7 +606,9 @@ export function ChatView({
                   }
                 }
               } else if (!isActiveRoom && !suppressNotification) {
-                playNotificationSound(msg.id)
+                if (shouldSound) {
+                  playNotificationSound(msg.id)
+                }
                 showToast(`${notifTitle}: ${notifBody}`)
               }
             }
@@ -925,7 +943,19 @@ export function ChatView({
         openRoom(data.roomId)
       } else if (data.type === 'konnix:push-received') {
         const currentPresence = presenceStatusRef.current
-        if (currentPresence !== 'busy' && currentPresence !== 'mission' && currentPresence !== 'vacation') {
+        const shouldSound = shouldPlayMessageNotificationSound({
+          roomId: data.roomId,
+          activeRoomId: activeRoomIdRef.current,
+          isTabVisible: document.visibilityState === 'visible',
+          isTauri,
+          isWindowFocused: document.hasFocus(),
+        })
+        if (
+          shouldSound &&
+          currentPresence !== 'busy' &&
+          currentPresence !== 'mission' &&
+          currentPresence !== 'vacation'
+        ) {
           playNotificationSound(data.messageId)
         }
         void loadRooms()

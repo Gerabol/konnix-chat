@@ -133,8 +133,9 @@ self.addEventListener('push', (event) => {
         }
 
         // Notifica janelas abertas para sincronização imediata em segundo plano
+        let clients = [];
         try {
-          const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
           for (const client of clients) {
             client.postMessage({
               type: 'konnix:push-received',
@@ -145,6 +146,8 @@ self.addEventListener('push', (event) => {
         } catch (clientErr) {
           console.warn('[SW Push] Falha ao despachar postMessage para clientes:', clientErr);
         }
+
+        const hasFocusedClient = clients.some((c) => c.focused && c.visibilityState === 'visible');
 
         let existingForTag = [];
         try {
@@ -162,6 +165,7 @@ self.addEventListener('push', (event) => {
           badge: '/icons/icon-192.png',
           tag: notificationTag,
           renotify: !alreadyDisplayed,
+          silent: hasFocusedClient,
           data: {
             ...(payload.data || {}),
             unreadCount,
@@ -170,8 +174,8 @@ self.addEventListener('push', (event) => {
           },
         };
 
-        // Adiciona vibrate somente se suportado pelo ambiente (WebKit/Safari no iOS não suporta e pode falhar)
-        if (!alreadyDisplayed && 'vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
+        // Adiciona vibrate somente se suportado pelo ambiente e quando não houver janela em foco
+        if (!alreadyDisplayed && !hasFocusedClient && 'vibrate' in self.navigator && typeof self.navigator.vibrate === 'function') {
           notificationOptions.vibrate = [200, 100, 200];
         }
 

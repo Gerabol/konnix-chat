@@ -5,11 +5,91 @@ import {
   formatNotificationSnippet,
   playNotificationSound,
   resetNotificationSoundStateForTests,
+  shouldPlayMessageNotificationSound,
 } from './notificationSound.ts'
 
 describe('notificationSound utils', () => {
   beforeEach(() => {
     resetNotificationSoundStateForTests()
+  })
+
+  describe('shouldPlayMessageNotificationSound', () => {
+    it('retorna false quando o usuário está na conversa ativa com a aba visível (contato direto)', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-1',
+        activeRoomId: 'room-1',
+        isTabVisible: true,
+      })
+      assert.equal(result, false)
+    })
+
+    it('retorna true quando o usuário está na conversa ativa mas em outra aba (aba oculta/segundo plano)', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-1',
+        activeRoomId: 'room-1',
+        isTabVisible: false,
+      })
+      assert.equal(result, true)
+    })
+
+    it('retorna true quando a mensagem pertence a uma sala diferente da ativa com aba visível', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-2',
+        activeRoomId: 'room-1',
+        isTabVisible: true,
+      })
+      assert.equal(result, true)
+    })
+
+    it('retorna true quando a mensagem pertence a uma sala diferente da ativa com aba em segundo plano', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-2',
+        activeRoomId: 'room-1',
+        isTabVisible: false,
+      })
+      assert.equal(result, true)
+    })
+
+    it('retorna false quando roomId for nulo ou indefinido', () => {
+      assert.equal(
+        shouldPlayMessageNotificationSound({
+          roomId: null,
+          activeRoomId: 'room-1',
+          isTabVisible: false,
+        }),
+        false,
+      )
+      assert.equal(
+        shouldPlayMessageNotificationSound({
+          roomId: undefined,
+          activeRoomId: 'room-1',
+          isTabVisible: false,
+        }),
+        false,
+      )
+    })
+
+    it('no desktop Tauri: retorna false quando a janela está focada na conversa ativa', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-1',
+        activeRoomId: 'room-1',
+        isTabVisible: true,
+        isTauri: true,
+        isWindowFocused: true,
+      })
+      assert.equal(result, false)
+    })
+
+    it('no desktop Tauri: retorna true quando a janela está em segundo plano/sem foco', () => {
+      const result = shouldPlayMessageNotificationSound({
+        roomId: 'room-1',
+        activeRoomId: 'room-1',
+        isTabVisible: true,
+        isTauri: true,
+        isWindowFocused: false,
+      })
+      assert.equal(result, true)
+    })
   })
 
   it('gera buffer WAV PCM 16-bit válido com cabeçalho RIFF/WAVE', () => {

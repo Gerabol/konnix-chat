@@ -26,6 +26,47 @@ export function isNotificationSoundEnabled(): boolean {
   return true
 }
 
+export interface ShouldNotifySoundParams {
+  roomId?: string | null
+  activeRoomId?: string | null
+  isTabVisible: boolean
+  isTauri?: boolean
+  isWindowFocused?: boolean
+}
+
+/**
+ * Determina se o som de notificação (beep) deve ser reproduzido para uma mensagem recebida.
+ * Regra:
+ * - Emite som se a mensagem for de outra conversa/sala (roomId !== activeRoomId).
+ * - Emite som se a aba estiver oculta / em segundo plano (!isTabVisible).
+ * - Emite som se for app desktop Tauri minimizado/sem foco (!isWindowFocused).
+ * - NÃO emite som se o usuário estiver na conversa ativa e com a aba visível na tela.
+ */
+export function shouldPlayMessageNotificationSound({
+  roomId,
+  activeRoomId,
+  isTabVisible,
+  isTauri = false,
+  isWindowFocused = true,
+}: ShouldNotifySoundParams): boolean {
+  if (!roomId) return false
+
+  const isActiveConversation = Boolean(activeRoomId && roomId === activeRoomId)
+
+  // No desktop Tauri: se a janela não tem foco ou está minimizada, trata como segundo plano
+  if (isTauri && !isWindowFocused) {
+    return true
+  }
+
+  // Na Web / PWA: se está em outra aba, deve notificar com som mesmo que seja a sala ativa
+  if (!isTabVisible) {
+    return true
+  }
+
+  // Se a aba está visível: só toca se a mensagem NÃO for da conversa ativa
+  return !isActiveConversation
+}
+
 /**
  * Gera em memória um arquivo WAV PCM 16-bit (44.1kHz) contendo um chime duplo
  * cristalino e suave (notas Lá5 880Hz -> Mi6 1318.5Hz com harmônicos e envelope exponencial).
