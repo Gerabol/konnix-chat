@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ClipboardEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { api, ApiError, formatDay, formatFullTimestamp, formatTime, formatUploadSize, roomAvatarPath, userAvatarPath } from '../../api'
 import type { FavoriteMessage, Message, PresenceStatus, PublicProfile, Room, RoomFile, RoomMember, User } from '../../api'
+import { filterMentionMembers } from '../../utils/mentions'
 import { detectLanguage, formatHtml, formatJson } from '../../CodeBlock'
 import { isAudioFile as isAudioFileLike } from '../../utils/attachmentKind'
 import { copyText, resolvePaste } from '../../utils/clipboard'
@@ -476,6 +477,16 @@ export function RoomView({
     }
   }, [room.id, room.type])
 
+  const mentionOpen = mention !== null
+  useEffect(() => {
+    if (!mentionOpen || room.type === 'DIRECT') return
+    let active = true
+    void api.members(room.id).then((members) => {
+      if (active) setRoomMembers(members)
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [mentionOpen, room.id, room.type])
+
   const validMentionUsernames = useMemo(() => {
     const set = new Set<string>()
     if (me && me.accountStatus !== 'DISABLED' && me.username) {
@@ -522,10 +533,7 @@ export function RoomView({
       }
       return []
     }
-    return roomMembers
-      .filter((member) => member.active && member.accountStatus !== 'DISABLED' && member.userId !== me.id)
-      .filter((member) => `${member.username} ${member.name}`.toLowerCase().includes(query))
-      .slice(0, 8)
+    return filterMentionMembers(roomMembers, me.id, query)
   }, [mention, room, roomMembers, me.id])
 
   useLayoutEffect(() => {

@@ -1,6 +1,15 @@
 import type { Room } from '../api.ts'
+import { roomActivityTime } from './room.ts'
 
-export type SidebarFilterMode = 'all' | 'unread' | 'mentions'
+export type SidebarFilterMode = 'all' | 'unread' | 'mentions' | 'recent'
+
+export function recentRooms(roomCollections: Room[][]): Room[] {
+  const rooms = new Map<string, Room>()
+  for (const collection of roomCollections) {
+    for (const room of collection) rooms.set(room.id, room)
+  }
+  return [...rooms.values()].sort((a, b) => roomActivityTime(b) - roomActivityTime(a))
+}
 
 /**
  * Retorna se uma sala é considerada não lida:

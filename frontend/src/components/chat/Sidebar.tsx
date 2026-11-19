@@ -26,6 +26,7 @@ import {
   countUniqueUnreadRooms,
   countUniqueMentionedRooms,
   filterRoomsByMode,
+  recentRooms,
   type SidebarFilterMode,
 } from '../../utils/sidebarFilter'
 
@@ -116,7 +117,7 @@ export const Sidebar = memo(function Sidebar({
   const handleFilterChange = (newFilter: SidebarFilterMode) => {
     if (newFilter === filter) return
     setRoomContextMenu(null)
-    const order: Record<SidebarFilterMode, number> = { all: 0, unread: 1, mentions: 2 }
+    const order: Record<SidebarFilterMode, number> = { all: 0, unread: 1, recent: 2, mentions: 3 }
     const currentIdx = order[filter] ?? 0
     const newIdx = order[newFilter] ?? 0
     setFilterDirection(newIdx >= currentIdx ? 'left' : 'right')
@@ -168,6 +169,11 @@ export const Sidebar = memo(function Sidebar({
   const conversationsHaveUnread = regularConversations.some(isRoomUnread)
   const query = search.trim().toLowerCase()
   const showResults = query.length > 0
+  const displayRecentRooms = recentRooms([
+    favoriteRooms,
+    isAdmin ? channels : regularChannels,
+    regularConversations,
+  ]).filter((room) => !query || `${roomDisplayName(room)} ${room.name ?? ''} ${room.directPartner?.username ?? ''}`.toLowerCase().includes(query))
   const matchesQuery = (room: Room) => {
     if (!query) return true
     return (room.displayName || room.name || '').toLowerCase().includes(query)
@@ -461,10 +467,11 @@ export const Sidebar = memo(function Sidebar({
             type="button"
             role="tab"
             aria-selected={filter === 'all'}
-            className={`sidebar-filter-tab ${filter === 'all' ? 'active' : ''}`}
+            className={`sidebar-filter-tab sidebar-filter-all ${filter === 'all' ? 'active' : ''}`}
             onClick={() => handleFilterChange('all')}
+            title="Todos"
           >
-            Todos
+            <span className="sidebar-filter-label">Todos</span>
           </button>
           <button
             type="button"
@@ -472,8 +479,9 @@ export const Sidebar = memo(function Sidebar({
             aria-selected={filter === 'unread'}
             className={`sidebar-filter-tab ${filter === 'unread' ? 'active' : ''}`}
             onClick={() => handleFilterChange('unread')}
+            title="Não lidas"
           >
-            <span>Não lidas</span>
+            <span className="sidebar-filter-label">Não lidas</span>
             {totalUnreadRoomsCount > 0 && (
               <span className="sidebar-filter-dot" aria-label="Há conversas não lidas" />
             )}
@@ -481,11 +489,23 @@ export const Sidebar = memo(function Sidebar({
           <button
             type="button"
             role="tab"
-            aria-selected={filter === 'mentions'}
-            className={`sidebar-filter-tab ${filter === 'mentions' ? 'active' : ''}`}
-            onClick={() => handleFilterChange('mentions')}
+            aria-selected={filter === 'recent'}
+            className={`sidebar-filter-tab ${filter === 'recent' ? 'active' : ''}`}
+            onClick={() => handleFilterChange('recent')}
+            title="Recentes"
           >
-            <span>Menções</span>
+            <span className="sidebar-filter-label">Recentes</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === 'mentions'}
+            className={`sidebar-filter-tab sidebar-filter-mentions ${filter === 'mentions' ? 'active' : ''}`}
+            onClick={() => handleFilterChange('mentions')}
+            aria-label="Menções"
+            title="Menções"
+          >
+            <span aria-hidden="true">@</span>
             {totalMentionedRoomsCount > 0 && (
               <span className="sidebar-filter-dot" aria-label="Há menções não lidas" />
             )}
@@ -494,7 +514,60 @@ export const Sidebar = memo(function Sidebar({
       </div>
 
       <nav className="sidebar-nav">
-        {showResults ? (
+        {filter === 'recent' ? (
+          <div key={filter} className={`sidebar-filter-content slide-${filterDirection}`}>
+            {displayRecentRooms.length === 0 ? (
+              <div className="sidebar-filter-empty">
+                <p className="sidebar-filter-empty-title">{showResults ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa recente'}</p>
+              </div>
+            ) : (
+              <div className="nav-list">
+                {displayRecentRooms.map((room) => {
+                  const typingText = formatTypingText(typingByRoom[room.id], room.type === 'DIRECT')
+                  return (
+                    <button
+                      key={room.id}
+                      className={`room-item ${room.id === activeRoomId ? 'active' : ''} ${roomContextMenu?.roomId === room.id ? 'menu-open' : ''}`}
+                      onClick={() => handleSelectRoom(room.id)}
+                      onContextMenu={(e) => handleContextMenu(room.id, e)}
+                      onTouchStart={(e) => handleTouchStart(room.id, e)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                    >
+                      {room.type === 'DIRECT' ? (
+                        <span className="room-icon direct">
+                          <span className="sidebar-avatar-wrap">
+                            <AvatarImage
+                              path={room.directPartner ? `${userAvatarPath(room.directPartner.userId)}${avatarVersions?.[room.directPartner.userId] ? `?v=${encodeURIComponent(avatarVersions[room.directPartner.userId])}` : ''}` : null}
+                              className="mini-avatar"
+                              fallback={<span className="mini-avatar">{initials(roomDisplayName(room))}</span>}
+                              alt={roomDisplayName(room)}
+                            />
+                            {room.directPartner?.presenceStatus && (
+                              <span className={`sidebar-presence-dot presence-${room.directPartner.presenceStatus}`} title={presenceLabel(room.directPartner.presenceStatus)} aria-label={`Status: ${presenceLabel(room.directPartner.presenceStatus)}`} />
+                            )}
+                          </span>
+                        </span>
+                      ) : (
+                        <AvatarImage
+                          path={`${roomAvatarPath(room.id)}?v=${encodeURIComponent(room.updatedAt)}`}
+                          className="room-thumb"
+                          fallback={<span className={`room-icon ${room.type === 'CHANNEL' ? 'channel' : 'group'}`}>{getRoomIcon(room)}</span>}
+                          alt={roomDisplayName(room)}
+                        />
+                      )}
+                      <span className="room-name">
+                        {roomDisplayName(room)}
+                        {typingText && <span className="room-type typing-active" style={{ display: 'block', fontSize: '0.72rem' }}>{typingText}</span>}
+                      </span>
+                      {renderRoomActions(room)}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ) : showResults ? (
           !hasSearchResults ? (
             <div className="sidebar-search-empty">
               <p>Nenhum resultado encontrado para &ldquo;{search}&rdquo;</p>

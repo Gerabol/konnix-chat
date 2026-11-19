@@ -7,6 +7,7 @@ import {
   filterRoomsByUnread,
   countUniqueUnreadRooms,
   countUniqueMentionedRooms,
+  recentRooms,
 } from './sidebarFilter.ts'
 import type { Room } from '../api.ts'
 
@@ -20,7 +21,7 @@ function mockRoom(partial: Partial<Room> & { id: string }): Room {
     readOnly: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
-    lastActivityAt: null,
+    lastActivityAt: partial.lastActivityAt ?? null,
     unreadCount: partial.unreadCount ?? 0,
     favorite: partial.favorite ?? false,
     directPartner: null,
@@ -31,6 +32,23 @@ function mockRoom(partial: Partial<Room> & { id: string }): Room {
 }
 
 describe('sidebarFilter', () => {
+  describe('recentRooms', () => {
+    it('combina categorias sem duplicatas e ordena pela última atividade', () => {
+      const favorite = mockRoom({ id: 'favorite', favorite: true, lastActivityAt: '2026-01-02T00:00:00Z' })
+      const group = mockRoom({ id: 'group', type: 'PRIVATE_GROUP', lastActivityAt: '2026-01-04T00:00:00Z' })
+      const direct = mockRoom({ id: 'direct', type: 'DIRECT', lastActivityAt: '2026-01-03T00:00:00Z' })
+      const collections = [[favorite, group], [favorite], [direct]]
+      assert.deepStrictEqual(recentRooms(collections).map((room) => room.id), ['group', 'direct', 'favorite'])
+      assert.deepStrictEqual(collections[0].map((room) => room.id), ['favorite', 'group'])
+    })
+
+    it('inclui salas sem mensagens usando a data de atualização como alternativa', () => {
+      const empty = mockRoom({ id: 'empty' })
+      const active = mockRoom({ id: 'active', lastActivityAt: '2026-01-02T00:00:00Z' })
+      assert.deepStrictEqual(recentRooms([[empty, active]]).map((room) => room.id), ['active', 'empty'])
+      assert.deepStrictEqual(recentRooms([]), [])
+    })
+  })
   describe('isRoomUnread', () => {
     it('returns false when unreadCount is 0 and markedUnread is false or undefined', () => {
       assert.strictEqual(isRoomUnread({ unreadCount: 0 }), false)

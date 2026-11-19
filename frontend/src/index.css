@@ -1935,6 +1935,7 @@ button:disabled {
 
 .sidebar-filter-tab {
   flex: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1961,6 +1962,21 @@ button:disabled {
 .sidebar-filter-tab:hover {
   background: color-mix(in srgb, var(--konnix-ink) 5%, var(--konnix-surface));
   color: var(--konnix-ink);
+}
+
+.sidebar-filter-mentions {
+  flex: 0 0 auto;
+}
+
+.sidebar-filter-all {
+  flex: 0.7;
+}
+
+.sidebar-filter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-filter-tab:active {
