@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { roomAvatarPath, userAvatarPath } from '../../api'
 import type { DirectoryUser, PresenceStatus, Room, Theme, User } from '../../api'
 import type { DmPartner, TypingUser } from '../../types'
 import { presenceLabel } from '../../utils/presence'
 import { getRoomIcon, roomDisplayName } from '../../utils/room'
 import { isTauri } from '../../platform'
+import { shouldAnchorSidebar, sidebarScrollOffset } from '../../utils/sidebarScroll'
 import { isMobilePlatform } from '../../utils/pwa'
 import { isWhiteSidebarLogoTheme } from '../../utils/theme'
 import {
@@ -113,9 +114,19 @@ export const Sidebar = memo(function Sidebar({
   const [conversationsOpen, setConversationsOpen] = useState(true)
   const [filter, setFilter] = useState<SidebarFilterMode>('all')
   const [filterDirection, setFilterDirection] = useState<'left' | 'right'>('left')
+  const sidebarNavRef = useRef<HTMLElement>(null)
+  const anchorOnFilterChangeRef = useRef(false)
 
   const handleFilterChange = (newFilter: SidebarFilterMode) => {
     if (newFilter === filter) return
+    anchorOnFilterChangeRef.current = shouldAnchorSidebar(filter, newFilter, window.matchMedia('(min-width: 769px)').matches)
+    if (anchorOnFilterChangeRef.current && newFilter === 'all' && activeRoomId) {
+      const selectedRoom = allRooms.find((room) => room.id === activeRoomId)
+      if (selectedRoom?.favorite) setFavoritesOpen(true)
+      else if (selectedRoom?.type === 'DIRECT') setConversationsOpen(true)
+      else if (selectedRoom && SYSTEM_CHANNEL_NAMES.includes(selectedRoom.name)) setAdminOpen(true)
+      else if (selectedRoom) setChannelsOpen(true)
+    }
     setRoomContextMenu(null)
     const order: Record<SidebarFilterMode, number> = { all: 0, unread: 1, recent: 2, mentions: 3 }
     const currentIdx = order[filter] ?? 0
@@ -169,6 +180,17 @@ export const Sidebar = memo(function Sidebar({
   const conversationsHaveUnread = regularConversations.some(isRoomUnread)
   const query = search.trim().toLowerCase()
   const showResults = query.length > 0
+  useLayoutEffect(() => {
+    if (!anchorOnFilterChangeRef.current) return
+    anchorOnFilterChangeRef.current = false
+    if (!activeRoomId) return
+    const nav = sidebarNavRef.current
+    const selected = nav?.querySelector<HTMLElement>('.room-item.active')
+    if (!nav || !selected) return
+    const viewport = nav.getBoundingClientRect()
+    const item = selected.getBoundingClientRect()
+    nav.scrollTop += sidebarScrollOffset(nav.scrollHeight, nav.clientHeight, viewport.top, viewport.bottom, item.top, item.bottom)
+  }, [filter, activeRoomId])
   const displayRecentRooms = recentRooms([
     favoriteRooms,
     isAdmin ? channels : regularChannels,
@@ -513,7 +535,7 @@ export const Sidebar = memo(function Sidebar({
         </div>
       </div>
 
-      <nav className="sidebar-nav">
+      <nav ref={sidebarNavRef} className="sidebar-nav">
         {filter === 'recent' ? (
           <div key={filter} className={`sidebar-filter-content slide-${filterDirection}`}>
             {displayRecentRooms.length === 0 ? (

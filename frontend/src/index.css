@@ -1756,7 +1756,6 @@ button:disabled {
 .room-item.active {
   background: rgba(91, 76, 240, 0.12);
   color: var(--konnix-primary-deep);
-  font-weight: 600;
 }
 
 .room-icon {
@@ -6729,7 +6728,6 @@ img.room-header-avatar {
 
   [data-theme$="-strong"] .sidebar .room-item.active .room-name {
     color: #ffffff !important;
-    font-weight: 700;
   }
 
   [data-theme$="-strong"] .sidebar .room-item.active .room-type {

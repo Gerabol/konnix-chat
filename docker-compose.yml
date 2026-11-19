@@ -1,3 +1,4 @@
+# Nome fixo para preservar os volumes independentemente da pasta do projeto.
 name: konnix
 
 services:
@@ -22,6 +23,7 @@ services:
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
     container_name: konnix-backend
     restart: unless-stopped
     depends_on:
@@ -55,6 +57,7 @@ services:
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
 
     container_name: konnix-frontend
     restart: unless-stopped
@@ -63,8 +66,8 @@ services:
       - backend
 
     environment:
-      # Empty means each browser uses the hostname it used to open the frontend.
-      # This keeps remote clients from calling their own localhost.
+      # A API usa a mesma origem, com /api encaminhado pelo proxy do Vite.
+      # VITE_API_URL é a origem, não o prefixo /api (já incluído nas rotas).
       VITE_API_URL: ""
       VITE_BACKEND_URL: http://backend:8080
       VITE_WS_URL: ""
@@ -78,6 +81,19 @@ services:
 
     command: ["sh", "-c", "npm ci --legacy-peer-deps && npm run dev -- --host 0.0.0.0"]
 
+    networks:
+      - konnix_network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: konnix-cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      - frontend
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:-}
+    command: ["tunnel", "--no-autoupdate", "run"]
     networks:
       - konnix_network
 
