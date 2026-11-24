@@ -2,6 +2,10 @@ export function shouldAnchorSidebar(previous: string, next: string, desktop: boo
   return desktop && ((previous === 'all' && next === 'recent') || (previous === 'recent' && next === 'all'))
 }
 
+export function shouldAnchorSearch(filter: string, searching: boolean, desktop: boolean): boolean {
+  return desktop && searching && (filter === 'all' || filter === 'recent')
+}
+
 export function sidebarScrollOffset(
   scrollHeight: number,
   clientHeight: number,

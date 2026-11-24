@@ -5,7 +5,7 @@ import type { DmPartner, TypingUser } from '../../types'
 import { presenceLabel } from '../../utils/presence'
 import { getRoomIcon, roomDisplayName } from '../../utils/room'
 import { isTauri } from '../../platform'
-import { shouldAnchorSidebar, sidebarScrollOffset } from '../../utils/sidebarScroll'
+import { shouldAnchorSearch, shouldAnchorSidebar, sidebarScrollOffset } from '../../utils/sidebarScroll'
 import { isMobilePlatform } from '../../utils/pwa'
 import { isWhiteSidebarLogoTheme } from '../../utils/theme'
 import {
@@ -116,6 +116,7 @@ export const Sidebar = memo(function Sidebar({
   const [filterDirection, setFilterDirection] = useState<'left' | 'right'>('left')
   const sidebarNavRef = useRef<HTMLElement>(null)
   const anchorOnFilterChangeRef = useRef(false)
+  const searchAnchorRef = useRef<{ roomId?: string; userId?: string } | null>(null)
 
   const handleFilterChange = (newFilter: SidebarFilterMode) => {
     if (newFilter === filter) return
@@ -191,6 +192,25 @@ export const Sidebar = memo(function Sidebar({
     const item = selected.getBoundingClientRect()
     nav.scrollTop += sidebarScrollOffset(nav.scrollHeight, nav.clientHeight, viewport.top, viewport.bottom, item.top, item.bottom)
   }, [filter, activeRoomId])
+  useLayoutEffect(() => {
+    const target = searchAnchorRef.current
+    if (!target || showResults || !activeRoomId || (filter !== 'all' && filter !== 'recent')) return
+    const room = allRooms.find((item) => item.id === activeRoomId)
+    if (!room || (target.roomId && room.id !== target.roomId) || (target.userId && room.directPartner?.userId !== target.userId)) return
+    if (filter === 'all') {
+      if (room.favorite && !favoritesOpen) { setFavoritesOpen(true); return }
+      if (!room.favorite && room.type === 'DIRECT' && !conversationsOpen) { setConversationsOpen(true); return }
+      if (!room.favorite && room.type !== 'DIRECT' && SYSTEM_CHANNEL_NAMES.includes(room.name) && !adminOpen) { setAdminOpen(true); return }
+      if (!room.favorite && room.type !== 'DIRECT' && !SYSTEM_CHANNEL_NAMES.includes(room.name) && !channelsOpen) { setChannelsOpen(true); return }
+    }
+    const nav = sidebarNavRef.current
+    const selected = nav?.querySelector<HTMLElement>('.room-item.active')
+    if (!nav || !selected) return
+    searchAnchorRef.current = null
+    const viewport = nav.getBoundingClientRect()
+    const item = selected.getBoundingClientRect()
+    nav.scrollTop += sidebarScrollOffset(nav.scrollHeight, nav.clientHeight, viewport.top, viewport.bottom, item.top, item.bottom)
+  })
   const displayRecentRooms = recentRooms([
     favoriteRooms,
     isAdmin ? channels : regularChannels,
@@ -386,11 +406,13 @@ export const Sidebar = memo(function Sidebar({
       longPressFiredRef.current = false
       return
     }
+    searchAnchorRef.current = shouldAnchorSearch(filter, showResults, window.matchMedia('(min-width: 769px)').matches) ? { roomId } : null
     onSearch('')
     onOpenRoom(roomId)
   }
 
   const handleSelectUser = async (userId: string) => {
+    searchAnchorRef.current = shouldAnchorSearch(filter, showResults, window.matchMedia('(min-width: 769px)').matches) ? { userId } : null
     onSearch('')
     const user = userResults.find((item) => item.id === userId)
     await onStartUserDm(

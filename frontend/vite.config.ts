@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { directoryGuard } from './vite-directory-guard.mjs'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [directoryGuard(), react()],
   server: {
     host: true,
     port: 5173,
