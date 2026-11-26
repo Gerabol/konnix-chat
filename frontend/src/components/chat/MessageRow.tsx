@@ -367,6 +367,7 @@ function MessageRowComponent({
             onPin={(pinned) => onPinAction(msg.id, pinned)}
             onQuote={() => onQuote(msg)}
             onCopy={onCopy ? () => onCopy(msg) : undefined}
+            onDelete={isMine ? () => onDelete(msg) : undefined}
             onForward={() => onForward(msg)}
             onEdit={
               isMine && !msg.forwardedFromUsername && !msg.poll && (!!msg.content || hasAttachments)

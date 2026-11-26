@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EmojiSelection } from '../../types'
-import { IconCopy, IconDotsVertical, IconEye, IconHeart, IconPin, IconReplyPrivate } from '../icons'
+import { IconCopy, IconDotsVertical, IconEye, IconHeart, IconPin, IconReplyPrivate, IconTrash } from '../icons'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 export function MessageActionBar({
@@ -9,6 +9,7 @@ export function MessageActionBar({
   onPin,
   onQuote,
   onCopy,
+  onDelete,
   onForward,
   onEdit,
   onEmoji,
@@ -25,6 +26,7 @@ export function MessageActionBar({
   onPin: (pinned: boolean) => void
   onQuote: () => void
   onCopy?: () => void
+  onDelete?: () => void
   onForward: () => void
   onEdit?: () => void
   onEmoji: (emoji: string) => void
@@ -148,7 +150,7 @@ export function MessageActionBar({
     }
   }, [moreOpen])
 
-  const hasMoreOptions = Boolean(onViewReads || onReplyPrivate || onToggleFavorite || onCopy)
+  const hasMoreOptions = Boolean(onViewReads || onReplyPrivate || onToggleFavorite || onCopy || onDelete)
 
   return (
     <div className="message-actions" ref={ref}>
@@ -349,6 +351,23 @@ export function MessageActionBar({
                   <IconCopy size={16} />
                 </span>
                 <span>Copiar mensagem</span>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                className="message-more-menu-item message-more-delete-mobile"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false)
+                  onPin(false)
+                  onDelete()
+                }}
+              >
+                <span className="message-more-menu-icon">
+                  <IconTrash size={16} />
+                </span>
+                <span>Excluir mensagem</span>
               </button>
             )}
           </div>,

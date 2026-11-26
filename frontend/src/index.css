@@ -3821,6 +3821,10 @@ button:disabled {
 .message-actions > button[title="Citar mensagem"], .message-action-quote { font-size: 1.05rem; line-height: 1; font-weight: 500; font-variant-emoji: text; }
 .message-emoji-action > button { font-size: 1.2rem; }
 .message-actions > button.message-action-pin, .message-actions > button.message-action-copy, .message-actions > button.message-action-more { display: inline-flex; align-items: center; justify-content: center; }
+.message-more-menu-item.message-more-delete-mobile { display: none; }
+@media (max-width: 760px) {
+  .message-more-menu-item.message-more-delete-mobile { display: flex; }
+}
 .message-actions > button.message-action-more.active { background: var(--konnix-bg); color: var(--konnix-primary); }
 .message-more-menu {
   display: flex;
