@@ -30,6 +30,7 @@ import { EmptyState } from './EmptyState'
 import { RoomView } from './RoomView'
 import { Sidebar } from './Sidebar'
 import { buildPrivateReplyQuote } from '../../utils/privateReply'
+import { upsertMessage } from '../../utils/messageOrder'
 
 export interface ChatViewProps {
   session: Session
@@ -1328,11 +1329,7 @@ export function ChatView({
   }
 
   const addSearchResult = useCallback((result: Message) => {
-    setMessages((previous) =>
-      previous.some((message) => message.id === result.id)
-        ? previous
-        : [...previous, result].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
-    )
+    setMessages((previous) => upsertMessage(previous, result))
   }, [])
 
   const handleMarkRoomUnread = useCallback(
