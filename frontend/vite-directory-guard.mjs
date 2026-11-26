@@ -1,7 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-// Vite can try to transform an /@fs/ directory as a file and broadcast an HMR error.
 export function directoryGuard() {
   return {
     name: 'konnix-directory-guard',

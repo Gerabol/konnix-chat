@@ -52,6 +52,7 @@ import { formatRecordingTime, formatTypingText, TypingDots } from './TypingIndic
 import { RoomInfoCard, UserProfileCard } from './UserProfileCard'
 import { resolveQuotedOriginName } from '../../utils/privateReply'
 import { extractRoomMedia } from '../../utils/mediaCarousel'
+import { groupMessagesByDay } from '../../utils/messageOrder'
 
 const SEARCH_DEBOUNCE_MS = 400
 const DRAFT_SAVE_DEBOUNCE_MS = 400
@@ -1108,14 +1109,7 @@ export function RoomView({
   }
 
   const grouped = useMemo(() => {
-    const out: { day: string; items: Message[] }[] = []
-    for (const m of messages) {
-      const day = formatDay(m.createdAt)
-      const last = out[out.length - 1]
-      if (last && last.day === day) last.items.push(m)
-      else out.push({ day, items: [m] })
-    }
-    return out
+    return groupMessagesByDay(messages, formatDay)
   }, [messages])
 
   const hasDragFiles = (e: ReactDragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
